@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronDown, ChevronUp, Play, Lock, CheckCircle, FileText,
 import { Course, TheologyCategory } from '../types';
 import { MOCK_COURSE_DETAILS } from '../constants';
 import { canEditCourses } from '../services/permissions';
+import { initialAvatar } from '../services/imageFallback';
 import {
   listCourseFiles,
   uploadCourseFile,
@@ -776,7 +777,7 @@ const CourseDetailView: React.FC<CourseDetailViewProps> = ({ course, onUpdateCou
          
          <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
             <div className="flex items-center space-x-3">
-               <img src={`https://ui-avatars.com/api/?name=${course.instructor}&background=0f172a&color=fff`} className="w-9 h-9 rounded-full border-2 border-white shadow-sm" alt="Instructor"/>
+               <img src={initialAvatar(`instructor-${course.instructor}`, course.instructor)} className="w-9 h-9 rounded-full border-2 border-white shadow-sm" alt="Instructor"/>
                <div>
                   <p className="text-xs font-bold text-slate-900">{course.instructor}</p>
                   <p className="text-[10px] text-slate-500">{isDean ? 'AMAS 院长' : 'AMAS 特约讲师'}</p>

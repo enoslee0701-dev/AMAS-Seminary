@@ -204,6 +204,60 @@ const STOCK_PALETTES: Record<StockCategory, { from: string; via: string; to: str
  * image is configured. Pure-CSS gradient SVG with a subtle dot grid + a
  * soft accent glow so it doesn't read as a flat color block.
  */
+/**
+ * Base hue per theology category (keys match the Chinese TheologyCategory
+ * enum values so callers can pass `course.category` directly). Unknown
+ * categories fall back to a hue derived purely from the seed.
+ */
+const COURSE_CATEGORY_HUES: Record<string, number> = {
+  '系统神学': 245, // indigo
+  '圣经神学': 215, // blue
+  '历史神学': 30,  // amber/bronze
+  '实践神学': 160, // teal-green
+  '宣教神学': 350, // crimson
+};
+
+/**
+ * Deterministic course-thumbnail SVG. The category picks a base hue family
+ * (so all 圣经神学 cards read as siblings) and the seed nudges hue/lightness
+ * within that family (so each course is still distinguishable). Layout
+ * mirrors stockImage: diagonal gradient + faint dot grid + corner glow.
+ */
+export function courseThumbnail(seed: string, category?: string): string {
+  const hash = djb2(seed || 'course');
+  const baseHue = category && category in COURSE_CATEGORY_HUES
+    ? COURSE_CATEGORY_HUES[category]
+    : hash % 360;
+  const hue = (baseHue + (hash % 24) - 12 + 360) % 360; // ±12° wobble per course
+  const from = `hsl(${hue},62%,30%)`;
+  const via = `hsl(${(hue + 18) % 360},55%,22%)`;
+  const to = `hsl(${(hue + 36) % 360},60%,12%)`;
+  const accent = `hsl(${(hue + 45) % 360},80%,75%)`;
+
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="562" viewBox="0 0 1000 562" preserveAspectRatio="xMidYMid slice">` +
+      `<defs>` +
+        `<linearGradient id="g" x1="0" y1="0" x2="1" y2="1">` +
+          `<stop offset="0%" stop-color="${from}"/>` +
+          `<stop offset="55%" stop-color="${via}"/>` +
+          `<stop offset="100%" stop-color="${to}"/>` +
+        `</linearGradient>` +
+        `<radialGradient id="glow" cx="82%" cy="18%" r="55%">` +
+          `<stop offset="0%" stop-color="${accent}" stop-opacity="0.32"/>` +
+          `<stop offset="100%" stop-color="${accent}" stop-opacity="0"/>` +
+        `</radialGradient>` +
+        `<pattern id="dots" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">` +
+          `<circle cx="2" cy="2" r="1.2" fill="${accent}" fill-opacity="0.08"/>` +
+        `</pattern>` +
+      `</defs>` +
+      `<rect width="1000" height="562" fill="url(#g)"/>` +
+      `<rect width="1000" height="562" fill="url(#dots)"/>` +
+      `<rect width="1000" height="562" fill="url(#glow)"/>` +
+    `</svg>`;
+
+  return 'data:image/svg+xml;base64,' + toBase64Utf8(svg);
+}
+
 export function stockImage(category: StockCategory): string {
   const p = STOCK_PALETTES[category];
   // Width/height chosen to suit hero banners but the SVG scales fluidly.

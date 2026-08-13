@@ -29,6 +29,7 @@ import {
 } from './constants';
 import { useGeminiLive } from './useGeminiLive';
 import { createVoiceTransport } from '../../services/voiceTransport';
+import { initialAvatar } from '../../services/imageFallback';
 import { SermonRecorder, uploadRecording, formatDuration, formatSize, type CapturedRecording } from '../../services/recordingService';
 import GiftAnimationLayer from './modals/GiftAnimationLayer';
 import UserProfileModal from './modals/UserProfileModal';
@@ -171,7 +172,7 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
     // swappable to LiveKit/Agora via services/voiceTransport/index.ts). The local user
     // 'me' is always present and managed locally.
     const [participants, setParticipants] = useState<Participant[]>(() => ([
-        { id: 'me', name: '我', avatar: 'https://picsum.photos/200/200?random=me', isSpeaking: false, role: meIsRoomHost ? 'host' : 'listener', degree: 'M.Div 2023' },
+        { id: 'me', name: '我', avatar: initialAvatar('me', '我'), isSpeaking: false, role: meIsRoomHost ? 'host' : 'listener', degree: 'M.Div 2023' },
     ]));
     const me = participants.find(p => p.id === 'me');
     const isOnStage = me?.role !== 'listener';
@@ -335,7 +336,7 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
 
     const handleSendChat = () => {
       if (!chatInput.trim()) return;
-      setRoomChats([...roomChats, { id: `m-${Date.now()}`, user: '我', userAvatar: 'https://picsum.photos/200/200?random=me', text: chatInput, type: 'text' }]);
+      setRoomChats([...roomChats, { id: `m-${Date.now()}`, user: '我', userAvatar: initialAvatar('me', '我'), text: chatInput, type: 'text' }]);
       setChatInput("");
     };
 
@@ -414,7 +415,7 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
       setRoomChats([...roomChats, {
         id: `g-${Date.now()}`,
         user: '我',
-        userAvatar: 'https://picsum.photos/200/200?random=me',
+        userAvatar: initialAvatar('me', '我'),
         text: `送出了 ${gift.name}`,
         type: 'gift',
         giftData: { name: gift.name, icon: gift.icon, theme: gift.theme }
@@ -1475,7 +1476,7 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
                       return (
                         <div key={msg.id} className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'} animate-fade-in-up`}>
                            <div className={`flex max-w-[90%] gap-1 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
-                              <div className="shrink-0 flex flex-col justify-end"><div className="w-4 h-4 rounded-squircle overflow-hidden border border-white/5 shadow-sm bg-black/10"><img src={msg.userAvatar || `https://ui-avatars.com/api/?name=${msg.user}&background=random`} alt={msg.user} className="w-full h-full object-cover opacity-80" /></div></div>
+                              <div className="shrink-0 flex flex-col justify-end"><div className="w-4 h-4 rounded-squircle overflow-hidden border border-white/5 shadow-sm bg-black/10"><img src={msg.userAvatar || initialAvatar(msg.user, msg.user)} alt={msg.user} className="w-full h-full object-cover opacity-80" /></div></div>
                               <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
                                  {msg.type === 'gift' ? (
                                     <div className="rounded-lg py-0.5 px-1.5 bg-gradient-to-r from-amber-600/20 to-orange-600/20 backdrop-blur-sm border border-amber-500/10 shadow-sm flex items-center text-[13px] text-white">

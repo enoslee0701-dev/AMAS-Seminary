@@ -222,6 +222,19 @@ export const ChatView: React.FC<ChatViewProps> = ({ onBack, initialChatId, onJoi
     localStorage.setItem('amas_chat_messages', JSON.stringify(messages));
   }, [messages]);
 
+  // Unmount safety: an in-flight recording would otherwise keep the mic open
+  // and the 1s duration interval ticking after the view is gone. Stopping the
+  // recorder fires its onstop, which also releases the stream tracks.
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      const rec = mediaRecorderRef.current;
+      if (rec && rec.state !== 'inactive') {
+        try { rec.stop(); } catch { /* already stopped */ }
+      }
+    };
+  }, []);
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };

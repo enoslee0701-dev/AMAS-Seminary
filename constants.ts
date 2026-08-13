@@ -1,6 +1,6 @@
 
 import { Course, TheologyCategory, Post, UserProfile, NewsItem, AcademicLevel } from './types';
-import { initialAvatar, stockImage } from './services/imageFallback';
+import { courseThumbnail, initialAvatar, stockImage } from './services/imageFallback';
 
 export const APP_NAME = "AMAS";
 // Updated to Deep Blue / Academic Navy Palette
@@ -69,7 +69,7 @@ export const MOCK_COURSES: Course[] = [
     category: TheologyCategory.BIBLICAL,
     // Fixed: Property updated from BACHELOR to BTH
     level: AcademicLevel.BTH,
-    thumbnail: 'https://images.unsplash.com/photo-1548625361-9877073b3796?auto=format&fit=crop&w=1000&q=80', // Ancient Greek Columns
+    thumbnail: courseThumbnail('c_1cor', TheologyCategory.BIBLICAL),
     progress: 0,
     totalLessons: 10,
     completedLessons: 0,
@@ -81,7 +81,7 @@ export const MOCK_COURSES: Course[] = [
     category: TheologyCategory.BIBLICAL,
     // Fixed: Property updated from MASTER to MDIV
     level: AcademicLevel.MDIV,
-    thumbnail: 'https://images.unsplash.com/photo-1504052434569-70ad5836ab65?auto=format&fit=crop&w=1000&q=80', // Light/Bible theme
+    thumbnail: courseThumbnail('c_john', TheologyCategory.BIBLICAL),
     progress: 0,
     totalLessons: 24,
     completedLessons: 0,
@@ -93,7 +93,7 @@ export const MOCK_COURSES: Course[] = [
     category: TheologyCategory.BIBLICAL,
     // Fixed: Property updated from MASTER to MDIV
     level: AcademicLevel.MDIV,
-    thumbnail: 'https://images.unsplash.com/photo-1469122312224-c5846569feb1?auto=format&fit=crop&w=1000&q=80', // Mountain theme for Sermon on the Mount
+    thumbnail: courseThumbnail('c_matthew', TheologyCategory.BIBLICAL),
     progress: 0,
     totalLessons: 26,
     completedLessons: 0,
@@ -105,7 +105,7 @@ export const MOCK_COURSES: Course[] = [
     category: TheologyCategory.BIBLICAL,
     // Fixed: Property updated from BACHELOR to BTH
     level: AcademicLevel.BTH,
-    thumbnail: 'https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&w=1000&q=80', // Map/Bible theme
+    thumbnail: courseThumbnail('c_acts', TheologyCategory.BIBLICAL),
     progress: 0,
     totalLessons: 29,
     completedLessons: 0,
@@ -117,7 +117,7 @@ export const MOCK_COURSES: Course[] = [
     category: TheologyCategory.BIBLICAL,
     // Fixed: Property updated from DOCTOR to DMIN
     level: AcademicLevel.DMIN,
-    thumbnail: 'https://images.unsplash.com/photo-1507842217153-e212234687f2?auto=format&fit=crop&w=1000&q=80', // Ancient Scroll/Scripture theme
+    thumbnail: courseThumbnail('c_hebrews', TheologyCategory.BIBLICAL),
     progress: 0,
     totalLessons: 15,
     completedLessons: 0,
@@ -129,7 +129,7 @@ export const MOCK_COURSES: Course[] = [
     category: TheologyCategory.BIBLICAL,
     // Fixed: Property updated from MASTER to MDIV
     level: AcademicLevel.MDIV,
-    thumbnail: 'https://images.unsplash.com/photo-1507692813264-d6bb7753cb7d?auto=format&fit=crop&w=1000&q=80', // Ancient/Light theme
+    thumbnail: courseThumbnail('c_ephesians', TheologyCategory.BIBLICAL),
     progress: 0,
     totalLessons: 7,
     completedLessons: 0,
@@ -141,7 +141,7 @@ export const MOCK_COURSES: Course[] = [
     category: TheologyCategory.BIBLICAL,
     // Fixed: Property updated from DOCTOR to DMIN
     level: AcademicLevel.DMIN,
-    thumbnail: 'https://images.unsplash.com/photo-1535905557558-afc4877a26fc?auto=format&fit=crop&w=1000&q=80', // Dramatic Sky/Light theme
+    thumbnail: courseThumbnail('c_revelation', TheologyCategory.BIBLICAL),
     progress: 0,
     totalLessons: 23,
     completedLessons: 0,
@@ -153,7 +153,7 @@ export const MOCK_COURSES: Course[] = [
     instructor: '李恩慈牧师',
     category: TheologyCategory.PRACTICAL,
     // no level => 信徒装备 bucket
-    thumbnail: 'https://images.unsplash.com/photo-1519491050282-cf00c82424b4?auto=format&fit=crop&w=1000&q=80',
+    thumbnail: courseThumbnail('c_basics', TheologyCategory.PRACTICAL),
     progress: 0,
     totalLessons: 8,
     completedLessons: 0,
@@ -163,7 +163,7 @@ export const MOCK_COURSES: Course[] = [
     title: '认识圣经：旧约新约导论',
     instructor: '王恩光教授',
     category: TheologyCategory.BIBLICAL,
-    thumbnail: 'https://images.unsplash.com/photo-1499209974431-9dddcece7f88?auto=format&fit=crop&w=1000&q=80',
+    thumbnail: courseThumbnail('c_bible_intro', TheologyCategory.BIBLICAL),
     progress: 0,
     totalLessons: 12,
     completedLessons: 0,
@@ -173,7 +173,7 @@ export const MOCK_COURSES: Course[] = [
     title: '门徒训练：跟随主的脚踪',
     instructor: '陈恩典牧师',
     category: TheologyCategory.PRACTICAL,
-    thumbnail: 'https://images.unsplash.com/photo-1485808191679-5f86510681a2?auto=format&fit=crop&w=1000&q=80',
+    thumbnail: courseThumbnail('c_disciple', TheologyCategory.PRACTICAL),
     progress: 0,
     totalLessons: 10,
     completedLessons: 0,
@@ -183,7 +183,7 @@ export const MOCK_COURSES: Course[] = [
     title: '祷告与灵修生活',
     instructor: '林恩光师母',
     category: TheologyCategory.PRACTICAL,
-    thumbnail: 'https://images.unsplash.com/photo-1507692049790-de58290a4334?auto=format&fit=crop&w=1000&q=80',
+    thumbnail: courseThumbnail('c_prayer', TheologyCategory.PRACTICAL),
     progress: 0,
     totalLessons: 6,
     completedLessons: 0,

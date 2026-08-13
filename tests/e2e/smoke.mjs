@@ -10,12 +10,30 @@
 // Requires Google Chrome installed (used via puppeteer-core, no browser download).
 
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import puppeteer from 'puppeteer-core';
 
-const CHROME =
-  process.env.CHROME_PATH ||
-  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+// Locate a Chromium-based browser per platform (Edge works too — puppeteer-core
+// only needs a Chromium binary). Override with CHROME_PATH if autodetect fails.
+const CHROME_CANDIDATES =
+  process.platform === 'win32'
+    ? [
+        'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+        `${process.env.LOCALAPPDATA || ''}\\Google\\Chrome\\Application\\chrome.exe`,
+        'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+        'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+      ]
+    : process.platform === 'darwin'
+      ? ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome']
+      : ['/usr/bin/google-chrome', '/usr/bin/chromium-browser', '/usr/bin/chromium'];
+
+const CHROME = process.env.CHROME_PATH || CHROME_CANDIDATES.find((p) => existsSync(p));
+if (!CHROME) {
+  console.error('No Chrome/Edge found — set CHROME_PATH to a Chromium browser executable.');
+  process.exit(1);
+}
 const PROVIDED_URL = process.env.BASE_URL;
 const PORT = 4173;
 const URL = PROVIDED_URL || `http://localhost:${PORT}/`;
@@ -37,7 +55,9 @@ const record = (name, ok, detail = '') => {
 let server = null;
 async function startServer() {
   if (PROVIDED_URL) return;
-  server = spawn('npm', ['run', 'preview'], { cwd: process.cwd(), stdio: 'ignore' });
+  // Spawn vite via its JS entry with the current Node binary — `spawn('npm')`
+  // is ENOENT on Windows (npm is npm.cmd there).
+  server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', 'preview'], { cwd: process.cwd(), stdio: 'ignore' });
   // wait for the port to answer
   for (let i = 0; i < 40; i++) {
     try {

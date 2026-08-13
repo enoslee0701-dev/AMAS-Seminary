@@ -3,6 +3,7 @@ import { Lock, GraduationCap, UserPlus, LogIn, CheckCircle2, ShieldCheck, UserCh
 import { useTranslation } from 'react-i18next';
 import { AcademicLevel } from '../types';
 import { register as apiRegister, login as apiLogin, type PublicUser } from '../services/authService';
+import { initialAvatar } from '../services/imageFallback';
 
 interface AuthViewProps {
   onLogin: (userData: any) => void;
@@ -52,7 +53,7 @@ const AuthView: React.FC<AuthViewProps> = ({ onLogin }) => {
     email: user.email,
     role: user.role,
     degree: user.degree ?? (mode === 'register' ? selectedLevel : 'M.Div'),
-    avatar: user.avatar ?? `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=random`,
+    avatar: user.avatar ?? initialAvatar(user.id, user.name),
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -103,7 +104,7 @@ const AuthView: React.FC<AuthViewProps> = ({ onLogin }) => {
       email: 'admin@amas.hk',
       degree: '教务管理',
       role: 'admin',
-      avatar: 'https://ui-avatars.com/api/?name=Admin&background=1e3a8a&color=fff&bold=true',
+      avatar: initialAvatar('admin', '管理员'),
     });
   };
 

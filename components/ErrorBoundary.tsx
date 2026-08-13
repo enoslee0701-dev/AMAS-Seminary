@@ -22,10 +22,6 @@ interface ErrorBoundaryState {
  * handled with explicit try/catch by the calling code.
  */
 class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  // Explicit field declarations because this project does not ship @types/react,
-  // so React.Component's inherited members aren't visible to tsc.
-  declare props: ErrorBoundaryProps;
-  declare setState: (s: Partial<ErrorBoundaryState> | ((p: ErrorBoundaryState) => Partial<ErrorBoundaryState>)) => void;
   state: ErrorBoundaryState = { hasError: false, error: null, componentStack: null, showDetails: false };
 
   constructor(props: ErrorBoundaryProps) {

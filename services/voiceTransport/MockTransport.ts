@@ -10,6 +10,7 @@ import type {
   VoiceTransport,
   VoiceTransportEvents,
 } from './types';
+import { initialAvatar } from '../imageFallback';
 
 type Subscriber = Partial<VoiceTransportEvents>;
 
@@ -17,12 +18,12 @@ type Subscriber = Partial<VoiceTransportEvents>;
 // existing hardcoded 9-person roster in components/VoiceRoom — these are
 // meant to feel like *remote* peers joining over the network.
 const MOCK_ROSTER: ReadonlyArray<Omit<ParticipantInfo, 'isSpeaking' | 'isMuted'>> = [
-  { id: 'remote-wang',   name: '王牧师',   avatar: 'https://i.pravatar.cc/120?img=12', role: 'host' },
-  { id: 'remote-li',     name: '李姊妹',   avatar: 'https://i.pravatar.cc/120?img=47', role: 'speaker' },
-  { id: 'remote-daniel', name: 'Daniel',  avatar: 'https://i.pravatar.cc/120?img=33', role: 'speaker' },
-  { id: 'remote-mary',   name: 'Mary',    avatar: 'https://i.pravatar.cc/120?img=45', role: 'member' },
-  { id: 'remote-zhang',  name: '张弟兄',   avatar: 'https://i.pravatar.cc/120?img=15', role: 'listener' },
-  { id: 'remote-grace',  name: 'Grace',   avatar: 'https://i.pravatar.cc/120?img=49', role: 'member' },
+  { id: 'remote-wang',   name: '王牧师',   avatar: initialAvatar('remote-wang', '王牧师'), role: 'host' },
+  { id: 'remote-li',     name: '李姊妹',   avatar: initialAvatar('remote-li', '李姊妹'), role: 'speaker' },
+  { id: 'remote-daniel', name: 'Daniel',  avatar: initialAvatar('remote-daniel', 'Daniel'), role: 'speaker' },
+  { id: 'remote-mary',   name: 'Mary',    avatar: initialAvatar('remote-mary', 'Mary'), role: 'member' },
+  { id: 'remote-zhang',  name: '张弟兄',   avatar: initialAvatar('remote-zhang', '张弟兄'), role: 'listener' },
+  { id: 'remote-grace',  name: 'Grace',   avatar: initialAvatar('remote-grace', 'Grace'), role: 'member' },
 ];
 
 // How many of the roster to use per session. Picked once at join time so the
@@ -70,7 +71,7 @@ export class MockTransport implements VoiceTransport {
     const local: ParticipantInfo = {
       id: userId,
       name: userName,
-      avatar: `https://i.pravatar.cc/120?u=${encodeURIComponent(userId)}`,
+      avatar: initialAvatar(userId, userName),
       isSpeaking: false,
       isMuted: !this.micEnabled,
       role: 'member',

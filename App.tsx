@@ -532,6 +532,12 @@ const App: React.FC = () => {
              setViewingUserProfile(null);
              handleChatClick(id);
           }}
+          onViewFeed={() => {
+             // The global modal has no per-user feed overlay (that lives in
+             // CommunityView), so route to the community tab instead.
+             setViewingUserProfile(null);
+             setCurrentView(ViewState.COMMUNITY);
+          }}
         />
       )}
 

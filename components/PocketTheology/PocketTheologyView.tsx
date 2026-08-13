@@ -14,6 +14,7 @@ import {
   Heart, Calendar, HandHeart, Zap, Lock, Lightbulb, Map, Crown, Globe, Compass,
   Cross, Activity, Eye, Anchor, Sun, Wind, Hammer, Church, Search, Play,
 } from 'lucide-react';
+import { stockImage } from '../../services/imageFallback';
 
 import type {
   PTLevel, PTTradition, PTTopic, PTStep, PTLesson, PTBadge,
@@ -687,7 +688,7 @@ const PocketTheologyView: React.FC<Props> = ({ onBack }) => {
 
           {/* Hero — recommended next lesson */}
           <section className="relative overflow-hidden rounded-3xl text-white" style={{ background: 'linear-gradient(135deg,#04285F 0%,#0A3878 50%,#0F4690 100%)' }}>
-            <div className="absolute right-0 top-0 bottom-0 w-32 opacity-20 pointer-events-none" style={{ backgroundImage: 'url(https://images.unsplash.com/photo-1507842217343-583bb7270b66?auto=format&fit=crop&w=600&q=70)', backgroundSize: 'cover', backgroundPosition: 'center' }} />
+            <div className="absolute right-0 top-0 bottom-0 w-32 opacity-20 pointer-events-none" style={{ backgroundImage: `url(${stockImage('study')})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
             <div className="relative p-5">
               <div className="flex items-center mb-1.5" style={{ gap: 6 }}>
                 <Sparkles size={14} className="text-[#E8C98C]" />
@@ -3015,7 +3016,7 @@ const PocketTheologyView: React.FC<Props> = ({ onBack }) => {
             <>
               {/* Hero stats */}
               <section className="relative overflow-hidden rounded-3xl text-white" style={{ background: 'linear-gradient(135deg,#04285F 0%,#0A3878 50%,#0F4690 100%)' }}>
-                <div className="absolute right-0 top-0 bottom-0 w-32 opacity-15 pointer-events-none" style={{ backgroundImage: 'url(https://images.unsplash.com/photo-1507842217343-583bb7270b66?auto=format&fit=crop&w=600&q=70)', backgroundSize: 'cover', backgroundPosition: 'center' }} />
+                <div className="absolute right-0 top-0 bottom-0 w-32 opacity-15 pointer-events-none" style={{ backgroundImage: `url(${stockImage('study')})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
                 <div className="relative p-5">
                   <p className="text-[10px] font-black tracking-widest text-[#E8C98C] uppercase mb-1">本周成长</p>
                   <h2 className="text-[26px] font-black leading-tight">完成 {weekLessons.length} 关</h2>

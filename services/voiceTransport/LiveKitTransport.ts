@@ -23,6 +23,7 @@ import type {
   VoiceTransport,
   VoiceTransportEvents,
 } from './types';
+import { initialAvatar } from '../imageFallback';
 
 interface TokenResponse {
   url: string;
@@ -75,7 +76,7 @@ function toParticipantInfo(p: Participant, isSpeakingOverride?: boolean): Partic
   return {
     id: p.identity,
     name: p.name || p.identity,
-    avatar: `https://i.pravatar.cc/120?u=${encodeURIComponent(p.identity)}`,
+    avatar: initialAvatar(p.identity, p.name || p.identity),
     isSpeaking: isSpeakingOverride ?? Boolean(p.isSpeaking),
     isMuted,
     role: inferRole(p),

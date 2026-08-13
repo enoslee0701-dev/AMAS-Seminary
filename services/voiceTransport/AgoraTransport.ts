@@ -14,8 +14,8 @@
 //   - Agora has NO standard participant-metadata field. There is no built-in
 //     way to carry a display name / avatar / role with a uid. We therefore
 //     default role to 'member', use the uid as both `id` and `name`, and
-//     derive the avatar from the uid via pravatar (same convention as Mock
-//     and LiveKit transports). For production-grade names + roles, layer
+//     derive the avatar from the uid via a local initials SVG (same
+//     convention as Mock and LiveKit). For production-grade names + roles, layer
 //     Agora RTM or your own signaling channel keyed by uid — out of scope
 //     for this transport.
 //
@@ -35,6 +35,7 @@ import type {
   VoiceTransport,
   VoiceTransportEvents,
 } from './types';
+import { initialAvatar } from '../imageFallback';
 
 interface AgoraTokenResponse {
   appId: string;
@@ -83,7 +84,7 @@ function toParticipantInfo(
     // Consumers that need a friendlier name should overlay one via RTM or
     // their own user store keyed by id.
     name: id,
-    avatar: `https://i.pravatar.cc/120?u=${encodeURIComponent(id)}`,
+    avatar: initialAvatar(id, id),
     isSpeaking,
     isMuted,
     role: 'member',

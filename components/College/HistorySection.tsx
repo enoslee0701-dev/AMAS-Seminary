@@ -7,6 +7,7 @@ import {
   ChevronLeft, ShieldCheck, Quote, Sword, Scale, Briefcase,
   User, Globe2, Mail
 } from 'lucide-react';
+import { initialAvatar } from '../../services/imageFallback';
 
 interface SubViewProps {
   onBack: () => void;
@@ -30,7 +31,7 @@ export const DeanMessageView = ({ onBack }: SubViewProps) => (
 
           <div className="flex flex-col items-center mb-6 relative z-10">
              <div className="w-20 h-20 rounded-full bg-slate-200 mb-3 border-4 border-slate-50 shadow-lg overflow-hidden">
-                <img src="https://ui-avatars.com/api/?name=HR+Kim&background=1e3a8a&color=fff&size=200" alt="院长" className="w-full h-full object-cover" />
+                <img src={initialAvatar('dean-hr-kim', 'HR Kim')} alt="院长" className="w-full h-full object-cover" />
              </div>
              <h3 className="text-lg font-bold text-slate-900">HR. KIM 牧师</h3>
              <p className="text-xs text-blue-600 uppercase tracking-widest font-bold mt-1 bg-blue-50 px-3 py-1 rounded-full">AMAS 院长</p>
@@ -373,7 +374,7 @@ export const FacultyView = ({ onBack }: SubViewProps) => {
                <div key={prof.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center group hover:shadow-md transition-all">
                   <div className="w-12 h-12 rounded-full bg-slate-100 border-2 border-white shadow-sm flex items-center justify-center text-slate-500 font-bold text-sm shrink-0 mr-4 overflow-hidden">
                       <img
-                        src={`https://ui-avatars.com/api/?name=${prof.name}&background=${prof.id % 2 === 0 ? '1e3a8a' : '0f766e'}&color=fff&size=128`}
+                        src={initialAvatar(`faculty-${prof.id}`, prof.name)}
                         alt={prof.name}
                         className="w-full h-full object-cover"
                       />

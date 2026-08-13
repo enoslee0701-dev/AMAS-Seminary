@@ -9,6 +9,7 @@ import {
   List,
   Cross, Church, Globe
 } from 'lucide-react';
+import { stockImage } from '../../services/imageFallback';
 
 interface HeroSectionProps {
   onBack?: () => void;
@@ -63,28 +64,28 @@ export const HeroSection = ({ onBack, onItemClick }: HeroSectionProps) => {
       id: 'intro',
       title: '学院简介',
       subtitle: 'Introduction',
-      image: 'https://images.unsplash.com/photo-1541829070764-84a7d30dd3f3?auto=format&fit=crop&w=1000&q=80', // Architectural
+      image: stockImage('hero'),
       items: ['院长致辞', '目的异象', '教育方向', '信仰告白', '学校组织', '师资团队', '支持学校']
     },
     {
       id: 'study',
       title: '学习指南',
       subtitle: 'Academics',
-      image: 'https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?auto=format&fit=crop&w=1000&q=80', // Study
+      image: stockImage('study'),
       items: ['学科介绍', '学习计划', '入学指南']
     },
     {
       id: 'admission',
       title: '入学和毕业',
       subtitle: 'Admission & Graduation',
-      image: 'https://images.unsplash.com/photo-1523580494863-6f3031224c94?auto=format&fit=crop&w=1000&q=80', // Graduation
+      image: stockImage('announcement'),
       items: ['入学条件', '毕业条件', '入学申请表']
     },
     {
       id: 'life',
       title: '学校生活',
       subtitle: 'Campus Life',
-      image: 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=1000&q=80', // Community
+      image: stockImage('community'),
       items: ['提问解答', '教授评价', '成绩确认', '开具证明']
     }
   ];

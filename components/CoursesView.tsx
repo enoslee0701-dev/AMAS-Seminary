@@ -3,6 +3,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { TheologyCategory, Course, AcademicLevel } from '../types';
 import { Search, Play, FileText, ArrowUpDown, Heart, BookOpen, RefreshCw, Plus, Upload, X, Check, Image as ImageIcon, Edit3, Save, GraduationCap, Layers, Scroll, ArrowLeft, ChevronRight, ChevronDown, Lock, Sparkles, Sprout, Briefcase } from 'lucide-react';
 import { putImageDataURI, useImageUrl } from '../services/imageStore';
+import { courseThumbnail, stockImage } from '../services/imageFallback';
 import { canUploadCourses } from '../services/permissions';
 
 /**
@@ -267,7 +268,7 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
     // bloat localStorage with base64. Falls back to the inline data URI if
     // IDB isn't available.
     let thumbnailImageId: string | undefined;
-    let thumbnail = 'https://images.unsplash.com/photo-1515658323427-4a60751afb94?auto=format&fit=crop&w=1000&q=80';
+    let thumbnail = courseThumbnail(newCourseForm.title || 'new-course', TheologyCategory.BIBLICAL);
     if (newCourseForm.thumbnailPreview) {
       if (newCourseForm.thumbnailPreview.startsWith('data:image/')) {
         const id = await putImageDataURI(newCourseForm.thumbnailPreview);
@@ -784,11 +785,11 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
         };
 
         const categoryFallback: Record<string, string> = {
-          [TheologyCategory.BIBLICAL]:     'https://images.unsplash.com/photo-1504052434569-70ad5836ab65?auto=format&fit=crop&w=400&q=70',
-          [TheologyCategory.SYSTEMATIC]:   'https://images.unsplash.com/photo-1481627834876-b7833e8f5570?auto=format&fit=crop&w=400&q=70',
-          [TheologyCategory.HISTORICAL]:   'https://images.unsplash.com/photo-1548625361-9877073b3796?auto=format&fit=crop&w=400&q=70',
-          [TheologyCategory.PRACTICAL]:    'https://images.unsplash.com/photo-1438032005730-c779502df39b?auto=format&fit=crop&w=400&q=70',
-          [TheologyCategory.MISSIOLOGICAL]:'https://images.unsplash.com/photo-1530092285049-1c42085fd395?auto=format&fit=crop&w=400&q=70',
+          [TheologyCategory.BIBLICAL]:     courseThumbnail(TheologyCategory.BIBLICAL, TheologyCategory.BIBLICAL),
+          [TheologyCategory.SYSTEMATIC]:   courseThumbnail(TheologyCategory.SYSTEMATIC, TheologyCategory.SYSTEMATIC),
+          [TheologyCategory.HISTORICAL]:   courseThumbnail(TheologyCategory.HISTORICAL, TheologyCategory.HISTORICAL),
+          [TheologyCategory.PRACTICAL]:    courseThumbnail(TheologyCategory.PRACTICAL, TheologyCategory.PRACTICAL),
+          [TheologyCategory.MISSIOLOGICAL]:courseThumbnail(TheologyCategory.MISSIOLOGICAL, TheologyCategory.MISSIOLOGICAL),
         };
         const thumbFor = (c: Course) => c.thumbnail || categoryFallback[c.category] || categoryFallback[TheologyCategory.BIBLICAL];
         const tintFor = (c: Course): string => {
@@ -827,7 +828,7 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
             titleColor: '#1F4530', subColor: '#3D6648', descColor: '#2A5238',
             baseColor: '#DCEFCB',
             baseColorTransparent: 'rgba(220,239,203,0)',
-            image: 'https://images.unsplash.com/photo-1504052434569-70ad5836ab65?auto=format&fit=crop&w=600&q=70',
+            image: stockImage('study'),
           },
           {
             value: '硕士', label: '硕士课程', sub: 'M.Div. | M.Pth.',
@@ -836,7 +837,7 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
             titleColor: '#1B3A6B', subColor: '#3E5F8C', descColor: '#23498A',
             baseColor: '#D4E3F4',
             baseColorTransparent: 'rgba(212,227,244,0)',
-            image: 'https://images.unsplash.com/photo-1523580494863-6f3031224c94?auto=format&fit=crop&w=600&q=70',
+            image: stockImage('hero'),
           },
           {
             value: '博士', label: '博士课程', sub: 'D.Min. | Ph.D.',
@@ -845,7 +846,7 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
             titleColor: '#3F1E70', subColor: '#664798', descColor: '#4A2A86',
             baseColor: '#E0D4F0',
             baseColorTransparent: 'rgba(224,212,240,0)',
-            image: 'https://images.unsplash.com/photo-1481627834876-b7833e8f5570?auto=format&fit=crop&w=600&q=70',
+            image: stockImage('announcement'),
           },
           {
             value: 'pocket', label: '口袋神学', sub: 'Pocket Theology',
@@ -854,7 +855,7 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
             titleColor: '#7A4A0F', subColor: '#9A6B1D', descColor: '#7A4A0F',
             baseColor: '#F8DEB8',
             baseColorTransparent: 'rgba(248,222,184,0)',
-            image: 'https://images.unsplash.com/photo-1507842217343-583bb7270b66?auto=format&fit=crop&w=600&q=70',
+            image: stockImage('fellowship'),
             route: 'pocket' as const,
           },
         ];
@@ -951,7 +952,7 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
                   className="absolute inset-y-0 right-0 pointer-events-none"
                   style={{
                     width: '60%',
-                    backgroundImage: "url('https://images.unsplash.com/photo-1519834785169-98be25ec3f84?auto=format&fit=crop&w=900&q=70')",
+                    backgroundImage: `url('${stockImage('hero')}')`,
                     backgroundSize: 'cover',
                     backgroundPosition: 'center right',
                     opacity: 0.85,

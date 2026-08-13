@@ -143,7 +143,11 @@ before(async () => {
     DB_PATH: ':memory:',
   };
 
-  serverProcess = spawn('npx', ['tsx', 'src/server.ts'], {
+  // Spawn tsx via its JS entry with the current Node binary. `spawn('npx', ...)`
+  // breaks on Windows: npx is npx.cmd there, which child_process refuses to
+  // execute without a shell (and silently never starts the server).
+  const tsxCli = path.join(BACKEND_ROOT, 'node_modules', 'tsx', 'dist', 'cli.mjs');
+  serverProcess = spawn(process.execPath, [tsxCli, 'src/server.ts'], {
     cwd: BACKEND_ROOT,
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
