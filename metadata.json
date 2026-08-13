@@ -1,0 +1,9 @@
+{
+  "name": "AMAS - Asian Missionary Theological Seminary",
+  "description": "A comprehensive mobile-first portal for AMAS students and alumni, featuring theological courses, spiritual formation tools, social community, and AI-assisted theological research.",
+  "requestFramePermissions": [
+    "microphone",
+    "camera"
+  ],
+  "majorCapabilities": []
+}

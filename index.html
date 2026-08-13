@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <title>AMAS - Asian Missionary Theological Seminary</title>
+    <!-- Inline SVG favicon (AMAS monogram) — avoids a /favicon.ico 404 on every load. -->
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2304285F'/%3E%3Ctext x='16' y='23' font-size='19' font-family='Georgia,serif' font-weight='700' fill='%23E8C98C' text-anchor='middle'%3EA%3C/text%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Cormorant+Infant:ital,wght@0,500;0,600;0,700;1,500&display=swap" rel="stylesheet" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      /* Custom scrollbar for cleaner mobile look */
+      ::-webkit-scrollbar {
+        width: 4px;
+        height: 4px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #f1f1f1; 
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #cbd5e1; 
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #94a3b8; 
+      }
+      html, body {
+        background-color: #F7F6F3;
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      /* Squircle Avatar Style - Standard App Icon Look */
+      .rounded-squircle {
+        border-radius: 32%;
+        aspect-ratio: 1 / 1;
+        object-fit: cover;
+      }
+
+      /* Safe Area Utilities — must clear Dynamic Island (~59px) */
+      .pt-safe-top {
+        padding-top: max(env(safe-area-inset-top, 47px), 47px) !important;
+      }
+      .pb-safe-area {
+        padding-bottom: env(safe-area-inset-bottom);
+      }
+      .pt-content-safe {
+        padding-top: calc(max(env(safe-area-inset-top, 47px), 47px) + 60px) !important;
+      }
+      /* Sticky page header that clears Dynamic Island / notch */
+      .app-sticky-header {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        padding-top: max(env(safe-area-inset-top, 47px), 47px);
+      }
+      
+      /* Scrollbar Hide Utility */
+      .scrollbar-hide::-webkit-scrollbar {
+          display: none;
+      }
+      .scrollbar-hide {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+      }
+
+      /* Animations */
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      .animate-fade-in {
+        animation: fadeIn 0.3s ease-out forwards;
+      }
+
+      @keyframes slideUp {
+        from { transform: translateY(100%); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
+      }
+      .animate-slide-up {
+        animation: slideUp 0.3s ease-out forwards;
+      }
+
+      @keyframes slideInRight {
+        from { transform: translateX(100%); }
+        to { transform: translateX(0); }
+      }
+      .animate-slide-in-right {
+        animation: slideInRight 0.3s ease-out forwards;
+      }
+
+      @keyframes fadeInUp {
+        from { transform: translateY(10px); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
+      }
+      .animate-fade-in-up {
+        animation: fadeInUp 0.4s ease-out forwards;
+      }
+
+      @keyframes scaleIn {
+        from { transform: scale(0.95); opacity: 0; }
+        to { transform: scale(1); opacity: 1; }
+      }
+      .animate-scale-in {
+        animation: scaleIn 0.2s ease-out forwards;
+      }
+
+      @keyframes bounceSubtle {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-5px); }
+      }
+      .animate-bounce-subtle {
+        animation: bounceSubtle 2s infinite;
+      }
+      
+      @keyframes widthGrow {
+        from { width: 0; }
+        to { width: 100%; }
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0",
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.554.0",
+    "recharts": "https://aistudiocdn.com/recharts@^3.4.1",
+    "react-dom": "https://aistudiocdn.com/react-dom@^19.2.0"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body>
+    <div id="root"></div>
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>

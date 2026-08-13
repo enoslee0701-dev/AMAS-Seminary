@@ -1,0 +1,17 @@
+# Excluded from the docker build context entirely.
+node_modules
+dist
+recordings
+.env
+.env.local
+*.test.ts
+**/*.test.ts
+.git
+.gitignore
+.vscode
+.idea
+npm-debug.log*
+yarn-error.log
+Dockerfile
+.dockerignore
+README.md

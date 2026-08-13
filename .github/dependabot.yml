@@ -1,0 +1,36 @@
+version: 2
+updates:
+  # GitHub Actions — monthly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  # Frontend npm (repo root) — weekly
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      frontend-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  # Backend npm — weekly
+  - package-ecosystem: npm
+    directory: /backend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      backend-minor-patch:
+        update-types:
+          - minor
+          - patch

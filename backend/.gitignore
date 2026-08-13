@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.env
+.env.local
+
+# SQLite persistence (wave-1) — never commit the database file or its
+# WAL/SHM sidecars.
+data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# Local uploads (avatars, recordings) — see `uploads/` and any
+# future media folders.
+uploads/
+recordings/

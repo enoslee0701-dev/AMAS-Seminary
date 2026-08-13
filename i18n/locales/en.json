@@ -1,0 +1,105 @@
+{
+  "nav": {
+    "home": "Home",
+    "courses": "Courses",
+    "community": "Community",
+    "library": "Library",
+    "profile": "Profile"
+  },
+  "auth": {
+    "title": "Asia Missionary Theological Seminary",
+    "subtitle": "Asia Missionary Association Seminary",
+    "footer": "Asia Missionary Association Seminary",
+    "secureGateway": "Secure Academic Gateway",
+    "adminQuickEntry": "Admin Quick Entry",
+    "adminBadge": "Admin",
+    "tabs": {
+      "register": "Quick Register",
+      "login": "Sign In"
+    },
+    "fields": {
+      "name": "Name",
+      "namePlaceholder": "Your real name",
+      "email": "Email",
+      "emailPlaceholder": "you@example.com",
+      "password": "Password",
+      "passwordRegisterPlaceholder": "At least 8 chars, letters and numbers",
+      "passwordLoginPlaceholder": "••••••••",
+      "identity": "Identity & Degree"
+    },
+    "validation": {
+      "emailRequired": "Please enter your email",
+      "emailInvalid": "Invalid email format",
+      "passwordRequired": "Please enter your password",
+      "passwordTooShort": "Password must be at least 8 characters",
+      "passwordComplexity": "Password must contain letters and numbers",
+      "nameRequired": "Please enter your name",
+      "nameTooLong": "Name can be at most 64 characters"
+    },
+    "errors": {
+      "network": "Network error, please try again later",
+      "emailExists": "This email is already registered. Please sign in.",
+      "invalidCredentials": "Incorrect email or password",
+      "noConnection": "Cannot reach server, please check your connection"
+    },
+    "buttons": {
+      "register": "Join AMAS Now",
+      "login": "Sign in to AMAS",
+      "professorApply": "I am a professor — apply for verification",
+      "submitApplication": "Submit Professor Application",
+      "backToLogin": "Back to Sign In"
+    },
+    "professor": {
+      "notice": "Professor accounts require review by the Academic Office. Once approved, the admin team will enable your privileges.",
+      "applicantName": "Applicant Name",
+      "contact": "Contact",
+      "contactPlaceholder": "Used for review results (email or phone)",
+      "submitted": "Application Submitted",
+      "submittedDesc": "The Academic Office will review your application within 3-5 business days. Results will be sent to the contact you provided."
+    }
+  },
+  "voiceRoom": {
+    "header": {
+      "minimize": "Minimize Room",
+      "settings": "Room Settings"
+    },
+    "mic": {
+      "turnOn": "Turn on microphone",
+      "turnOff": "Turn off microphone",
+      "raiseHand": "Raise hand to speak"
+    },
+    "pill": {
+      "endRoom": "End Room",
+      "leaveRoom": "Leave Room"
+    },
+    "recording": {
+      "complete": "Recording Complete",
+      "savedToLibrary": "Recording saved to your library",
+      "defaultTitle": "Sunday Sermon",
+      "uploading": "Uploading…",
+      "shareToCommunity": "Share to Community",
+      "saveOnly": "Save Only"
+    }
+  },
+  "errorBoundary": {
+    "title": "Something went wrong",
+    "description": "Sorry, the app just ran into a problem. You can try reloading or contact support.",
+    "viewDetails": "View Details",
+    "reload": "Reload",
+    "contactSupport": "Contact Support",
+    "unknownError": "Unknown error"
+  },
+  "toast": {
+    "welcomeBack": "Welcome back, {{name}}",
+    "adminWelcome": "Welcome to the admin console, {{name}}",
+    "logoutSuccess": "Signed out successfully",
+    "roomEnded": "Room ended"
+  },
+  "profile": {
+    "settings": {
+      "language": "语言 / Language",
+      "languageZh": "中文",
+      "languageEn": "English"
+    }
+  }
+}

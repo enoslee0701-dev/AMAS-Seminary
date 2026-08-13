@@ -1,0 +1,399 @@
+
+import React, { useEffect, useRef, useState } from 'react';
+import { Search, BookOpen, Bot, Send, X, FileText, Headphones, Download, Star } from 'lucide-react';
+import { generateTheologicalResponse } from '../services/geminiService';
+import {
+  listBooks as apiListBooks,
+  listFavorites as apiListFavorites,
+  toggleFavorite as apiToggleFavorite,
+  type ClientBook,
+} from '../services/libraryService';
+
+type BookType = '电子书' | '有声书' | 'PDF';
+
+// Local UI book type — `id` is `string | number` to keep the existing mock
+// data working alongside backend-issued UUID strings. The component
+// otherwise treats both shapes identically.
+interface Book {
+  id: string | number;
+  title: string;
+  author: string;
+  type: BookType;
+  category: '神学藏书' | '宣教资料库';
+  description: string;
+  icon: typeof FileText;
+}
+
+// Fallback mock list (formerly the hardcoded `books` array). Used when
+// the backend is unconfigured / unreachable / empty.
+const FALLBACK_BOOKS: Book[] = [
+  { id: 1, title: "系统神学 (Grudem)", author: "韦恩·格鲁登", type: "电子书", category: '神学藏书', description: '美国神学家韦恩·格鲁登所著系统神学经典教材，涵盖圣经神学与教义全貌。', icon: FileText },
+  { id: 2, title: "做门徒的代价", author: "潘霍华", type: "有声书", category: '神学藏书', description: '德国神学家潘霍华关于真门徒身分与廉价恩典之分的经典阐释。', icon: Headphones },
+  { id: 3, title: "基督教要义", author: "加尔文", type: "PDF", category: '神学藏书', description: '改革宗神学奠基之作，加尔文系统阐明信仰真理与神的主权。', icon: FileText },
+  { id: 4, title: "宣教中的神", author: "Christopher Wright", type: "电子书", category: '宣教资料库', description: '从圣经神学角度重新理解宣教，圣经叙事的宣教中心论。', icon: FileText },
+  { id: 5, title: "回应宣教呼召", author: "John Stott", type: "PDF", category: '宣教资料库', description: '斯托得对当代基督徒回应宣教呼召的圣经辩证与实践指引。', icon: FileText },
+];
+
+const SEARCH_DEBOUNCE_MS = 300;
+
+const LibraryView: React.FC = () => {
+  const [isAiOpen, setIsAiOpen] = useState(false);
+  const [aiQuery, setAiQuery] = useState("");
+  const [aiResponse, setAiResponse] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeCategory, setActiveCategory] = useState<'全部' | '神学藏书' | '宣教资料库'>('全部');
+  const [previewBook, setPreviewBook] = useState<Book | null>(null);
+  const [books, setBooks] = useState<Book[]>(FALLBACK_BOOKS);
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const [toast, setToast] = useState<string | null>(null);
+
+  // Boot-time hydrate: fetch the live catalog + this user's favorites.
+  // If the backend returns an empty list or fails, we keep the fallback
+  // mocks so the UI remains usable in offline / unconfigured envs.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const serverBooks = await apiListBooks();
+      if (cancelled) return;
+      if (serverBooks && serverBooks.length > 0) {
+        setBooks(serverBooks.map(toLocalBook));
+      }
+      // Favorites are per-user; listFavorites() returns [] when not
+      // logged in / backend unreachable so it's safe to seed unconditionally.
+      const favIds = await apiListFavorites();
+      if (cancelled) return;
+      if (favIds.length > 0) setFavorites(new Set(favIds));
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Debounced server-side search. We re-query `/api/library/books?q=` on
+  // each pause in typing; the client-side filter below still runs over the
+  // returned list so category filtering keeps working. Skipped when the
+  // backend isn't returning data (FALLBACK_BOOKS path).
+  const debounceRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (debounceRef.current !== null) {
+      window.clearTimeout(debounceRef.current);
+    }
+    debounceRef.current = window.setTimeout(async () => {
+      const serverBooks = await apiListBooks(searchQuery);
+      if (serverBooks && serverBooks.length > 0) {
+        setBooks(serverBooks.map(toLocalBook));
+      }
+      // If the server returns null (unconfigured) or empty, we leave the
+      // current `books` state alone so the local mock filter still works.
+    }, SEARCH_DEBOUNCE_MS);
+    return () => {
+      if (debounceRef.current !== null) {
+        window.clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+      }
+    };
+  }, [searchQuery]);
+
+  const handleAiAsk = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!aiQuery.trim()) return;
+    setLoading(true);
+    setAiResponse("");
+    try {
+      const TIMEOUT_MS = 15000;
+      const timeoutPromise = new Promise<string>((_, reject) =>
+        window.setTimeout(() => reject(new Error('timeout')), TIMEOUT_MS)
+      );
+      const response = await Promise.race([
+        generateTheologicalResponse(aiQuery),
+        timeoutPromise,
+      ]);
+      setAiResponse(response);
+    } catch {
+      setAiResponse('暂时无法生成回答，请稍后重试');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /**
+   * Bookmark/favorite toggle with optimistic flip. Reverts on backend
+   * failure and surfaces a small toast so the user knows the action
+   * didn't persist. Numeric (fallback-mock) ids are flipped locally
+   * only — the backend has no record of them.
+   */
+  const handleToggleFavorite = async (bookId: string | number) => {
+    const key = String(bookId);
+    const wasFav = favorites.has(key);
+    // Optimistic flip.
+    setFavorites(prev => {
+      const next = new Set(prev);
+      if (wasFav) next.delete(key); else next.add(key);
+      return next;
+    });
+    // Only call the backend for server-issued (string) ids. Numeric mock
+    // ids belong to FALLBACK_BOOKS and don't exist server-side.
+    if (typeof bookId !== 'string') return;
+    const result = await apiToggleFavorite(bookId);
+    if (result === null) {
+      // Revert.
+      setFavorites(prev => {
+        const next = new Set(prev);
+        if (wasFav) next.add(key); else next.delete(key);
+        return next;
+      });
+      setToast('收藏失败，请稍后再试');
+      window.setTimeout(() => setToast(null), 2200);
+      return;
+    }
+    // Reconcile with server truth in case it differed (rare).
+    setFavorites(prev => {
+      const next = new Set(prev);
+      if (result.favorited) next.add(key); else next.delete(key);
+      return next;
+    });
+  };
+
+  const counts = {
+    '神学藏书': books.filter(b => b.category === '神学藏书').length,
+    '宣教资料库': books.filter(b => b.category === '宣教资料库').length,
+  };
+
+  const q = searchQuery.toLowerCase();
+  const filteredBooks = books.filter(b =>
+    (activeCategory === '全部' || b.category === activeCategory)
+    && (!q || b.title.toLowerCase().includes(q) || b.author.toLowerCase().includes(q) || b.type.toLowerCase().includes(q))
+  );
+
+  return (
+    <div className="pb-24 min-h-screen bg-slate-50 relative">
+      {/* Search Header - Deep Blue Gradient */}
+      <div className="bg-gradient-to-br from-blue-900 to-blue-700 pt-safe-top px-6 pb-6 rounded-b-2xl text-white shadow-lg sticky top-0 z-20">
+        <h2 className="text-lg font-bold mb-1">AMAS 电子图书馆</h2>
+        <p className="text-blue-200 text-[10px] mb-4">访问超过 5,000 份神学学术资源</p>
+        <div className="relative">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="搜索书名、作者或神学主题..."
+            className="w-full h-10 pl-10 pr-10 rounded-xl bg-white/10 border border-white/20 placeholder-white/60 text-white text-xs focus:bg-white/20 focus:outline-none focus:border-white/40 transition-all"
+          />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-white/60" size={16} />
+          {searchQuery && (
+            <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-white/10">
+              <X size={14} className="text-white/70" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* AI Assistant FAB */}
+      <div className="px-4 -mt-5 mb-4 flex justify-end relative z-20">
+        <button
+          onClick={() => setIsAiOpen(true)}
+          className="bg-white hover:bg-slate-50 text-blue-900 font-bold py-2 px-4 rounded-full shadow-lg flex items-center space-x-2 transition-transform active:scale-95 border border-blue-100"
+        >
+          <div className="bg-blue-50 p-1 rounded-full">
+            <Bot size={16} className="text-blue-900"/>
+          </div>
+          <span className="text-xs">AI 神学助教</span>
+        </button>
+      </div>
+
+      {/* Categories */}
+      <div className="px-4 grid grid-cols-2 gap-3 mb-4">
+        <button
+          onClick={() => setActiveCategory(activeCategory === '神学藏书' ? '全部' : '神学藏书')}
+          className={`p-4 rounded-xl text-center transition group ${activeCategory === '神学藏书' ? 'bg-blue-900 border border-blue-900' : 'bg-white border border-slate-200 hover:shadow-md hover:border-blue-300'}`}
+        >
+          <div className={`w-10 h-10 mx-auto rounded-full flex items-center justify-center mb-2 transition ${activeCategory === '神学藏书' ? 'bg-white/10 text-white' : 'bg-blue-50 text-blue-900 group-hover:bg-blue-100'}`}>
+             <BookOpen size={20} />
+          </div>
+          <h3 className={`font-bold text-sm ${activeCategory === '神学藏书' ? 'text-white' : 'text-slate-800'}`}>神学藏书</h3>
+          <p className={`text-[10px] mt-1 ${activeCategory === '神学藏书' ? 'text-blue-200' : 'text-slate-500'}`}>{counts['神学藏书']}+ 册</p>
+        </button>
+        <button
+          onClick={() => setActiveCategory(activeCategory === '宣教资料库' ? '全部' : '宣教资料库')}
+          className={`p-4 rounded-xl text-center transition group ${activeCategory === '宣教资料库' ? 'bg-blue-900 border border-blue-900' : 'bg-white border border-slate-200 hover:shadow-md hover:border-blue-300'}`}
+        >
+          <div className={`w-10 h-10 mx-auto rounded-full flex items-center justify-center mb-2 transition ${activeCategory === '宣教资料库' ? 'bg-white/10 text-white' : 'bg-blue-50 text-blue-900 group-hover:bg-blue-100'}`}>
+             <Bot size={20} />
+          </div>
+          <h3 className={`font-bold text-sm ${activeCategory === '宣教资料库' ? 'text-white' : 'text-slate-800'}`}>宣教资料库</h3>
+          <p className={`text-[10px] mt-1 ${activeCategory === '宣教资料库' ? 'text-blue-200' : 'text-slate-500'}`}>{counts['宣教资料库']}+ 册</p>
+        </button>
+      </div>
+
+      {/* Book list */}
+      <div className="px-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-bold text-slate-800 text-sm">
+            {activeCategory === '全部' ? '最近更新资源' : activeCategory}
+          </h3>
+          {(activeCategory !== '全部' || searchQuery) && (
+            <button onClick={() => { setActiveCategory('全部'); setSearchQuery(''); }} className="text-[11px] text-blue-900 font-bold">清除筛选</button>
+          )}
+        </div>
+        <div className="space-y-3">
+          {filteredBooks.length === 0 ? (
+            <div className="bg-white rounded-xl border border-slate-100 py-12 flex flex-col items-center justify-center text-slate-400">
+              <BookOpen size={32} className="opacity-40" />
+              <p className="text-xs mt-3">{searchQuery ? '未找到匹配的资源' : '暂无资源'}</p>
+            </div>
+          ) : filteredBooks.map(book => {
+            const favKey = String(book.id);
+            const isFav = favorites.has(favKey);
+            return (
+             <div
+               key={book.id}
+               className="w-full text-left flex items-center p-3 bg-white rounded-xl border border-slate-200 shadow-sm hover:border-blue-200 transition"
+             >
+                <button
+                  onClick={() => setPreviewBook(book)}
+                  className="flex items-center flex-1 min-w-0 text-left active:scale-[0.99] transition"
+                >
+                  <div className="w-10 h-14 bg-slate-100 rounded border border-slate-200 shrink-0 flex items-center justify-center text-slate-300">
+                      <BookOpen size={18} />
+                  </div>
+                  <div className="ml-4 flex-1 min-w-0">
+                    <div className="flex justify-between items-start">
+                        <h4 className="font-bold text-slate-900 text-sm truncate mr-2">{book.title}</h4>
+                        <book.icon size={14} className="text-slate-400 flex-shrink-0" />
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5 truncate">{book.author}</p>
+                    <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded mt-1 inline-block font-medium">
+                      {book.type}
+                    </span>
+                  </div>
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleToggleFavorite(book.id); }}
+                  aria-label={isFav ? '取消收藏' : '收藏'}
+                  className="ml-2 p-2 rounded-full hover:bg-slate-100 transition active:scale-95"
+                >
+                  <Star
+                    size={18}
+                    className={isFav ? 'text-amber-500' : 'text-slate-300'}
+                    fill={isFav ? 'currentColor' : 'none'}
+                  />
+                </button>
+             </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Optimistic-toggle failure toast */}
+      {toast && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[70] bg-slate-900/90 text-white text-xs px-4 py-2 rounded-full shadow-lg animate-fade-in">
+          {toast}
+        </div>
+      )}
+
+      {/* Book preview modal */}
+      {previewBook && (
+        <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 animate-fade-in" onClick={() => setPreviewBook(null)}>
+          <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl animate-scale-in" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-start mb-4">
+              <div className="flex items-center flex-1 min-w-0">
+                <div className="w-12 h-16 bg-slate-100 rounded-lg border border-slate-200 flex items-center justify-center mr-3 flex-shrink-0">
+                  <BookOpen size={20} className="text-slate-400" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="font-bold text-slate-900 text-base truncate">{previewBook.title}</h3>
+                  <p className="text-[11px] text-slate-500">{previewBook.author}</p>
+                  <span className="text-[9px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded mt-1 inline-block font-bold">{previewBook.type}</span>
+                </div>
+              </div>
+              <button onClick={() => setPreviewBook(null)} className="p-2 rounded-full text-slate-400"><X size={18} /></button>
+            </div>
+            <p className="text-[13px] text-slate-600 leading-relaxed mb-5">{previewBook.description}</p>
+            <div className="flex" style={{ gap: 8 }}>
+              <button onClick={() => setPreviewBook(null)} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold text-sm">关闭</button>
+              <button className="flex-1 py-3 bg-blue-900 text-white rounded-xl font-bold text-sm flex items-center justify-center">
+                <Download size={14} className="mr-1.5" /> {previewBook.type === '有声书' ? '收听' : '阅读'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI Modal Overlay */}
+      {isAiOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fade-in">
+          <div className="bg-white w-full sm:max-w-md h-[85vh] sm:h-[600px] rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-slide-up">
+            <div className="bg-blue-900 p-4 flex justify-between items-center text-white">
+              <div className="flex items-center space-x-3">
+                <div className="bg-white/10 p-1.5 rounded-full">
+                    <Bot size={20} className="text-white" />
+                </div>
+                <h3 className="font-bold text-lg">神学 AI 助手</h3>
+              </div>
+              <button onClick={() => setIsAiOpen(false)} className="text-blue-200 hover:text-white transition">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 bg-slate-50">
+              {!aiResponse && !loading && (
+                <div className="text-center text-slate-400 mt-16">
+                  <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Bot size={32} className="text-slate-300" />
+                  </div>
+                  <p className="font-medium text-slate-600">我是您的学术助手</p>
+                  <p className="text-sm mt-2">请向我提问关于圣经释义、<br/>系统神学概念或教会历史的问题。</p>
+                </div>
+              )}
+              {loading && (
+                 <div className="flex flex-col justify-center items-center h-full text-slate-500">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-900 mb-2"></div>
+                    <span className="text-xs">正在思考神学答案...</span>
+                 </div>
+              )}
+              {aiResponse && (
+                <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 text-slate-800 text-sm leading-7">
+                  <p className="whitespace-pre-wrap">{aiResponse}</p>
+                  <div className="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-400 italic">
+                    注：AI 生成内容仅供学术参考，请查考圣经原文。
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <form onSubmit={handleAiAsk} className="p-4 bg-white border-t border-slate-200 flex gap-2 pb-safe-area">
+              <input
+                value={aiQuery}
+                onChange={(e) => setAiQuery(e.target.value)}
+                type="text"
+                className="flex-1 bg-slate-100 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900 focus:bg-white transition border border-slate-200"
+                placeholder="输入你的神学问题..."
+              />
+              <button
+                type="submit"
+                disabled={loading || !aiQuery.trim()}
+                className="bg-blue-900 text-white p-2.5 rounded-lg disabled:opacity-50 shadow-sm hover:bg-blue-800 transition-colors"
+              >
+                <Send size={20} />
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+/** Map a service ClientBook into the local LibraryView Book shape. */
+function toLocalBook(b: ClientBook): Book {
+  return {
+    id: b.id,
+    title: b.title,
+    author: b.author,
+    type: b.type,
+    category: b.category,
+    description: b.description,
+    icon: b.icon,
+  };
+}
+
+export default LibraryView;

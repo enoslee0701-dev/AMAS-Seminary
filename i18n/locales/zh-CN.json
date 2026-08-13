@@ -1,0 +1,105 @@
+{
+  "nav": {
+    "home": "首页",
+    "courses": "课程",
+    "community": "校友圈",
+    "library": "图书馆",
+    "profile": "我的"
+  },
+  "auth": {
+    "title": "亚洲宣教神学院",
+    "subtitle": "Asia Missionary Association Seminary",
+    "footer": "Asia Missionary Association Seminary",
+    "secureGateway": "Secure Academic Gateway",
+    "adminQuickEntry": "管理员快捷入口",
+    "adminBadge": "Admin",
+    "tabs": {
+      "register": "快速注册",
+      "login": "登录账号"
+    },
+    "fields": {
+      "name": "姓名",
+      "namePlaceholder": "您的真实姓名",
+      "email": "电子邮箱",
+      "emailPlaceholder": "you@example.com",
+      "password": "登录密码",
+      "passwordRegisterPlaceholder": "至少 8 位，含字母和数字",
+      "passwordLoginPlaceholder": "••••••••",
+      "identity": "身份及学位标注"
+    },
+    "validation": {
+      "emailRequired": "请输入邮箱",
+      "emailInvalid": "邮箱格式不正确",
+      "passwordRequired": "请输入密码",
+      "passwordTooShort": "密码至少 8 位",
+      "passwordComplexity": "密码需包含字母和数字",
+      "nameRequired": "请输入姓名",
+      "nameTooLong": "姓名最长 64 个字符"
+    },
+    "errors": {
+      "network": "网络错误，请稍后再试",
+      "emailExists": "该邮箱已注册，请直接登录",
+      "invalidCredentials": "邮箱或密码错误",
+      "noConnection": "无法连接服务器，请检查网络"
+    },
+    "buttons": {
+      "register": "立即加入 AMAS",
+      "login": "登录神学院平台",
+      "professorApply": "我是教授，申请入驻验证",
+      "submitApplication": "提交教授资格申请",
+      "backToLogin": "返回登录"
+    },
+    "professor": {
+      "notice": "教授账号需经教务处严格审核。提交后，后台管理将为您开通专属权限。",
+      "applicantName": "申请人姓名",
+      "contact": "联系方式",
+      "contactPlaceholder": "用于接收审核结果 (邮箱或电话)",
+      "submitted": "申请已提交",
+      "submittedDesc": "教务处将于 3-5 个工作日内审核您的资格申请。审核结果将通过您填写的联系方式通知。"
+    }
+  },
+  "voiceRoom": {
+    "header": {
+      "minimize": "最小化房间",
+      "settings": "房间设置"
+    },
+    "mic": {
+      "turnOn": "打开麦克风",
+      "turnOff": "关闭麦克风",
+      "raiseHand": "举手申请上麦"
+    },
+    "pill": {
+      "endRoom": "结束房间",
+      "leaveRoom": "退出房间"
+    },
+    "recording": {
+      "complete": "讲道录制完成",
+      "savedToLibrary": "录音已自动保存至您的资料库",
+      "defaultTitle": "主日讲道",
+      "uploading": "上传中…",
+      "shareToCommunity": "分享到校友圈",
+      "saveOnly": "仅保存"
+    }
+  },
+  "errorBoundary": {
+    "title": "应用出现异常",
+    "description": "很抱歉，应用刚刚遇到了一个问题。您可以尝试重新加载，或联系技术支持。",
+    "viewDetails": "查看详情",
+    "reload": "重新加载",
+    "contactSupport": "联系支持",
+    "unknownError": "未知错误"
+  },
+  "toast": {
+    "welcomeBack": "欢迎回来，{{name}} 同学",
+    "adminWelcome": "已进入管理员控制台，{{name}}",
+    "logoutSuccess": "已成功退出登录",
+    "roomEnded": "房间已结束"
+  },
+  "profile": {
+    "settings": {
+      "language": "语言 / Language",
+      "languageZh": "中文",
+      "languageEn": "English"
+    }
+  }
+}
