@@ -241,6 +241,16 @@ db.exec(`
     user_id TEXT,
     uploaded_at INTEGER NOT NULL
   );
+
+  -- Pocket Theology per-user state (XP / streak / lesson progress /
+  -- journal / favorites). Stored as one JSON blob per user: the frontend
+  -- owns the merge semantics and the whole state is read & written
+  -- together, so a normalized schema would only add joins.
+  CREATE TABLE IF NOT EXISTS pt_state (
+    user_id TEXT PRIMARY KEY,
+    state_json TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
 `);
 
 /**
@@ -273,5 +283,6 @@ export function resetDb(): void {
     DELETE FROM cooperation_submissions;
     DELETE FROM image_uploads;
     DELETE FROM recordings;
+    DELETE FROM pt_state;
   `);
 }

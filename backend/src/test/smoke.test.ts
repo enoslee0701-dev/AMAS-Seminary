@@ -1609,6 +1609,86 @@ test('GET /api/library/favorites returns the favorited book ids', async () => {
   assert.ok(ids.includes(bookId), `expected ${bookId} in favorites list`);
 });
 
+// ---------------------------------------------------------------------------
+// Pocket Theology state sync tests
+// ---------------------------------------------------------------------------
+
+test('GET /api/pt/state without auth returns 401', async () => {
+  const r = await request('GET', '/api/pt/state');
+  assert.equal(r.status, 401, `expected 401, got ${r.status} body=${r.body}`);
+});
+
+test('PT state round-trip: empty → PUT → GET returns the same state', async () => {
+  const reg = await request('POST', '/api/auth/register', {
+    email: 'pt-sync@example.com',
+    password: 'goodpassword1',
+    name: 'PtSync',
+  });
+  assert.equal(reg.status, 200);
+  const tokens = reg.json<AuthTokens>();
+  const auth = { authorization: `Bearer ${tokens.accessToken}` };
+
+  // Fresh user → no row yet.
+  const empty = await request('GET', '/api/pt/state', undefined, auth);
+  assert.equal(empty.status, 200, `expected 200, got ${empty.status} body=${empty.body}`);
+  assert.equal(empty.json<{ state: unknown }>().state, null);
+
+  // PUT a state blob.
+  const state = {
+    xp: 120,
+    streak: { current: 3, longest: 5, lastDate: '2026-08-13' },
+    progress: { l1: { status: 'completed', score: 90, completedAt: '2026-08-13T00:00:00Z' } },
+    badges: ['first_lesson'],
+    journal: [],
+    favorites: ['l1'],
+  };
+  const put = await request('PUT', '/api/pt/state', { state }, auth);
+  assert.equal(put.status, 200, `expected 200, got ${put.status} body=${put.body}`);
+  assert.equal(put.json<{ ok: boolean }>().ok, true);
+
+  // GET returns the same content + an updatedAt stamp.
+  const got = await request('GET', '/api/pt/state', undefined, auth);
+  assert.equal(got.status, 200);
+  const body = got.json<{ state: typeof state; updatedAt: number }>();
+  assert.equal(body.state.xp, 120);
+  assert.equal(body.state.streak.current, 3);
+  assert.equal(body.state.progress.l1.score, 90);
+  assert.ok(typeof body.updatedAt === 'number' && body.updatedAt > 0);
+});
+
+test('PUT /api/pt/state rejects non-object state with 400', async () => {
+  const reg = await request('POST', '/api/auth/register', {
+    email: 'pt-bad@example.com',
+    password: 'goodpassword1',
+    name: 'PtBad',
+  });
+  assert.equal(reg.status, 200);
+  const tokens = reg.json<AuthTokens>();
+  const auth = { authorization: `Bearer ${tokens.accessToken}` };
+  const r = await request('PUT', '/api/pt/state', { state: 'not-an-object' }, auth);
+  assert.equal(r.status, 400, `expected 400, got ${r.status} body=${r.body}`);
+});
+
+test('PT state is per-user: user B does not see user A state', async () => {
+  const regA = await request('POST', '/api/auth/register', {
+    email: 'pt-user-a@example.com', password: 'goodpassword1', name: 'PtA',
+  });
+  const regB = await request('POST', '/api/auth/register', {
+    email: 'pt-user-b@example.com', password: 'goodpassword1', name: 'PtB',
+  });
+  assert.equal(regA.status, 200);
+  assert.equal(regB.status, 200);
+  const authA = { authorization: `Bearer ${regA.json<AuthTokens>().accessToken}` };
+  const authB = { authorization: `Bearer ${regB.json<AuthTokens>().accessToken}` };
+
+  const put = await request('PUT', '/api/pt/state', { state: { xp: 999 } }, authA);
+  assert.equal(put.status, 200);
+
+  const gotB = await request('GET', '/api/pt/state', undefined, authB);
+  assert.equal(gotB.status, 200);
+  assert.equal(gotB.json<{ state: unknown }>().state, null, 'user B must not inherit user A state');
+});
+
 test('WS /api/gemini/live accepts upgrade and emits error or closed', async () => {
   const ws = new WebSocket(`ws://127.0.0.1:${port}/api/gemini/live?token=${APP_SECRET}`);
 

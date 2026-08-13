@@ -7,7 +7,7 @@
 //  per render, altering behaviour.)
 // ============================================================
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft, ChevronRight, ChevronLeft, X, Check, Flame, Sparkles, BookOpen,
   Trophy, Award, Brain, Layers, Sprout, Users, Shield, Scroll, Target, Star,
@@ -15,6 +15,7 @@ import {
   Cross, Activity, Eye, Anchor, Sun, Wind, Hammer, Church, Search, Play,
 } from 'lucide-react';
 import { stockImage } from '../../services/imageFallback';
+import { fetchServerPtState, mergePtState, schedulePtStatePush, isPtSyncAvailable } from '../../services/ptSyncService';
 
 // Compute the decorative banner once — stockImage does SVG + base64 string work.
 const STOCK_STUDY_BG = stockImage('study');
@@ -41,7 +42,25 @@ const PocketTheologyView: React.FC<Props> = ({ onBack }) => {
   const [route, setRoute] = useState<PTRoute>({ name: 'home' });
   const [lifeTreeGuideOpen, setLifeTreeGuideOpen] = useState(false);
 
-  useEffect(() => { saveState(state); }, [state]);
+  // Cross-device sync: pull the server backup once on mount and merge it
+  // into local state ("most progress wins" — see mergePtState). Skipped
+  // entirely when no backend / not signed in.
+  const syncedRef = useRef(false);
+  useEffect(() => {
+    if (syncedRef.current || !isPtSyncAvailable()) return;
+    syncedRef.current = true;
+    let cancelled = false;
+    void fetchServerPtState().then(server => {
+      if (cancelled || !server) return;
+      setState(local => mergePtState(local, server));
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    saveState(state);
+    schedulePtStatePush(state);
+  }, [state]);
 
   const completeLesson = (lessonId: string) => {
     const lesson = LESSONS.find(l => l.id === lessonId);
