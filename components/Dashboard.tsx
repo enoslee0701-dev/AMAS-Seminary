@@ -216,7 +216,21 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
 
       {/* === HEADER CAROUSEL === auto-advances every 4s, swipeable, no vertical drag */}
       <header
-        className="relative w-full overflow-hidden"
+        className="relative w-full overflow-hidden outline-none"
+        role="region"
+        aria-roledescription="carousel"
+        aria-label={`招生轮播，第 ${slideIdx + 1} / ${heroSlides.length} 页 — 左右方向键切换`}
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+          e.preventDefault();
+          userPausedUntilRef.current = Date.now() + 8000;
+          setSlideIdx((i) =>
+            e.key === 'ArrowRight'
+              ? (i + 1) % heroSlides.length
+              : (i - 1 + heroSlides.length) % heroSlides.length,
+          );
+        }}
         style={{
           backgroundColor: '#04285F',
           borderBottomLeftRadius: '50% 12px',

@@ -6,6 +6,20 @@ import { putImageDataURI, useImageUrl } from '../services/imageStore';
 import { courseThumbnail, stockImage } from '../services/imageFallback';
 import { canUploadCourses } from '../services/permissions';
 
+// Generated data-URI images are pure string work (SVG build + base64) —
+// compute once at module load instead of on every render.
+const CATEGORY_FALLBACK: Record<string, string> = {
+  [TheologyCategory.BIBLICAL]:     courseThumbnail(TheologyCategory.BIBLICAL, TheologyCategory.BIBLICAL),
+  [TheologyCategory.SYSTEMATIC]:   courseThumbnail(TheologyCategory.SYSTEMATIC, TheologyCategory.SYSTEMATIC),
+  [TheologyCategory.HISTORICAL]:   courseThumbnail(TheologyCategory.HISTORICAL, TheologyCategory.HISTORICAL),
+  [TheologyCategory.PRACTICAL]:    courseThumbnail(TheologyCategory.PRACTICAL, TheologyCategory.PRACTICAL),
+  [TheologyCategory.MISSIOLOGICAL]:courseThumbnail(TheologyCategory.MISSIOLOGICAL, TheologyCategory.MISSIOLOGICAL),
+};
+const STOCK_STUDY = stockImage('study');
+const STOCK_HERO = stockImage('hero');
+const STOCK_ANNOUNCEMENT = stockImage('announcement');
+const STOCK_FELLOWSHIP = stockImage('fellowship');
+
 /**
  * Thumbnail tile with IndexedDB-aware image resolution.
  * Prefers `course.thumbnailImageId` (object URL from IDB), falls back to
@@ -784,14 +798,7 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
           unlocked: { tagBg: '#E8DAF7', tagText: '#5A2EA0', btnBorder: '#8A55D9', btnText: '#5A2EA0' },
         };
 
-        const categoryFallback: Record<string, string> = {
-          [TheologyCategory.BIBLICAL]:     courseThumbnail(TheologyCategory.BIBLICAL, TheologyCategory.BIBLICAL),
-          [TheologyCategory.SYSTEMATIC]:   courseThumbnail(TheologyCategory.SYSTEMATIC, TheologyCategory.SYSTEMATIC),
-          [TheologyCategory.HISTORICAL]:   courseThumbnail(TheologyCategory.HISTORICAL, TheologyCategory.HISTORICAL),
-          [TheologyCategory.PRACTICAL]:    courseThumbnail(TheologyCategory.PRACTICAL, TheologyCategory.PRACTICAL),
-          [TheologyCategory.MISSIOLOGICAL]:courseThumbnail(TheologyCategory.MISSIOLOGICAL, TheologyCategory.MISSIOLOGICAL),
-        };
-        const thumbFor = (c: Course) => c.thumbnail || categoryFallback[c.category] || categoryFallback[TheologyCategory.BIBLICAL];
+        const thumbFor = (c: Course) => c.thumbnail || CATEGORY_FALLBACK[c.category] || CATEGORY_FALLBACK[TheologyCategory.BIBLICAL];
         const tintFor = (c: Course): string => {
           switch (c.category) {
             case TheologyCategory.BIBLICAL:    return 'linear-gradient(135deg,#1B3A6B 0%,#23508F 100%)';
@@ -828,7 +835,7 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
             titleColor: '#1F4530', subColor: '#3D6648', descColor: '#2A5238',
             baseColor: '#DCEFCB',
             baseColorTransparent: 'rgba(220,239,203,0)',
-            image: stockImage('study'),
+            image: STOCK_STUDY,
           },
           {
             value: '硕士', label: '硕士课程', sub: 'M.Div. | M.Pth.',
@@ -837,7 +844,7 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
             titleColor: '#1B3A6B', subColor: '#3E5F8C', descColor: '#23498A',
             baseColor: '#D4E3F4',
             baseColorTransparent: 'rgba(212,227,244,0)',
-            image: stockImage('hero'),
+            image: STOCK_HERO,
           },
           {
             value: '博士', label: '博士课程', sub: 'D.Min. | Ph.D.',
@@ -846,7 +853,7 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
             titleColor: '#3F1E70', subColor: '#664798', descColor: '#4A2A86',
             baseColor: '#E0D4F0',
             baseColorTransparent: 'rgba(224,212,240,0)',
-            image: stockImage('announcement'),
+            image: STOCK_ANNOUNCEMENT,
           },
           {
             value: 'pocket', label: '口袋神学', sub: 'Pocket Theology',
@@ -855,7 +862,7 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
             titleColor: '#7A4A0F', subColor: '#9A6B1D', descColor: '#7A4A0F',
             baseColor: '#F8DEB8',
             baseColorTransparent: 'rgba(248,222,184,0)',
-            image: stockImage('fellowship'),
+            image: STOCK_FELLOWSHIP,
             route: 'pocket' as const,
           },
         ];
@@ -952,7 +959,7 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
                   className="absolute inset-y-0 right-0 pointer-events-none"
                   style={{
                     width: '60%',
-                    backgroundImage: `url('${stockImage('hero')}')`,
+                    backgroundImage: `url('${STOCK_HERO}')`,
                     backgroundSize: 'cover',
                     backgroundPosition: 'center right',
                     opacity: 0.85,

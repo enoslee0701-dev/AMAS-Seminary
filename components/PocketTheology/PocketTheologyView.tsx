@@ -16,6 +16,9 @@ import {
 } from 'lucide-react';
 import { stockImage } from '../../services/imageFallback';
 
+// Compute the decorative banner once — stockImage does SVG + base64 string work.
+const STOCK_STUDY_BG = stockImage('study');
+
 import type {
   PTLevel, PTTradition, PTTopic, PTStep, PTLesson, PTBadge,
   PTProgressEntry, PTStreak, PTJournalEntry, PTUserState, PTDeepDive,
@@ -688,7 +691,7 @@ const PocketTheologyView: React.FC<Props> = ({ onBack }) => {
 
           {/* Hero — recommended next lesson */}
           <section className="relative overflow-hidden rounded-3xl text-white" style={{ background: 'linear-gradient(135deg,#04285F 0%,#0A3878 50%,#0F4690 100%)' }}>
-            <div className="absolute right-0 top-0 bottom-0 w-32 opacity-20 pointer-events-none" style={{ backgroundImage: `url(${stockImage('study')})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
+            <div className="absolute right-0 top-0 bottom-0 w-32 opacity-20 pointer-events-none" style={{ backgroundImage: `url(${STOCK_STUDY_BG})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
             <div className="relative p-5">
               <div className="flex items-center mb-1.5" style={{ gap: 6 }}>
                 <Sparkles size={14} className="text-[#E8C98C]" />
@@ -1664,6 +1667,22 @@ const PocketTheologyView: React.FC<Props> = ({ onBack }) => {
     const [stepIdx, setStepIdx] = useState(0);
     const [selectedOption, setSelectedOption] = useState<number | null>(null);
     const [revealed, setRevealed] = useState(false);
+    // Display order for quiz options, reshuffled per step — otherwise the
+    // correct answer sits at the same position on every retake.
+    const [quizOrder, setQuizOrder] = useState<number[]>([]);
+    useEffect(() => {
+      const s = lesson?.steps?.[stepIdx];
+      if (s && (s.type === 'quiz_single' || s.type === 'quiz_life')) {
+        const order = s.options.map((_, i) => i);
+        for (let i = order.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [order[i], order[j]] = [order[j], order[i]];
+        }
+        setQuizOrder(order);
+      } else {
+        setQuizOrder([]);
+      }
+    }, [lessonId, stepIdx]);
     const [reflectionInput, setReflectionInput] = useState('');
     const [matched, setMatched] = useState<Set<number>>(new Set());
     const [selLeft, setSelLeft] = useState<number | null>(null);
@@ -1892,7 +1911,8 @@ const PocketTheologyView: React.FC<Props> = ({ onBack }) => {
               )}
               <h2 className="text-[18px] font-bold text-slate-900 leading-snug mb-4">{step.question}</h2>
               <div className="space-y-2.5">
-                {step.options.map((opt, i) => {
+                {(quizOrder.length === step.options.length ? quizOrder : step.options.map((_, i) => i)).map((i) => {
+                  const opt = step.options[i];
                   const isCorrect = i === step.correctIndex;
                   const isSelected = selectedOption === i;
                   let bg = '#FFFFFF', borderColor = '#E5E7EB', textColor = '#1F2937';
@@ -3016,7 +3036,7 @@ const PocketTheologyView: React.FC<Props> = ({ onBack }) => {
             <>
               {/* Hero stats */}
               <section className="relative overflow-hidden rounded-3xl text-white" style={{ background: 'linear-gradient(135deg,#04285F 0%,#0A3878 50%,#0F4690 100%)' }}>
-                <div className="absolute right-0 top-0 bottom-0 w-32 opacity-15 pointer-events-none" style={{ backgroundImage: `url(${stockImage('study')})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
+                <div className="absolute right-0 top-0 bottom-0 w-32 opacity-15 pointer-events-none" style={{ backgroundImage: `url(${STOCK_STUDY_BG})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
                 <div className="relative p-5">
                   <p className="text-[10px] font-black tracking-widest text-[#E8C98C] uppercase mb-1">本周成长</p>
                   <h2 className="text-[26px] font-black leading-tight">完成 {weekLessons.length} 关</h2>

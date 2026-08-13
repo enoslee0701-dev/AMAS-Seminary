@@ -56,7 +56,7 @@ amas/
    ├─ src/server.ts                            ← 入口 + 优雅停机
    ├─ src/middleware/                          ← bearer auth + rate limit
    ├─ src/routes/                              ← health/voice/rooms/gemini/recordings
-   ├─ src/test/smoke.test.ts                   ← 14 个 smoke 测试
+   ├─ src/test/smoke.test.ts                   ← smoke 测试（82 用例）
    ├─ Dockerfile                               ← 多阶段 alpine, 非 root
    └─ README.md                                ← 详细的后端使用与部署
 ```
@@ -97,15 +97,23 @@ npm run dev
 ### 测试
 
 ```bash
-# 前端类型检查 + 构建
+# 前端：类型检查 + 单元测试 + 构建 + e2e 冒烟（需本机装有 Chrome / Edge）
 npx tsc --noEmit
+npm test          # vitest
 npm run build
+npm run test:e2e  # puppeteer-core 驱动真实浏览器走一遍主要页面
 
-# 后端类型检查 + 14 个 smoke 测试
+# 后端：类型检查 + smoke 测试
 cd backend
 npx tsc --noEmit
 npm test
 ```
+
+### Windows 开发注意
+
+- `better-sqlite3` 是原生模块。若 `node_modules` 是从 macOS 拷来的，启动后端前先在 `backend/` 里跑一次 `npm rebuild better-sqlite3`。
+- e2e 会自动探测 Chrome / Edge 安装路径；装在非默认位置时用 `CHROME_PATH` 环境变量指定。
+- Vite 默认端口被占用时会自动换端口（如 3001），后端 `.env` 的 `CORS_ORIGINS` 已包含常见本地端口。
 
 ---
 

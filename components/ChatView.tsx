@@ -533,7 +533,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ onBack, initialChatId, onJoi
         {/* Header - Matching Screenshot Clean Look */}
         <div className="bg-white border-b border-slate-200 px-3 py-3 flex items-center justify-between pt-safe-top shrink-0 shadow-sm z-10">
             <div className="flex items-center">
-                <button onClick={onBack} className="p-1 rounded-full text-slate-800 transition mr-1">
+                <button onClick={onBack} aria-label="返回" className="p-1 rounded-full text-slate-800 transition mr-1">
                     <ChevronLeft size={24} strokeWidth={2} />
                 </button>
                 <div className="flex items-center ml-1">
@@ -639,8 +639,9 @@ export const ChatView: React.FC<ChatViewProps> = ({ onBack, initialChatId, onJoi
             {/* 2. Review Mode (Send or Cancel) - Exact Match for Screenshot */}
             {isReviewing && (
                 <div className="flex items-center space-x-3 animate-fade-in-up px-1">
-                    <button 
+                    <button
                         onClick={handleCancelRecording}
+                        aria-label="取消录音"
                         className="w-10 h-10 bg-slate-50 text-slate-400 rounded-full flex items-center justify-center active:scale-95 transition-all hover:bg-slate-100"
                     >
                         <Trash2 size={20} />
@@ -659,8 +660,9 @@ export const ChatView: React.FC<ChatViewProps> = ({ onBack, initialChatId, onJoi
                         </div>
                     </button>
 
-                    <button 
+                    <button
                         onClick={handleSendVoice}
+                        aria-label="发送语音"
                         className="w-10 h-10 bg-blue-900 text-white rounded-full shadow flex items-center justify-center active:scale-95 transition-all"
                     >
                         <Send size={18} fill="white" className="ml-0.5" />
@@ -685,8 +687,9 @@ export const ChatView: React.FC<ChatViewProps> = ({ onBack, initialChatId, onJoi
                             placeholder="发送消息..."
                             className="flex-1 bg-transparent border-none outline-none text-[14px] text-slate-900 placeholder:text-slate-400"
                         />
-                        <button 
-                            onClick={() => { setShowEmojiPicker(!showEmojiPicker); setShowPlusMenu(false); }} 
+                        <button
+                            onClick={() => { setShowEmojiPicker(!showEmojiPicker); setShowPlusMenu(false); }}
+                            aria-label="表情"
                             className={`ml-1 p-1 transition-all ${showEmojiPicker ? 'text-blue-600' : 'text-slate-400'}`}
                         >
                             <Smile size={20} strokeWidth={2} />
@@ -695,9 +698,9 @@ export const ChatView: React.FC<ChatViewProps> = ({ onBack, initialChatId, onJoi
                     
                     <div className="ml-1">
                         {inputText.trim() ? (
-                            <button onClick={handleSendText} className="bg-blue-600 text-white w-9 h-9 rounded-full shadow active:scale-95 animate-scale-in flex items-center justify-center"><Send size={18} fill="white" /></button>
+                            <button onClick={handleSendText} aria-label="发送" className="bg-blue-600 text-white w-9 h-9 rounded-full shadow active:scale-95 animate-scale-in flex items-center justify-center"><Send size={18} fill="white" /></button>
                         ) : (
-                            <button onClick={handleStartRecording} className="w-9 h-9 rounded-full flex items-center justify-center transition-all bg-slate-100 text-slate-500 active:scale-90"><Mic size={20} strokeWidth={2} /></button>
+                            <button onClick={handleStartRecording} aria-label="录制语音" className="w-9 h-9 rounded-full flex items-center justify-center transition-all bg-slate-100 text-slate-500 active:scale-90"><Mic size={20} strokeWidth={2} /></button>
                         )}
                     </div>
                 </div>
@@ -720,7 +723,7 @@ const ChatDetailView: React.FC<ChatDetailViewProps> = ({ conv, onBack }) => {
     <div className="fixed inset-0 z-[100] bg-slate-50 flex flex-col animate-slide-in-right overflow-hidden">
       {/* Header - Cleaned up */}
       <div className="bg-white border-b border-slate-100 px-3 py-3 pt-safe-top flex items-center shrink-0">
-        <button onClick={onBack} className="p-2 -ml-1 rounded-full text-slate-800 transition">
+        <button onClick={onBack} aria-label="返回" className="p-2 -ml-1 rounded-full text-slate-800 transition">
           <ChevronLeft size={24} />
         </button>
         <h2 className="flex-1 font-bold text-slate-900 text-[16px] text-center pr-8">聊天详情</h2>
@@ -738,7 +741,7 @@ const ChatDetailView: React.FC<ChatDetailViewProps> = ({ conv, onBack }) => {
             <span className="text-[10px] mt-2 text-slate-500 font-medium truncate w-full text-center">教务处通知</span>
           </div>
           <div className="flex flex-col items-center">
-            <button className="w-14 h-14 rounded-xl border-2 border-dashed border-slate-200 flex items-center justify-center text-slate-300 active:bg-slate-50 transition-colors">
+            <button aria-label="添加联系人" className="w-14 h-14 rounded-xl border-2 border-dashed border-slate-200 flex items-center justify-center text-slate-300 active:bg-slate-50 transition-colors">
               <Plus size={28} strokeWidth={1.5} />
             </button>
             <span className="text-[10px] mt-2 text-slate-500 font-medium">创建群组</span>
