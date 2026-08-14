@@ -1,6 +1,7 @@
 
 import { Course, TheologyCategory, Post, UserProfile, NewsItem, AcademicLevel } from './types';
-import { courseThumbnail, initialAvatar, stockImage } from './services/imageFallback';
+import { initialAvatar } from './services/imageFallback';
+import { STOCK_PHOTOS } from './services/stockPhotos';
 
 export const APP_NAME = "AMAS";
 // Updated to Deep Blue / Academic Navy Palette
@@ -14,9 +15,8 @@ export const MOCK_USER: UserProfile = {
   // Was picsum.photos/random=user — offline-blocked in mainland China.
   // Generates a deterministic initial-circle avatar keyed off the user id.
   avatar: initialAvatar('u1', '张神学生'),
-  // Was an Unsplash hero — replaced with a local gradient banner so the
-  // profile page renders the same in airplane mode.
-  backgroundImage: stockImage('hero'),
+  // Locally bundled photo (public/images/stock) — full fidelity, offline-safe.
+  backgroundImage: STOCK_PHOTOS.worship,
   degree: 'M.Div',
   studentId: '20230045',
   streakDays: 14,
@@ -69,7 +69,7 @@ export const MOCK_COURSES: Course[] = [
     category: TheologyCategory.BIBLICAL,
     // Fixed: Property updated from BACHELOR to BTH
     level: AcademicLevel.BTH,
-    thumbnail: courseThumbnail('c_1cor', TheologyCategory.BIBLICAL),
+    thumbnail: STOCK_PHOTOS.books,
     progress: 0,
     totalLessons: 10,
     completedLessons: 0,
@@ -81,7 +81,7 @@ export const MOCK_COURSES: Course[] = [
     category: TheologyCategory.BIBLICAL,
     // Fixed: Property updated from MASTER to MDIV
     level: AcademicLevel.MDIV,
-    thumbnail: courseThumbnail('c_john', TheologyCategory.BIBLICAL),
+    thumbnail: STOCK_PHOTOS.bibleLight,
     progress: 0,
     totalLessons: 24,
     completedLessons: 0,
@@ -93,7 +93,7 @@ export const MOCK_COURSES: Course[] = [
     category: TheologyCategory.BIBLICAL,
     // Fixed: Property updated from MASTER to MDIV
     level: AcademicLevel.MDIV,
-    thumbnail: courseThumbnail('c_matthew', TheologyCategory.BIBLICAL),
+    thumbnail: STOCK_PHOTOS.mountain,
     progress: 0,
     totalLessons: 26,
     completedLessons: 0,
@@ -105,7 +105,7 @@ export const MOCK_COURSES: Course[] = [
     category: TheologyCategory.BIBLICAL,
     // Fixed: Property updated from BACHELOR to BTH
     level: AcademicLevel.BTH,
-    thumbnail: courseThumbnail('c_acts', TheologyCategory.BIBLICAL),
+    thumbnail: STOCK_PHOTOS.bibleMap,
     progress: 0,
     totalLessons: 29,
     completedLessons: 0,
@@ -117,7 +117,7 @@ export const MOCK_COURSES: Course[] = [
     category: TheologyCategory.BIBLICAL,
     // Fixed: Property updated from DOCTOR to DMIN
     level: AcademicLevel.DMIN,
-    thumbnail: courseThumbnail('c_hebrews', TheologyCategory.BIBLICAL),
+    thumbnail: STOCK_PHOTOS.libraryBooks,
     progress: 0,
     totalLessons: 15,
     completedLessons: 0,
@@ -129,7 +129,7 @@ export const MOCK_COURSES: Course[] = [
     category: TheologyCategory.BIBLICAL,
     // Fixed: Property updated from MASTER to MDIV
     level: AcademicLevel.MDIV,
-    thumbnail: courseThumbnail('c_ephesians', TheologyCategory.BIBLICAL),
+    thumbnail: STOCK_PHOTOS.worship,
     progress: 0,
     totalLessons: 7,
     completedLessons: 0,
@@ -141,7 +141,7 @@ export const MOCK_COURSES: Course[] = [
     category: TheologyCategory.BIBLICAL,
     // Fixed: Property updated from DOCTOR to DMIN
     level: AcademicLevel.DMIN,
-    thumbnail: courseThumbnail('c_revelation', TheologyCategory.BIBLICAL),
+    thumbnail: STOCK_PHOTOS.dramaticSky,
     progress: 0,
     totalLessons: 23,
     completedLessons: 0,
@@ -153,7 +153,7 @@ export const MOCK_COURSES: Course[] = [
     instructor: '李恩慈牧师',
     category: TheologyCategory.PRACTICAL,
     // no level => 信徒装备 bucket
-    thumbnail: courseThumbnail('c_basics', TheologyCategory.PRACTICAL),
+    thumbnail: STOCK_PHOTOS.christianLife,
     progress: 0,
     totalLessons: 8,
     completedLessons: 0,
@@ -163,7 +163,7 @@ export const MOCK_COURSES: Course[] = [
     title: '认识圣经：旧约新约导论',
     instructor: '王恩光教授',
     category: TheologyCategory.BIBLICAL,
-    thumbnail: courseThumbnail('c_bible_intro', TheologyCategory.BIBLICAL),
+    thumbnail: STOCK_PHOTOS.bibleOpen,
     progress: 0,
     totalLessons: 12,
     completedLessons: 0,
@@ -173,7 +173,7 @@ export const MOCK_COURSES: Course[] = [
     title: '门徒训练：跟随主的脚踪',
     instructor: '陈恩典牧师',
     category: TheologyCategory.PRACTICAL,
-    thumbnail: courseThumbnail('c_disciple', TheologyCategory.PRACTICAL),
+    thumbnail: STOCK_PHOTOS.discipleship,
     progress: 0,
     totalLessons: 10,
     completedLessons: 0,
@@ -183,7 +183,7 @@ export const MOCK_COURSES: Course[] = [
     title: '祷告与灵修生活',
     instructor: '林恩光师母',
     category: TheologyCategory.PRACTICAL,
-    thumbnail: courseThumbnail('c_prayer', TheologyCategory.PRACTICAL),
+    thumbnail: STOCK_PHOTOS.prayer,
     progress: 0,
     totalLessons: 6,
     completedLessons: 0,
@@ -197,7 +197,7 @@ export const MOCK_POSTS: Post[] = [
     userName: '林恩典',
     userAvatar: initialAvatar('u2', '林恩典'),
     content: '今早灵修读到诗篇23篇，“他使我的灵魂苏醒”。在期末考试的压力中，感谢神赐下的平安。',
-    image: stockImage('study'),
+    image: STOCK_PHOTOS.study,
     timestamp: '2小时前',
     likes: 24,
     comments: 5,

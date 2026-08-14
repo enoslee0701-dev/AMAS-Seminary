@@ -10,7 +10,8 @@
  * services/. No React, no large libs.
  */
 import { MOCK_USER } from '../../constants';
-import { initialAvatar, stockImage } from '../../services/imageFallback';
+import { initialAvatar } from '../../services/imageFallback';
+import { STOCK_PHOTOS } from '../../services/stockPhotos';
 import type { Room } from '../VoiceRoom';
 
 export interface Liker {
@@ -139,7 +140,7 @@ export const INITIAL_POSTS: CommunityPost[] = [
     userAvatar: initialAvatar('u2', '林恩典'),
     userRole: 'M.DIV',
     content: '今早灵修读到诗篇23篇，“他使我的灵魂苏醒”。在期末考试的压力中，感谢神赐下的平安。求主这也保守正在准备讲道的同学们。',
-    images: [stockImage('prayer')],
+    images: [STOCK_PHOTOS.prayer],
     timestamp: '2小时前',
     likes: 3,
     comments: 2,
@@ -177,7 +178,7 @@ export const INITIAL_POSTS: CommunityPost[] = [
     userAvatar: initialAvatar('u3', '张彼得'),
     userRole: 'B.TH',
     content: '请大家为我在缅甸北部的短宣代祷。这里网络信号不好，但孩子们对福音的渴慕让我很感动。特别为明天的布道会祷告，求圣灵动工！',
-    images: [stockImage('community'), stockImage('fellowship')],
+    images: [STOCK_PHOTOS.campusCommunity, STOCK_PHOTOS.discipleship],
     timestamp: '4小时前',
     likes: 56,
     comments: 0,

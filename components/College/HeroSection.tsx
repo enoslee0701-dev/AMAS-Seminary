@@ -9,7 +9,7 @@ import {
   List,
   Cross, Church, Globe
 } from 'lucide-react';
-import { stockImage } from '../../services/imageFallback';
+import { STOCK_PHOTOS } from '../../services/stockPhotos';
 
 interface HeroSectionProps {
   onBack?: () => void;
@@ -64,28 +64,28 @@ export const HeroSection = ({ onBack, onItemClick }: HeroSectionProps) => {
       id: 'intro',
       title: '学院简介',
       subtitle: 'Introduction',
-      image: stockImage('hero'),
+      image: STOCK_PHOTOS.lectureHall,
       items: ['院长致辞', '目的异象', '教育方向', '信仰告白', '学校组织', '师资团队', '支持学校']
     },
     {
       id: 'study',
       title: '学习指南',
       subtitle: 'Academics',
-      image: stockImage('study'),
+      image: STOCK_PHOTOS.study,
       items: ['学科介绍', '学习计划', '入学指南']
     },
     {
       id: 'admission',
       title: '入学和毕业',
       subtitle: 'Admission & Graduation',
-      image: stockImage('announcement'),
+      image: STOCK_PHOTOS.graduation,
       items: ['入学条件', '毕业条件', '入学申请表']
     },
     {
       id: 'life',
       title: '学校生活',
       subtitle: 'Campus Life',
-      image: stockImage('community'),
+      image: STOCK_PHOTOS.campusCommunity,
       items: ['提问解答', '教授评价', '成绩确认', '开具证明']
     }
   ];

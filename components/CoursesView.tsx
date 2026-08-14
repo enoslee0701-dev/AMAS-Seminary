@@ -3,22 +3,23 @@ import React, { useEffect, useState, useRef } from 'react';
 import { TheologyCategory, Course, AcademicLevel } from '../types';
 import { Search, Play, FileText, ArrowUpDown, Heart, BookOpen, RefreshCw, Plus, Upload, X, Check, Image as ImageIcon, Edit3, Save, GraduationCap, Layers, Scroll, ArrowLeft, ChevronRight, ChevronDown, Lock, Sparkles, Sprout, Briefcase } from 'lucide-react';
 import { putImageDataURI, useImageUrl } from '../services/imageStore';
-import { courseThumbnail, stockImage } from '../services/imageFallback';
+import { courseThumbnail } from '../services/imageFallback';
+import { STOCK_PHOTOS } from '../services/stockPhotos';
 import { canUploadCourses } from '../services/permissions';
 
-// Generated data-URI images are pure string work (SVG build + base64) —
-// compute once at module load instead of on every render.
+// Locally bundled photos (public/images/stock) — full fidelity, offline-safe.
 const CATEGORY_FALLBACK: Record<string, string> = {
-  [TheologyCategory.BIBLICAL]:     courseThumbnail(TheologyCategory.BIBLICAL, TheologyCategory.BIBLICAL),
-  [TheologyCategory.SYSTEMATIC]:   courseThumbnail(TheologyCategory.SYSTEMATIC, TheologyCategory.SYSTEMATIC),
-  [TheologyCategory.HISTORICAL]:   courseThumbnail(TheologyCategory.HISTORICAL, TheologyCategory.HISTORICAL),
-  [TheologyCategory.PRACTICAL]:    courseThumbnail(TheologyCategory.PRACTICAL, TheologyCategory.PRACTICAL),
-  [TheologyCategory.MISSIOLOGICAL]:courseThumbnail(TheologyCategory.MISSIOLOGICAL, TheologyCategory.MISSIOLOGICAL),
+  [TheologyCategory.BIBLICAL]:     STOCK_PHOTOS.bibleLight,
+  [TheologyCategory.SYSTEMATIC]:   STOCK_PHOTOS.books,
+  [TheologyCategory.HISTORICAL]:   STOCK_PHOTOS.libraryBooks,
+  [TheologyCategory.PRACTICAL]:    STOCK_PHOTOS.practical,
+  [TheologyCategory.MISSIOLOGICAL]:STOCK_PHOTOS.missionGlobe,
 };
-const STOCK_STUDY = stockImage('study');
-const STOCK_HERO = stockImage('hero');
-const STOCK_ANNOUNCEMENT = stockImage('announcement');
-const STOCK_FELLOWSHIP = stockImage('fellowship');
+const TRACK_BACHELOR = STOCK_PHOTOS.bibleLight;
+const TRACK_MASTER = STOCK_PHOTOS.graduation;
+const TRACK_DOCTOR = STOCK_PHOTOS.books;
+const TRACK_POCKET = STOCK_PHOTOS.libraryBooks;
+const CTA_BG = STOCK_PHOTOS.worship;
 
 /**
  * Thumbnail tile with IndexedDB-aware image resolution.
@@ -835,7 +836,7 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
             titleColor: '#1F4530', subColor: '#3D6648', descColor: '#2A5238',
             baseColor: '#DCEFCB',
             baseColorTransparent: 'rgba(220,239,203,0)',
-            image: STOCK_STUDY,
+            image: TRACK_BACHELOR,
           },
           {
             value: '硕士', label: '硕士课程', sub: 'M.Div. | M.Pth.',
@@ -844,7 +845,7 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
             titleColor: '#1B3A6B', subColor: '#3E5F8C', descColor: '#23498A',
             baseColor: '#D4E3F4',
             baseColorTransparent: 'rgba(212,227,244,0)',
-            image: STOCK_HERO,
+            image: TRACK_MASTER,
           },
           {
             value: '博士', label: '博士课程', sub: 'D.Min. | Ph.D.',
@@ -853,7 +854,7 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
             titleColor: '#3F1E70', subColor: '#664798', descColor: '#4A2A86',
             baseColor: '#E0D4F0',
             baseColorTransparent: 'rgba(224,212,240,0)',
-            image: STOCK_ANNOUNCEMENT,
+            image: TRACK_DOCTOR,
           },
           {
             value: 'pocket', label: '口袋神学', sub: 'Pocket Theology',
@@ -862,7 +863,7 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
             titleColor: '#7A4A0F', subColor: '#9A6B1D', descColor: '#7A4A0F',
             baseColor: '#F8DEB8',
             baseColorTransparent: 'rgba(248,222,184,0)',
-            image: STOCK_FELLOWSHIP,
+            image: TRACK_POCKET,
             route: 'pocket' as const,
           },
         ];
@@ -959,7 +960,7 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
                   className="absolute inset-y-0 right-0 pointer-events-none"
                   style={{
                     width: '60%',
-                    backgroundImage: `url('${STOCK_HERO}')`,
+                    backgroundImage: `url('${CTA_BG}')`,
                     backgroundSize: 'cover',
                     backgroundPosition: 'center right',
                     opacity: 0.85,

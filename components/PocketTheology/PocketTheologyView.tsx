@@ -14,11 +14,11 @@ import {
   Heart, Calendar, HandHeart, Zap, Lock, Lightbulb, Map, Crown, Globe, Compass,
   Cross, Activity, Eye, Anchor, Sun, Wind, Hammer, Church, Search, Play,
 } from 'lucide-react';
-import { stockImage } from '../../services/imageFallback';
+import { STOCK_PHOTOS } from '../../services/stockPhotos';
 import { fetchServerPtState, mergePtState, schedulePtStatePush, isPtSyncAvailable } from '../../services/ptSyncService';
 
-// Compute the decorative banner once — stockImage does SVG + base64 string work.
-const STOCK_STUDY_BG = stockImage('study');
+// Locally bundled photo (public/images/stock) — decorative banner strip.
+const STOCK_STUDY_BG = STOCK_PHOTOS.libraryBooks;
 
 import type {
   PTLevel, PTTradition, PTTopic, PTStep, PTLesson, PTBadge,

@@ -18,7 +18,8 @@ import { MOCK_USER, MOCK_COURSES } from '../constants';
 import { UserProfileModal, THEME_CONFIGS } from './VoiceRoom';
 import type { Room, RoomType } from './VoiceRoom';
 import { registerRoom, validateRoomPassword, isBackendConfigured } from '../services/roomService';
-import { initialAvatar, stockImage } from '../services/imageFallback';
+import { initialAvatar } from '../services/imageFallback';
+import { STOCK_PHOTOS } from '../services/stockPhotos';
 import {
   listPosts as apiListPosts,
   createPost as apiCreatePost,
@@ -266,7 +267,7 @@ export const UserProfileFeed: React.FC<{
     onDeletePost: (id: string) => void;
 }> = ({ user, posts, onBack, onLike, onCommentClick, onShareClick, onPreviewImage, onViewProfile, onDeletePost }) => {
     const userPosts = posts.filter(p => p.userId === user.id);
-    const coverImage = stockImage('community');
+    const coverImage = STOCK_PHOTOS.campusCommunity;
 
     return (
         <div className="fixed inset-0 z-[20000] bg-white flex flex-col animate-slide-in-right overflow-hidden">
@@ -491,7 +492,7 @@ const CommunityView: React.FC<CommunityViewProps> = ({
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [viewingUserProfile, setViewingUserProfile] = useState<{name: string, avatar: string, role: string, id: string} | null>(null);
 
-  const [feedCoverImage, setFeedCoverImage] = useState<string>(() => { try { return localStorage.getItem('amas_feed_cover') || stockImage('community'); } catch { return stockImage('community'); } });
+  const [feedCoverImage, setFeedCoverImage] = useState<string>(() => { try { return localStorage.getItem('amas_feed_cover') || STOCK_PHOTOS.campusCommunity; } catch { return STOCK_PHOTOS.campusCommunity; } });
   const feedCoverInputRef = useRef<HTMLInputElement>(null);
   const handleFeedCoverChange = (e: React.ChangeEvent<HTMLInputElement>) => { if (e.target.files && e.target.files[0]) { const reader = new FileReader(); reader.onload = (event) => { const result = event.target?.result as string; setFeedCoverImage(result); try { localStorage.setItem('amas_feed_cover', result); } catch (e) { console.error("Storage full"); } }; reader.readAsDataURL(e.target.files[0]); } };
   

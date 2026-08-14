@@ -5,7 +5,7 @@ import {
   ClipboardList, Library, FilePen, CalendarDays, PlayCircle, BarChart3
 } from 'lucide-react';
 import { ViewState, NewsItem } from '../types';
-import { stockImage } from '../services/imageFallback';
+import { STOCK_PHOTOS } from '../services/stockPhotos';
 import type { ProgramTier } from './College/programData';
 
 // Lazy bridge to Capacitor StatusBar — no-op in plain web preview, real call in iOS shell.
@@ -33,9 +33,8 @@ interface DashboardProps {
 
 // Local stock-image data URIs — work offline and don't hit the Unsplash /
 // picsum CDNs (often slow or blocked in mainland China).
-const HERO_IMAGE = stockImage('hero');
-const FEATURED_1 = stockImage('study');
-const FEATURED_2 = stockImage('announcement');
+const FEATURED_1 = STOCK_PHOTOS.bibleLight;
+const FEATURED_2 = STOCK_PHOTOS.books;
 
 type HeroSlide =
   | { type: 'image'; src: string; alt: string }
@@ -49,7 +48,7 @@ const heroSlides: HeroSlide[] = [
   },
   {
     type: 'card',
-    bg: stockImage('hero'),
+    bg: STOCK_PHOTOS.lectureHall,
     overline: '2026 SPRING ADMISSIONS',
     title: '2026 春季招生',
     sub: '装备生命，回应主的呼召',
@@ -58,7 +57,7 @@ const heroSlides: HeroSlide[] = [
   },
   {
     type: 'card',
-    bg: stockImage('study'),
+    bg: STOCK_PHOTOS.study,
     overline: 'OPEN LECTURE SERIES',
     title: '开放公开课',
     sub: '名师免费试听 · 神学根基系列',
@@ -67,7 +66,7 @@ const heroSlides: HeroSlide[] = [
   },
   {
     type: 'card',
-    bg: stockImage('fellowship'),
+    bg: STOCK_PHOTOS.worship,
     overline: 'LIVE & ONLINE',
     title: '在线直播课堂',
     sub: '每周三晚 · 牧者专题分享',
