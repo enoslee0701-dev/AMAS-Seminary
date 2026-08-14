@@ -100,14 +100,19 @@ export const HeroSection = ({ onBack, onItemClick }: HeroSectionProps) => {
       >
         <div className="flex items-center justify-center" style={{ gap: 10 }}>
           <div
-            className="flex items-center justify-center shrink-0"
+            className="flex items-center justify-center shrink-0 overflow-hidden"
             style={{
-              width: 44, height: 44, borderRadius: '50%',
-              background: 'linear-gradient(160deg, #0B2450 0%, #051530 100%)',
+              width: 48, height: 48, borderRadius: '50%',
+              background: '#FFFFFF',
               border: '2px solid #C99A45',
+              padding: 4,
             }}
           >
-            <span style={{ color: '#E8C98C', fontSize: 12, fontWeight: 900, letterSpacing: '0.5px' }}>ATA</span>
+            <img
+              src="/images/ata-logo.png"
+              alt="Asia Theological Association"
+              style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+            />
           </div>
           <div>
             <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: '#0B2450', letterSpacing: '1px' }}>
