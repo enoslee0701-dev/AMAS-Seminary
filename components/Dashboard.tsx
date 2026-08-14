@@ -29,6 +29,8 @@ interface DashboardProps {
   onOpenCoursePath?: (tier?: ProgramTier) => void;
   newsItems: NewsItem[];
   setNewsItems: (items: NewsItem[]) => void;
+  /** Live course count per degree tier, shown on the 课程路径 cards. */
+  tierCounts?: Partial<Record<ProgramTier, number>>;
 }
 
 // Local stock-image data URIs — work offline and don't hit the Unsplash /
@@ -75,7 +77,7 @@ const heroSlides: HeroSlide[] = [
   },
 ];
 
-const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, onOpenCoursePath, newsItems }) => {
+const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, onOpenCoursePath, newsItems, tierCounts }) => {
   // Scrolled past hero → show compact sticky navbar.
   const [scrolled, setScrolled] = useState(false);
   // Hero carousel — transform-based (no scroll container, no rubber-banding)
@@ -124,11 +126,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
     { icon: BarChart3, title: '学习档案', sub: '查看进度记录', view: ViewState.PROFILE },
   ];
 
-  const coursePaths: { level: string; tier: ProgramTier; cn: string; duration: string; tone: string; tint: string }[] = [
-    { level: '证书课程', tier: '证书', cn: '扎实装备', duration: '6-12 个月', tone: '#C99A45', tint: '#F6EBD3' },
-    { level: '学士课程', tier: '学士', cn: '系统学习', duration: '3-4 年',   tone: '#04285F', tint: '#DCE4F4' },
-    { level: '硕士课程', tier: '硕士', cn: '深化装备', duration: '3 年',     tone: '#6B4F9B', tint: '#EBE3F3' },
-    { level: '博士课程', tier: '博士', cn: '卓越研究', duration: '3-5 年',   tone: '#8B2E3F', tint: '#F4DEE2' },
+  const coursePaths: { level: string; tier: ProgramTier; cn: string; tone: string; tint: string }[] = [
+    { level: '证书课程', tier: '证书', cn: '扎实装备', tone: '#C99A45', tint: '#F6EBD3' },
+    { level: '学士课程', tier: '学士', cn: '系统学习', tone: '#04285F', tint: '#DCE4F4' },
+    { level: '硕士课程', tier: '硕士', cn: '深化装备', tone: '#6B4F9B', tint: '#EBE3F3' },
+    { level: '博士课程', tier: '博士', cn: '卓越研究', tone: '#8B2E3F', tint: '#F4DEE2' },
   ];
 
   const libraryPicks = [
@@ -754,7 +756,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
                   lineHeight: '14px', marginTop: 4,
                 }}
               >
-                {p.duration}
+                {tierCounts?.[p.tier] ? `${tierCounts[p.tier]} 门课程` : ''}
               </span>
             </button>
           ))}

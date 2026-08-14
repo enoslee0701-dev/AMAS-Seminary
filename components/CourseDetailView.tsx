@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ChevronLeft, ChevronDown, ChevronUp, Play, Lock, CheckCircle, FileText, Download, Clock, Share2, MoreHorizontal, BookOpen, AlertCircle, PlayCircle, PauseCircle, Heart, Flag, Link as LinkIcon, ZoomIn, ZoomOut, X, Edit2, Save, Image as ImageIcon, Upload, RefreshCw } from 'lucide-react';
 import { Course, TheologyCategory } from '../types';
 import { MOCK_COURSE_DETAILS } from '../constants';
-import { canEditCourses } from '../services/permissions';
+import { canEditCourses, canUploadCourses } from '../services/permissions';
 import { initialAvatar } from '../services/imageFallback';
 import {
   listCourseFiles,
@@ -117,6 +117,8 @@ const CourseDetailView: React.FC<CourseDetailViewProps> = ({ course, onUpdateCou
   }, [course]);
 
   const isAdmin = canEditCourses(userRole);
+  // Material upload: professors (teacher) can contribute, students cannot.
+  const canUpload = canUploadCourses(userRole);
 
   // PDF Preview State
   const [previewFile, setPreviewFile] = useState<{title: string, size: string} | null>(null);
@@ -926,8 +928,8 @@ const CourseDetailView: React.FC<CourseDetailViewProps> = ({ course, onUpdateCou
                {/* Hidden picker for admin uploads */}
                <input ref={fileInputRef} type="file" className="hidden" onChange={handlePickUpload} />
 
-               {/* Admin upload control */}
-               {isAdmin && (
+               {/* Upload control — admins/deans/professors only, never students */}
+               {canUpload && (
                   <button
                      onClick={() => fileInputRef.current?.click()}
                      disabled={filesBusy || !isCoursesBackendConfigured()}

@@ -39,7 +39,7 @@ const PocketTheologyView = React.lazy(() => import('./components/PocketTheologyV
 const ChatView = React.lazy(() => import('./components/ChatView'));
 const AnnouncementsView = React.lazy(() => import('./components/AnnouncementsView'));
 const CoursePathView = React.lazy(() => import('./components/College/CoursePathView'));
-import { ViewState, Course, NewsItem } from './types';
+import { ViewState, Course, NewsItem, AcademicLevel } from './types';
 import { MOCK_COURSES, MOCK_USER, MOCK_NEWS } from './constants';
 import { CheckCircle, Mic } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -623,6 +623,12 @@ const App: React.FC = () => {
                         onOpenCoursePath={openCoursePath}
                         newsItems={newsItems}
                         setNewsItems={setNewsItems}
+                        tierCounts={{
+                          '证书': allCourses.filter(c => !c.level).length,
+                          '学士': allCourses.filter(c => c.level === AcademicLevel.BTH).length,
+                          '硕士': allCourses.filter(c => c.level === AcademicLevel.MDIV || c.level === AcademicLevel.MPTH).length,
+                          '博士': allCourses.filter(c => c.level === AcademicLevel.DMIN || c.level === AcademicLevel.PHD).length,
+                        }}
                       />
                     )}
                     {currentView === ViewState.COURSES && (
