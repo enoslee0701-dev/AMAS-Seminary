@@ -242,6 +242,20 @@ db.exec(`
     uploaded_at INTEGER NOT NULL
   );
 
+  -- Course material files. Binary lives on disk (uploads/course-files);
+  -- this table is the metadata index so uploads survive restarts.
+  CREATE TABLE IF NOT EXISTS course_files (
+    id TEXT PRIMARY KEY,
+    course_id TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    stored_name TEXT NOT NULL,
+    mime TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL,
+    uploader_id TEXT,
+    uploaded_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_course_files_course ON course_files(course_id, uploaded_at);
+
   -- Pocket Theology per-user state (XP / streak / lesson progress /
   -- journal / favorites). Stored as one JSON blob per user: the frontend
   -- owns the merge semantics and the whole state is read & written
@@ -283,6 +297,7 @@ export function resetDb(): void {
     DELETE FROM cooperation_submissions;
     DELETE FROM image_uploads;
     DELETE FROM recordings;
+    DELETE FROM course_files;
     DELETE FROM pt_state;
   `);
 }
