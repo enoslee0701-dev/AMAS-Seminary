@@ -1297,11 +1297,6 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
                 <h3 className="text-[15px] font-bold text-slate-900">
                   {myCoursesOnly ? '我的课程' : (activeLevel === '全部' ? '精选课程' : '全部课程')}
                 </h3>
-                {activeLevel === '全部' && !myCoursesOnly && (
-                  <div className="flex items-center text-[11px] text-slate-500">
-                    <Sparkles size={11} className="mr-1" color="#E8C98C" /> 精选 4.8
-                  </div>
-                )}
               </div>
               <div className="space-y-3">
                 {visibleCourses.length === 0 ? (
@@ -1379,10 +1374,6 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
                               <span className="text-slate-300">·</span>
                               <span className="flex items-center flex-shrink-0">
                                 <BookOpen size={11} className="mr-1" /> {course.totalLessons} 课时
-                              </span>
-                              <span className="text-slate-300">·</span>
-                              <span className="flex items-center flex-shrink-0 text-slate-500 font-semibold">
-                                <Sparkles size={10} className="mr-0.5" color="#E8C98C" /> 4.8
                               </span>
                             </div>
 
