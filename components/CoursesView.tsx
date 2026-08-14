@@ -31,7 +31,7 @@ const ThumbnailTile: React.FC<{
   fallbackUrl: string;
   tintCss: string;
   size: number;
-}> = ({ course, fallbackUrl, tintCss, size }) => {
+}> = ({ course, fallbackUrl, size }) => {
   const idbUrl = useImageUrl(course.thumbnailImageId);
   const url = idbUrl ?? course.thumbnail ?? fallbackUrl;
   return (
@@ -40,8 +40,9 @@ const ThumbnailTile: React.FC<{
       style={{
         width: size, height: size,
         borderRadius: 12,
-        background: `${tintCss}, url('${url}')`,
-        backgroundBlendMode: 'multiply',
+        // Photos render at natural color; a light bottom scrim adds depth
+        // (the old category-tint multiply turned photos green/purple).
+        background: `linear-gradient(180deg, rgba(4,20,45,0) 55%, rgba(4,20,45,0.30) 100%), url('${url}')`,
         backgroundSize: 'cover',
         backgroundPosition: 'center',
       }}

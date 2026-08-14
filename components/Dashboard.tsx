@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   Search, Bell, ChevronRight, BookOpen, User, Users, GraduationCap, Handshake,
   Building2, Globe2, MonitorPlay, Sparkles, ShieldCheck, Landmark, Megaphone,
-  ClipboardList, Library, FilePen, CalendarDays, PlayCircle, BarChart3
+  ClipboardList, Library, FilePen, PlayCircle, BarChart3, Headset, Church
 } from 'lucide-react';
 import { ViewState, NewsItem } from '../types';
 import { STOCK_PHOTOS } from '../services/stockPhotos';
@@ -112,14 +112,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
 
   const stats = [
     { icon: BookOpen, value: '128+', label: '课程', tone: 'navy' as const },
-    { icon: Users, value: '70+', label: '讲师', tone: 'gold' as const },
+    { icon: Church, value: '300+', label: '教会', tone: 'gold' as const },
     { icon: GraduationCap, value: '4000+', label: '学员', tone: 'navy' as const },
     { icon: Handshake, value: '20+', label: '分院', tone: 'gold' as const },
   ];
 
   const quickEntries = [
     { icon: Landmark, title: '了解学校', sub: '学校介绍详情', view: ViewState.COLLEGE_OVERVIEW },
-    { icon: CalendarDays, title: '预约咨询', sub: '联系招生顾问', view: ViewState.CHAT },
+    { icon: Megaphone, title: '最新公告', sub: '通知与活动', view: ViewState.ALL_ANNOUNCEMENTS },
     { icon: PlayCircle, title: '课程试听', sub: '体验精选课程', view: ViewState.COURSES },
     { icon: BarChart3, title: '学习档案', sub: '查看进度记录', view: ViewState.PROFILE },
   ];
@@ -234,7 +234,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
           backgroundColor: '#04285F',
           borderBottomLeftRadius: '50% 12px',
           borderBottomRightRadius: '50% 12px',
-          aspectRatio: '1672 / 941',
+          // Taller banner (was 1672/941): shows more of the hero photo and
+          // gives the carousel cards breathing room, per design feedback.
+          aspectRatio: '1672 / 1130',
           touchAction: 'pan-y',
         }}
         onTouchStart={(e) => {
@@ -270,7 +272,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
                   alt={s.alt}
                   className="block w-full h-full select-none pointer-events-none"
                   draggable={false}
-                  style={{ objectFit: 'cover' }}
+                  // 25% horizontal focus: the taller banner center-crops both
+                  // sides; biasing left keeps the artwork's own text margin.
+                  style={{ objectFit: 'cover', objectPosition: '25% center' }}
                 />
               ) : (
                 <>
@@ -334,8 +338,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
         </div>
       </header>
 
-      {/* === StatsBar — sits in the lower decorative band of the hero image, NOT covering any text === */}
-      <section className="relative" style={{ paddingLeft: 14, paddingRight: 14, marginTop: -36 }}>
+      {/* === StatsBar — below the hero with a slight overlap so the full
+           header photo stays visible (was -36, which crowded the hero on
+           phones) === */}
+      <section className="relative" style={{ paddingLeft: 14, paddingRight: 14, marginTop: -12 }}>
         <div
           style={{
             width: '100%', height: 64,
@@ -396,85 +402,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
         </div>
       </section>
 
-      {/* === WELCOME / LOW-BARRIER INVITATION === */}
-      <section className="px-4" style={{ marginTop: 18 }}>
-        <button
-          type="button"
-          onClick={() => onViewChange(ViewState.COURSES)}
-          className="w-full text-left active:scale-[0.99] transition-transform"
-          style={{
-            display: 'block',
-            position: 'relative',
-            padding: '16px 18px 14px',
-            borderRadius: 18,
-            background:
-              'linear-gradient(135deg, #FCEED1 0%, #FFF7E2 55%, #FFFDF6 100%)',
-            border: '1px solid rgba(201,154,69,0.22)',
-            boxShadow: '0 8px 22px rgba(201,154,69,0.12), 0 1px 3px rgba(16,24,40,0.04)',
-            overflow: 'hidden',
-          }}
-        >
-          {/* Decorative soft glow on the right */}
-          <div
-            aria-hidden
-            style={{
-              position: 'absolute',
-              top: -40, right: -40,
-              width: 160, height: 160,
-              borderRadius: '50%',
-              background:
-                'radial-gradient(circle, rgba(232,201,140,0.45) 0%, rgba(232,201,140,0) 70%)',
-              filter: 'blur(8px)',
-              pointerEvents: 'none',
-            }}
-          />
-
-          <div className="flex items-center" style={{ gap: 8 }}>
-            <Sparkles size={16} strokeWidth={2} color="#C99A45" />
-            <h3
-              style={{
-                margin: 0,
-                fontFamily: '"PingFang SC", -apple-system, "Helvetica Neue", sans-serif',
-                fontSize: 16, fontWeight: 700, lineHeight: '22px',
-                color: '#1F2A37', letterSpacing: '0.1px',
-              }}
-            >
-              神学不是牧者的专利，是每个人的礼物。
-            </h3>
-          </div>
-
-          <p
-            style={{
-              margin: '8px 0 0 0',
-              fontFamily: '"PingFang SC", -apple-system, "Helvetica Neue", sans-serif',
-              fontSize: 13, fontWeight: 400, lineHeight: '20px',
-              color: '#5C6573',
-            }}
-          >
-            不需要神学阅历，从这里开始就好。学一点，就能用一点。
-          </p>
-
-          <div
-            className="inline-flex items-center"
-            style={{
-              marginTop: 12,
-              paddingLeft: 12, paddingRight: 12,
-              height: 30, borderRadius: 15,
-              backgroundColor: '#04285F',
-              color: '#FFE8C0',
-              fontFamily: '"PingFang SC", -apple-system, sans-serif',
-              fontSize: 13, fontWeight: 600, letterSpacing: '0.4px',
-              gap: 4,
-            }}
-          >
-            免费试听一节
-            <ChevronRight size={14} strokeWidth={2.4} />
-          </div>
-        </button>
-      </section>
-
       {/* 快捷入口 */}
-      <section className="px-4" style={{ marginTop: 20 }}>
+      <section className="px-4" style={{ marginTop: 16 }}>
         <div className="flex items-center justify-between" style={{ marginBottom: 10, paddingLeft: 4, paddingRight: 4 }}>
           <h3
             style={{
@@ -549,6 +478,87 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
             })}
           </div>
         </div>
+      </section>
+
+      {/* === WELCOME / LOW-BARRIER INVITATION === */}
+      <section className="px-4" style={{ marginTop: 18 }}>
+        <button
+          type="button"
+          onClick={() => onViewChange(ViewState.COURSES)}
+          className="w-full text-left active:scale-[0.99] transition-transform"
+          style={{
+            display: 'block',
+            position: 'relative',
+            padding: '16px 18px 14px',
+            borderRadius: 18,
+            background:
+              'linear-gradient(135deg, #FCEED1 0%, #FFF7E2 55%, #FFFDF6 100%)',
+            border: '1px solid rgba(201,154,69,0.22)',
+            boxShadow: '0 8px 22px rgba(201,154,69,0.12), 0 1px 3px rgba(16,24,40,0.04)',
+            overflow: 'hidden',
+          }}
+        >
+          {/* Decorative soft glow on the right */}
+          <div
+            aria-hidden
+            style={{
+              position: 'absolute',
+              top: -40, right: -40,
+              width: 160, height: 160,
+              borderRadius: '50%',
+              background:
+                'radial-gradient(circle, rgba(232,201,140,0.45) 0%, rgba(232,201,140,0) 70%)',
+              filter: 'blur(8px)',
+              pointerEvents: 'none',
+            }}
+          />
+
+          <div className="flex items-center" style={{ gap: 8 }}>
+            <Sparkles size={16} strokeWidth={2} color="#C99A45" />
+            <h3
+              style={{
+                margin: 0,
+                fontFamily: '"PingFang SC", -apple-system, "Helvetica Neue", sans-serif',
+                // Scales with viewport so the line never wraps on narrow phones;
+                // capped at 16px so wide screens look unchanged.
+                fontSize: 'clamp(12px, 4vw, 16px)', fontWeight: 700, lineHeight: 1.4,
+                whiteSpace: 'nowrap',
+                color: '#1F2A37', letterSpacing: '0.1px',
+              }}
+            >
+              神学不是牧者的专利，是每个人的礼物。
+            </h3>
+          </div>
+
+          <p
+            style={{
+              margin: '8px 0 0 0',
+              fontFamily: '"PingFang SC", -apple-system, "Helvetica Neue", sans-serif',
+              fontSize: 'clamp(10px, 3.1vw, 13px)', fontWeight: 400, lineHeight: 1.55,
+              whiteSpace: 'nowrap',
+              color: '#5C6573',
+            }}
+          >
+            不需要神学阅历，从这里开始就好。学一点，就能用一点。
+          </p>
+
+          <div
+            className="inline-flex items-center"
+            style={{
+              marginTop: 12,
+              paddingLeft: 12, paddingRight: 12,
+              height: 30, borderRadius: 15,
+              backgroundColor: '#04285F',
+              color: '#FFE8C0',
+              fontFamily: '"PingFang SC", -apple-system, sans-serif',
+              fontSize: 13, fontWeight: 600, letterSpacing: '0.4px',
+              gap: 4,
+            }}
+          >
+            免费试听一节
+            <ChevronRight size={14} strokeWidth={2.4} />
+          </div>
+        </button>
       </section>
 
       {/* 精选免费公开课 */}
@@ -838,6 +848,36 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
           ))}
         </div>
       </section>
+
+      {/* === 客服咨询浮标 — fixed bottom-right, opens the chat view === */}
+      <div
+        className="fixed left-0 right-0 max-w-md mx-auto z-[60] pointer-events-none"
+        style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 92px)' }}
+      >
+        <button
+          onClick={() => onViewChange(ViewState.CHAT)}
+          aria-label="客服咨询"
+          className="pointer-events-auto absolute flex flex-col items-center justify-center active:scale-90 transition-transform"
+          style={{
+            right: 16, bottom: 0,
+            width: 54, height: 54, borderRadius: '50%',
+            background: 'linear-gradient(160deg, #0A3878 0%, #04285F 70%)',
+            border: '1.5px solid rgba(232,201,140,0.55)',
+            boxShadow: '0 8px 20px rgba(4,40,95,0.35), 0 2px 6px rgba(16,24,40,0.15)',
+          }}
+        >
+          <Headset size={22} strokeWidth={2} color="#E8C98C" />
+          <span
+            style={{
+              fontFamily: '"PingFang SC", -apple-system, sans-serif',
+              fontSize: 8.5, fontWeight: 700, color: '#E8C98C',
+              lineHeight: '10px', marginTop: 2, letterSpacing: '0.5px',
+            }}
+          >
+            咨询
+          </span>
+        </button>
+      </div>
     </div>
   );
 };

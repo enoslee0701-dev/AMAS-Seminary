@@ -70,9 +70,9 @@ const StudyModeNote = () => (
     <h3 className="font-bold text-slate-900 text-sm mb-2">学习方式</h3>
     <div className="space-y-1.5">
       {[
-        '硕士、副硕士、博士课程可选择网络或线下学习；其他课程必须线下学习。',
-        '每 3 个月进行 2 周的密集教育（Intensive），并于每季考核。',
-        '毕业前需将 12 项训练内容记录在必修科目中；具体时间请咨询各地分校。',
+        '线上学习以直播与录播方式进行，可随时回看；线下学习设密集集训（Intensive）。',
+        '采用学分制：不限定固定学习时间，修满所需学分即可完成课程。',
+        '毕业前需将 12 项训练内容记录在必修科目中；具体安排请咨询各地分校。',
       ].map((line, i) => (
         <div key={i} className="flex items-start text-[12px] text-slate-600">
           <span className="mr-1.5 mt-1.5 w-1 h-1 bg-blue-400 rounded-full shrink-0"></span>

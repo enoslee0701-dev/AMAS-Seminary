@@ -5,7 +5,7 @@ import {
   Target, Heart, Users,
   Book, Copy, Landmark,
   ChevronLeft, ShieldCheck, Quote, Sword, Scale, Briefcase,
-  User, Globe2, Mail
+  User, Globe2, Mail, Cross, Church, Globe
 } from 'lucide-react';
 import { initialAvatar } from '../../services/imageFallback';
 
@@ -61,7 +61,20 @@ export const DeanMessageView = ({ onBack }: SubViewProps) => (
 
           <div className="mt-8 pt-6 border-t border-slate-50 flex justify-end items-end">
              <div className="text-right">
-                <div className="font-handwriting text-xl text-blue-900 mb-1 font-bold opacity-90" style={{fontFamily: 'cursive'}}>HR. KIM 牧师</div>
+                <div
+                  className="text-blue-900 mb-1 opacity-90"
+                  style={{
+                    // Signature look from system script fonts (no webfont download):
+                    // Segoe Script / Brush Script MT on Windows, Snell Roundhand
+                    // on iOS/macOS; generic cursive elsewhere (Android).
+                    fontFamily: '"Segoe Script", "Brush Script MT", "Snell Roundhand", "Savoye LET", cursive',
+                    fontSize: 26, fontStyle: 'italic', fontWeight: 600,
+                    letterSpacing: '1px', lineHeight: 1.2,
+                    transform: 'rotate(-3deg)', transformOrigin: 'right bottom',
+                  }}
+                >
+                  HR. Kim
+                </div>
                 <p className="text-[10px] text-slate-400 font-medium">院长签字</p>
              </div>
           </div>
@@ -77,7 +90,7 @@ export const PurposeVisionView = ({ onBack }: SubViewProps) => (
       <button onClick={onBack} className="p-1 -ml-2 rounded-full hover:bg-slate-100 transition">
         <ChevronLeft size={24} className="text-slate-900" />
       </button>
-      <h2 className="ml-2 font-bold text-lg text-slate-900">目的与异象</h2>
+      <h2 className="ml-2 font-bold text-lg text-slate-900">异象与事工</h2>
     </div>
 
     <div className="p-4 space-y-4 pt-content-safe">
@@ -108,6 +121,77 @@ export const PurposeVisionView = ({ onBack }: SubViewProps) => (
                     </div>
                  </div>
              ))}
+          </div>
+       </div>
+
+       {/* 三大事工 — moved here from the 学院概览 landing */}
+       <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+          <div className="flex items-center mb-5">
+            <div className="p-2 bg-amber-50 rounded-lg mr-3">
+               <Cross size={20} className="text-amber-600" />
+            </div>
+            <h3 className="font-bold text-lg text-slate-800">三大事工</h3>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+             {[
+                { icon: BookOpen, title: '培育神国工人', sub: '装备牧者与宣教士', navy: true,  num: '01' },
+                { icon: Church,   title: '建立圣洁教会', sub: '扎根本地神学根基', navy: false, num: '02' },
+                { icon: Globe,    title: '拓展宣教使命', sub: '影响亚洲与万邦',   navy: true,  num: '03' },
+             ].map((v) => {
+                const Icon = v.icon;
+                return (
+                  <div
+                    key={v.title}
+                    className="relative flex flex-col items-center text-center"
+                    style={{
+                      borderRadius: 16,
+                      paddingTop: 14, paddingBottom: 14, paddingLeft: 8, paddingRight: 8,
+                      border: '1px solid #F1EEE7',
+                      boxShadow: '0 2px 8px rgba(16,24,40,0.04)',
+                    }}
+                  >
+                    <span
+                      className="absolute"
+                      style={{
+                        top: 8, left: 10,
+                        fontFamily: '"Cormorant Garamond", Georgia, serif',
+                        fontSize: 12, fontWeight: 600, fontStyle: 'italic',
+                        color: '#C9C2B5', letterSpacing: '0.5px',
+                      }}
+                    >
+                      {v.num}
+                    </span>
+                    <div
+                      className="flex items-center justify-center"
+                      style={{
+                        width: 44, height: 44, borderRadius: '50%',
+                        backgroundColor: v.navy ? '#04285F' : '#C99A45',
+                        marginBottom: 8, marginTop: 4,
+                      }}
+                    >
+                      <Icon size={20} strokeWidth={2} color="#FFFFFF" />
+                    </div>
+                    <h4
+                      style={{
+                        fontFamily: '"PingFang SC", -apple-system, sans-serif',
+                        fontSize: 12, fontWeight: 700, lineHeight: '16px',
+                        color: '#1F2A37', margin: 0,
+                      }}
+                    >
+                      {v.title}
+                    </h4>
+                    <p
+                      style={{
+                        fontFamily: '"PingFang SC", -apple-system, sans-serif',
+                        fontSize: 10, fontWeight: 400, lineHeight: '14px',
+                        color: '#98A2B3', margin: 0, marginTop: 4,
+                      }}
+                    >
+                      {v.sub}
+                    </p>
+                  </div>
+                );
+             })}
           </div>
        </div>
     </div>
@@ -215,16 +299,28 @@ export const EducationDirectionView = ({ onBack }: SubViewProps) => (
     <div className="p-4 grid gap-5 pt-content-safe">
        {[
           {
-             icon: Sword,
-             title: "培养能亲自传福音的牧会者和宣教士",
-             subtitle: "Frontline Evangelism",
-             desc: "AMAS不是为了培养学者，而是为了培养可以亲自到属灵争战的最前线，传扬耶稣基督福音的牧会者和宣教士而成立的学校。"
+             icon: Heart,
+             title: "神学，不只进入头脑，更要进入生活",
+             subtitle: "Theology for Life",
+             desc: "我们不满足于让学员记住教义和通过考试。每一门课程都要回答三个问题：这段真理是什么意思？它与我的生命有什么关系？我本周可以怎样实践？神学教育的成果，最终要在个人生命、家庭、教会、职场和人际关系中被看见。"
+          },
+          {
+             icon: BookOpen,
+             title: "以圣经真理建立稳固根基",
+             subtitle: "Biblical Foundation",
+             desc: "学院以圣经为信仰与生活的最高准则，以耶稣基督的福音为中心。我们帮助学员建立正确读经、解经和分辨的能力——不是听别人说圣经讲了什么，而是自己能读懂圣经、讲明真理，并以经文检验一切教导。"
+          },
+          {
+             icon: Globe,
+             title: "培养走向禾场的门徒与工人",
+             subtitle: "Disciples for the Harvest",
+             desc: "我们的目标不是培养只会内部讨论的人，而是培养能够关怀、带领、建立门徒，并敢于向任何人传讲耶稣基督救恩的工人。学习的终点不在课堂，而在教会的服事现场和福音尚未到达的人群中。"
           },
           {
              icon: Scale,
-             title: "通过平衡的教育培养健康的属灵指导者",
-             subtitle: "Balanced Leadership",
-             desc: "我们的目标就是要在神学校教导和训练指导者怎样面对和解决在牧会现场和宣教地所遇见的问题。通过结合理论和实践进行教导和训练，使指导者在牧会和宣教方面有自信。我们会把更多的时间投入到教导圣经和实践神学方面，以及作为牧会者要具备的多方面需要训练的科目方面进行教育。"
+             title: "理论与实践并重的平衡装备",
+             subtitle: "Balanced Equipping",
+             desc: "课程结合圣经神学、系统神学与实践神学，并配以讲道实习、小组带领、关怀陪伴等真实操练，使学员在牧会与宣教现场遇到问题时，既有真理根基，也有面对和解决的信心与能力。"
           },
        ].map((item, i) => (
           <div key={i} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col hover:shadow-md transition-shadow">

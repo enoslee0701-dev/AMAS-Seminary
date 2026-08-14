@@ -140,8 +140,8 @@ const CollegeView: React.FC<CollegeViewProps> = ({ onBack, initialItem }) => {
     return <DeanMessageView onBack={backToMenu} />;
   }
 
-  // 2. 目的异象 (Purpose & Vision)
-  if (selectedItem === '目的异象') {
+  // 2. 异象事工 (Vision & Ministries)
+  if (selectedItem === '异象事工') {
     return <PurposeVisionView onBack={backToMenu} />;
   }
 

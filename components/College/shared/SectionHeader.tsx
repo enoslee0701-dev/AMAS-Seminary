@@ -60,7 +60,7 @@ export const IssueCertificateView = ({
                  <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
                     <h4 className="text-xs font-bold text-slate-700 mb-2">可申请证明类型：</h4>
                     <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-600">
-                       {['在职证明', '毕业证明', '学位证明', '成绩证明', '开除证明', '宣教士训练证明'].map((t,i) => (
+                       {['在职证明', '毕业证明', '学位证明', '成绩证明', '开除证明', '宣教士训练证明', '牧师证证明', '其他'].map((t,i) => (
                           <div key={i} className="flex items-center">
                              <div className="w-1 h-1 bg-blue-400 rounded-full mr-1.5"></div>
                              {t}
@@ -160,6 +160,8 @@ export const IssueCertificateView = ({
                        <option value="成绩证明">成绩证明</option>
                        <option value="开除证明">开除证明</option>
                        <option value="宣教士训练证明">宣教士训练证明</option>
+                       <option value="牧师证证明">牧师证证明</option>
+                       <option value="其他">其他</option>
                     </select>
                  </div>
 

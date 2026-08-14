@@ -7,7 +7,7 @@ import {
   HelpCircle, Star, FileBarChart, Stamp,
   ChevronLeft,
   List,
-  Cross, Church, Globe
+  Cross, Church, Globe, Sprout
 } from 'lucide-react';
 import { STOCK_PHOTOS } from '../../services/stockPhotos';
 
@@ -21,7 +21,7 @@ export const getIconForItem = (itemName: string) => {
   switch(itemName) {
     // Introduction
     case '院长致辞': return MessageCircle;
-    case '目的异象': return Target;
+    case '异象事工': return Target;
     case '教育方向': return Compass;
     case '信仰告白': return Heart;
     case '学校组织': return Users;
@@ -53,11 +53,7 @@ export const getIconForItem = (itemName: string) => {
 };
 
 export const HeroSection = ({ onBack, onItemClick }: HeroSectionProps) => {
-  const visions = [
-    { icon: BookOpen, title: '培育神国工人', sub: '装备牧者与宣教士', tone: 'navy' as const, num: '01' },
-    { icon: Church,   title: '建立圣洁教会', sub: '扎根本地神学根基', tone: 'gold' as const, num: '02' },
-    { icon: Globe,    title: '拓展宣教使命', sub: '影响亚洲与万邦',   tone: 'navy' as const, num: '03' },
-  ];
+  // 三大事工 now lives in the 目的与异象 sub-page (HistorySection).
 
   const sections = [
     {
@@ -65,7 +61,7 @@ export const HeroSection = ({ onBack, onItemClick }: HeroSectionProps) => {
       title: '学院简介',
       subtitle: 'Introduction',
       image: STOCK_PHOTOS.lectureHall,
-      items: ['院长致辞', '目的异象', '教育方向', '信仰告白', '学校组织', '师资团队', '支持学校']
+      items: ['院长致辞', '异象事工', '教育方向', '信仰告白', '学校组织', '师资团队', '支持学校']
     },
     {
       id: 'study',
@@ -103,72 +99,81 @@ export const HeroSection = ({ onBack, onItemClick }: HeroSectionProps) => {
       </div>
 
       <div className="p-4 space-y-6 pt-content-safe">
-        {/* === PINNED: 三大事工 (moved from home) === */}
+        {/* === PINNED: 关于 AMAS — deep-navy/gold identity card === */}
         <section>
-          <div className="flex items-center justify-between mb-2.5">
-            <h3 className="text-[14px] font-extrabold text-slate-900 flex items-center">
-              <Cross size={14} className="text-amber-500 mr-1.5" strokeWidth={2.5} />
-              三大事工
-            </h3>
-          </div>
-          <div className="grid grid-cols-3 gap-2">
-            {visions.map((v) => {
-              const Icon = v.icon;
-              const isNavy = v.tone === 'navy';
-              return (
+          <div
+            style={{
+              borderRadius: 16,
+              background: 'linear-gradient(180deg, #0B2450 0%, #071A3C 70%, #051530 100%)',
+              border: '1px solid rgba(232,201,140,0.18)',
+              boxShadow: '0 10px 24px rgba(3,18,45,0.30), 0 2px 6px rgba(16,24,40,0.10)',
+              padding: '14px 14px 12px',
+            }}
+          >
+            <div className="flex items-center justify-center" style={{ gap: 10 }}>
+              <span style={{ color: '#E8C98C', fontSize: 12, lineHeight: 1 }}>·</span>
+              <span style={{ width: 26, height: 1, backgroundColor: 'rgba(232,201,140,0.55)' }} />
+              <h3
+                style={{
+                  margin: 0,
+                  fontFamily: '"PingFang SC", -apple-system, "Helvetica Neue", sans-serif',
+                  fontSize: 15, fontWeight: 800, letterSpacing: '2px',
+                  color: '#E8C98C', whiteSpace: 'nowrap',
+                }}
+              >
+                关于 AMAS
+              </h3>
+              <span style={{ width: 26, height: 1, backgroundColor: 'rgba(232,201,140,0.55)' }} />
+              <span style={{ color: '#E8C98C', fontSize: 12, lineHeight: 1 }}>·</span>
+            </div>
+            <p
+              className="text-center"
+              style={{
+                margin: '8px 0 0',
+                fontFamily: '"PingFang SC", -apple-system, "Helvetica Neue", sans-serif',
+                // Sized so the copy sets as exactly two balanced lines on phones.
+                fontSize: 'clamp(10px, 3.0vw, 12px)', fontWeight: 400, lineHeight: '19px',
+                color: 'rgba(255,255,255,0.85)',
+                textWrap: 'balance',
+              }}
+            >
+              以圣经为根基，以实践为导向，帮助学生在知识、生命与事奉上全面成长，装备他们在教会、职场与宣教禾场中忠心服事。
+            </p>
+            <div className="grid grid-cols-4" style={{ gap: 6, marginTop: 12 }}>
+              {[
+                { icon: BookOpen,  label: '圣经为本' },
+                { icon: HandHeart, label: '实践导向' },
+                { icon: Sprout,    label: '生命塑造' },
+                { icon: Globe,     label: '宣教视野' },
+              ].map(({ icon: Icon, label }) => (
                 <div
-                  key={v.title}
-                  className="bg-white relative flex flex-col items-center text-center active:scale-[0.98] transition-transform cursor-pointer"
+                  key={label}
+                  className="flex flex-col items-center"
                   style={{
-                    borderRadius: 16,
-                    paddingTop: 14, paddingBottom: 14, paddingLeft: 8, paddingRight: 8,
-                    border: '1px solid #F1EEE7',
-                    boxShadow: '0 2px 8px rgba(16,24,40,0.04)',
+                    border: '1px solid rgba(232,201,140,0.30)',
+                    borderRadius: 10,
+                    padding: '9px 3px 8px',
+                    background: 'rgba(255,255,255,0.03)',
                   }}
                 >
+                  <Icon size={20} strokeWidth={1.6} color="#E8C98C" />
                   <span
-                    className="absolute"
                     style={{
-                      top: 8, left: 10,
-                      fontFamily: '"Cormorant Garamond", Georgia, serif',
-                      fontSize: 12, fontWeight: 600, fontStyle: 'italic',
-                      color: '#C9C2B5', letterSpacing: '0.5px',
+                      marginTop: 7,
+                      fontFamily: '"PingFang SC", -apple-system, "Helvetica Neue", sans-serif',
+                      fontSize: 11, fontWeight: 600, letterSpacing: '0.5px',
+                      color: '#E8C98C',
+                      border: '1px solid rgba(232,201,140,0.45)',
+                      borderRadius: 7,
+                      padding: '3px 7px',
+                      whiteSpace: 'nowrap',
                     }}
                   >
-                    {v.num}
+                    {label}
                   </span>
-                  <div
-                    className="flex items-center justify-center"
-                    style={{
-                      width: 44, height: 44, borderRadius: '50%',
-                      backgroundColor: isNavy ? '#04285F' : '#C99A45',
-                      marginBottom: 8,
-                      marginTop: 4,
-                    }}
-                  >
-                    <Icon size={20} strokeWidth={2} color="#FFFFFF" />
-                  </div>
-                  <h4
-                    style={{
-                      fontFamily: '"PingFang SC", -apple-system, sans-serif',
-                      fontSize: 12, fontWeight: 700, lineHeight: '16px',
-                      color: '#1F2A37', margin: 0,
-                    }}
-                  >
-                    {v.title}
-                  </h4>
-                  <p
-                    style={{
-                      fontFamily: '"PingFang SC", -apple-system, sans-serif',
-                      fontSize: 10, fontWeight: 400, lineHeight: '14px',
-                      color: '#98A2B3', margin: 0, marginTop: 4,
-                    }}
-                  >
-                    {v.sub}
-                  </p>
                 </div>
-              );
-            })}
+              ))}
+            </div>
           </div>
         </section>
 
