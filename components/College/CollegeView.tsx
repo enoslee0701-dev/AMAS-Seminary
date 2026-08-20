@@ -11,6 +11,7 @@ import {
   OrganizationView,
   FacultyView,
   SupportSchoolView,
+  SchoolIntroView,
 } from './HistorySection';
 import {
   AcademicProgramsView,
@@ -134,6 +135,11 @@ const CollegeView: React.FC<CollegeViewProps> = ({ onBack, initialItem }) => {
   const backToMenu = () => setSelectedItem(null);
 
   // --- Detailed Views ---
+
+  // 0. 学校简介 (About AMAS + ATA accreditation)
+  if (selectedItem === '学校简介') {
+    return <SchoolIntroView onBack={backToMenu} />;
+  }
 
   // 1. 院长致辞 (Dean's Message)
   if (selectedItem === '院长致辞') {

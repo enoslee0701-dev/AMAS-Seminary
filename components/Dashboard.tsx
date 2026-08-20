@@ -113,7 +113,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
   }, []);
 
   const stats = [
-    { icon: BookOpen, value: '128+', label: '课程', tone: 'navy' as const },
+    { icon: BookOpen, value: '120+', label: '课程', tone: 'navy' as const },
     { icon: Church, value: '300+', label: '教会', tone: 'gold' as const },
     { icon: GraduationCap, value: '4000+', label: '学员', tone: 'navy' as const },
     { icon: Handshake, value: '20+', label: '分院', tone: 'gold' as const },

@@ -5,13 +5,201 @@ import {
   Target, Heart, Users,
   Book, Copy, Landmark,
   ChevronLeft, ShieldCheck, Quote, Sword, Scale, Briefcase,
-  User, Globe2, Mail, Cross, Church, Globe
+  User, Globe2, Mail, Cross, Church, Globe, HandHeart, Sprout, Scroll
 } from 'lucide-react';
 import { initialAvatar } from '../../services/imageFallback';
 
 interface SubViewProps {
   onBack: () => void;
 }
+
+// 0. 学校简介 (School Intro — About AMAS + ATA accreditation, moved off the overview landing)
+export const SchoolIntroView = ({ onBack }: SubViewProps) => {
+  // ATA accreditation panel — parchment/gold, interleaved after 学院简介.
+  const ataPanel = (
+    <section>
+      <div
+        style={{
+          borderRadius: 16,
+          background: 'linear-gradient(180deg, #FDF8EC 0%, #F6ECD3 100%)',
+          border: '1px solid #E0CFA0',
+          boxShadow: '0 8px 20px rgba(150,120,50,0.14), 0 2px 5px rgba(16,24,40,0.05)',
+          padding: '16px 14px 12px',
+        }}
+      >
+        <div className="flex items-center justify-center" style={{ gap: 10 }}>
+          <div
+            className="flex items-center justify-center shrink-0 overflow-hidden"
+            style={{
+              width: 48, height: 48, borderRadius: '50%',
+              background: '#FFFFFF',
+              border: '2px solid #C99A45',
+              padding: 4,
+            }}
+          >
+            <img
+              src="/images/ata-logo.png"
+              alt="Asia Theological Association"
+              style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+            />
+          </div>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: '#0B2450', letterSpacing: '1px' }}>
+              ATA 国际认证
+            </h3>
+            <p style={{ margin: 0, fontSize: 9.5, fontWeight: 600, color: '#9A7A2E', letterSpacing: '1px', textTransform: 'uppercase' }}>
+              Asia Theological Association · Accredited
+            </p>
+          </div>
+        </div>
+        <p
+          className="text-center"
+          style={{ margin: '10px 0 4px', fontSize: 11.5, lineHeight: '18px', color: '#5C4A1E' }}
+        >
+          AMAS 的以下学位课程已通过 Asia Theological Association（ATA）的认证评估。
+        </p>
+        <div>
+          {[
+            { icon: BookOpen,      cn: '神学学士',   en: 'Bachelor of Theology (B.Th.)' },
+            { icon: GraduationCap, cn: '道学硕士',   en: 'Master of Divinity (M.Div.)' },
+            { icon: Scroll,        cn: '教牧学博士', en: 'Doctor of Ministry (D.Min.)' },
+          ].map(({ icon: Icon, cn, en }, i) => (
+            <div
+              key={cn}
+              className="flex items-center"
+              style={{
+                gap: 10, padding: '10px 2px',
+                borderTop: i === 0 ? 'none' : '1px solid rgba(201,154,69,0.30)',
+              }}
+            >
+              <div
+                className="flex items-center justify-center shrink-0"
+                style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #C99A45', background: 'rgba(201,154,69,0.10)' }}
+              >
+                <Icon size={16} strokeWidth={1.8} color="#9A7A2E" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: '#1F2A37' }}>{cn}</p>
+                <p className="truncate" style={{ margin: 0, fontSize: 10, color: '#8A7648' }}>{en}</p>
+              </div>
+              <span
+                className="shrink-0"
+                style={{
+                  fontSize: 9.5, fontWeight: 700, color: '#0B2450',
+                  border: '1px solid #C99A45', borderRadius: 6,
+                  padding: '3px 8px', background: '#FDF8EC',
+                  letterSpacing: '0.3px', whiteSpace: 'nowrap',
+                }}
+              >
+                ✦ ATA Accredited
+              </span>
+            </div>
+          ))}
+        </div>
+        <p
+          className="text-center"
+          style={{ margin: '6px 0 0', paddingTop: 8, borderTop: '1px solid rgba(201,154,69,0.30)', fontSize: 9.5, lineHeight: '15px', color: '#9A7A2E' }}
+        >
+          ✦ ATA 认证适用于上述列明的学位项目；认证范围与有效期以 ATA 出具的认证文件为准。✦
+        </p>
+      </div>
+    </section>
+  );
+
+  // 关于 AMAS card — interleaved after 学习指南.
+  const aboutCard = (
+    <section>
+      <div
+        style={{
+          borderRadius: 16,
+          background: 'linear-gradient(180deg, #0B2450 0%, #071A3C 70%, #051530 100%)',
+          border: '1px solid rgba(232,201,140,0.18)',
+          boxShadow: '0 10px 24px rgba(3,18,45,0.30), 0 2px 6px rgba(16,24,40,0.10)',
+          padding: '14px 14px 12px',
+        }}
+      >
+        <div className="flex items-center justify-center" style={{ gap: 10 }}>
+          <span style={{ color: '#E8C98C', fontSize: 12, lineHeight: 1 }}>·</span>
+          <span style={{ width: 26, height: 1, backgroundColor: 'rgba(232,201,140,0.55)' }} />
+          <h3
+            style={{
+              margin: 0,
+              fontFamily: '"PingFang SC", -apple-system, "Helvetica Neue", sans-serif',
+              fontSize: 15, fontWeight: 800, letterSpacing: '2px',
+              color: '#E8C98C', whiteSpace: 'nowrap',
+            }}
+          >
+            关于 AMAS
+          </h3>
+          <span style={{ width: 26, height: 1, backgroundColor: 'rgba(232,201,140,0.55)' }} />
+          <span style={{ color: '#E8C98C', fontSize: 12, lineHeight: 1 }}>·</span>
+        </div>
+        <p
+          className="text-center"
+          style={{
+            margin: '8px 0 0',
+            fontFamily: '"PingFang SC", -apple-system, "Helvetica Neue", sans-serif',
+            fontSize: 'clamp(10px, 3.0vw, 12px)', fontWeight: 400, lineHeight: '19px',
+            color: 'rgba(255,255,255,0.85)',
+            textWrap: 'balance',
+          }}
+        >
+          以圣经为根基，以实践为导向，帮助学生在知识、生命与事奉上全面成长，装备他们在教会、职场与宣教禾场中忠心服事。
+        </p>
+        <div className="grid grid-cols-4" style={{ gap: 6, marginTop: 12 }}>
+          {[
+            { icon: BookOpen,  label: '圣经为本' },
+            { icon: HandHeart, label: '实践导向' },
+            { icon: Sprout,    label: '生命塑造' },
+            { icon: Globe,     label: '宣教视野' },
+          ].map(({ icon: Icon, label }) => (
+            <div
+              key={label}
+              className="flex flex-col items-center"
+              style={{
+                border: '1px solid rgba(232,201,140,0.30)',
+                borderRadius: 10,
+                padding: '9px 3px 8px',
+                background: 'rgba(255,255,255,0.03)',
+              }}
+            >
+              <Icon size={20} strokeWidth={1.6} color="#E8C98C" />
+              <span
+                style={{
+                  marginTop: 7,
+                  fontFamily: '"PingFang SC", -apple-system, "Helvetica Neue", sans-serif',
+                  fontSize: 11, fontWeight: 600, letterSpacing: '0.5px',
+                  color: '#E8C98C',
+                  border: '1px solid rgba(232,201,140,0.45)',
+                  borderRadius: 7,
+                  padding: '3px 7px',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {label}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+
+  return (
+    <div className="min-h-screen bg-slate-50 pb-24 animate-fade-in relative">
+      <div className="fixed top-0 left-0 right-0 max-w-md mx-auto z-20 bg-white/90 backdrop-blur-md px-4 py-3 pt-safe-top flex items-center shadow-sm border-b border-slate-200">
+        <button onClick={onBack} className="p-1 -ml-2 rounded-full hover:bg-slate-100 transition">
+          <ChevronLeft size={24} className="text-slate-900" />
+        </button>
+        <h2 className="ml-2 font-bold text-lg text-slate-900">学校简介</h2>
+      </div>
+      <div className="p-4 space-y-5 pt-content-safe">
+        {aboutCard}
+        {ataPanel}
+      </div>
+    </div>
+  );
+};
 
 // 1. 院长致辞 (Dean's Message)
 export const DeanMessageView = ({ onBack }: SubViewProps) => (
