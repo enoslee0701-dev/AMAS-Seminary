@@ -39,6 +39,7 @@ const PocketTheologyView = React.lazy(() => import('./components/PocketTheologyV
 const ChatView = React.lazy(() => import('./components/ChatView'));
 const AnnouncementsView = React.lazy(() => import('./components/AnnouncementsView'));
 const CoursePathView = React.lazy(() => import('./components/College/CoursePathView'));
+const TrialCoursesView = React.lazy(() => import('./components/TrialCoursesView'));
 import { ViewState, Course, NewsItem, AcademicLevel } from './types';
 import { MOCK_COURSES, MOCK_USER, MOCK_NEWS } from './constants';
 import { CheckCircle, Mic } from 'lucide-react';
@@ -464,7 +465,7 @@ const App: React.FC = () => {
       setCommunityTab('directory');
       setCurrentView(ViewState.COMMUNITY);
       setSelectedChatId(null);
-    } else if (currentView === ViewState.COLLEGE_OVERVIEW || currentView === ViewState.ALL_ANNOUNCEMENTS || currentView === ViewState.COOPERATION || currentView === ViewState.COURSE_PATH) {
+    } else if (currentView === ViewState.COLLEGE_OVERVIEW || currentView === ViewState.ALL_ANNOUNCEMENTS || currentView === ViewState.COOPERATION || currentView === ViewState.COURSE_PATH || currentView === ViewState.COURSE_TRIAL) {
       setCurrentView(ViewState.HOME);
     } else if (currentView === ViewState.POCKET_THEOLOGY) {
       setCurrentView(ViewState.COURSES);
@@ -595,6 +596,10 @@ const App: React.FC = () => {
             ) : currentView === ViewState.POCKET_THEOLOGY ? (
               <Suspense fallback={<ViewLoadingFallback />}>
                 <PocketTheologyView onBack={handleBackToHome} />
+              </Suspense>
+            ) : currentView === ViewState.COURSE_TRIAL ? (
+              <Suspense fallback={<ViewLoadingFallback />}>
+                <TrialCoursesView courses={allCourses} onBack={handleBackToHome} onCourseClick={handleCourseClick} />
               </Suspense>
             ) : currentView === ViewState.COURSE_PATH ? (
               <Suspense fallback={<ViewLoadingFallback />}>

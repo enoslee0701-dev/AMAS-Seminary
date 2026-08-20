@@ -127,7 +127,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
   const quickEntries = [
     { icon: Landmark, title: '了解学校', sub: '学校介绍详情', view: ViewState.COLLEGE_OVERVIEW },
     { icon: Megaphone, title: '最新公告', sub: '通知与活动', view: ViewState.ALL_ANNOUNCEMENTS },
-    { icon: PlayCircle, title: '课程试听', sub: '体验精选课程', view: ViewState.COURSES },
+    { icon: PlayCircle, title: '课程试听', sub: '体验精选课程', view: ViewState.COURSE_TRIAL },
     { icon: BarChart3, title: '学习档案', sub: '查看进度记录', view: ViewState.PROFILE },
   ];
 
