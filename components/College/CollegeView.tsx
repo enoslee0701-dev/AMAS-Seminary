@@ -12,6 +12,7 @@ import {
   FacultyView,
   SupportSchoolView,
   SchoolIntroView,
+  AccreditationView,
 } from './HistorySection';
 import {
   AcademicProgramsView,
@@ -139,6 +140,11 @@ const CollegeView: React.FC<CollegeViewProps> = ({ onBack, initialItem }) => {
   // 0. 学校简介 (About AMAS + ATA accreditation)
   if (selectedItem === '学校简介') {
     return <SchoolIntroView onBack={backToMenu} />;
+  }
+
+  // 0b. 国际认证 (ATA accreditation)
+  if (selectedItem === '国际认证') {
+    return <AccreditationView onBack={backToMenu} />;
   }
 
   // 1. 院长致辞 (Dean's Message)

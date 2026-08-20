@@ -13,8 +13,8 @@ interface SubViewProps {
   onBack: () => void;
 }
 
-// 0. 学校简介 (School Intro — About AMAS + ATA accreditation, moved off the overview landing)
-export const SchoolIntroView = ({ onBack }: SubViewProps) => {
+// 0b. 国际认证 (ATA accreditation)
+export const AccreditationView = ({ onBack }: SubViewProps) => {
   // ATA accreditation panel — parchment/gold, interleaved after 学院简介.
   const ataPanel = (
     <section>
@@ -106,6 +106,23 @@ export const SchoolIntroView = ({ onBack }: SubViewProps) => {
     </section>
   );
 
+  return (
+    <div className="min-h-screen bg-slate-50 pb-24 animate-fade-in relative">
+      <div className="fixed top-0 left-0 right-0 max-w-md mx-auto z-20 bg-white/90 backdrop-blur-md px-4 py-3 pt-safe-top flex items-center shadow-sm border-b border-slate-200">
+        <button onClick={onBack} className="p-1 -ml-2 rounded-full hover:bg-slate-100 transition">
+          <ChevronLeft size={24} className="text-slate-900" />
+        </button>
+        <h2 className="ml-2 font-bold text-lg text-slate-900">国际认证</h2>
+      </div>
+      <div className="p-4 pt-content-safe">
+        {ataPanel}
+      </div>
+    </div>
+  );
+};
+
+// 0. 学校简介 (School Intro — About AMAS + ATA accreditation, moved off the overview landing)
+export const SchoolIntroView = ({ onBack }: SubViewProps) => {
   // 关于 AMAS card — interleaved after 学习指南.
   const aboutCard = (
     <section>
@@ -195,7 +212,6 @@ export const SchoolIntroView = ({ onBack }: SubViewProps) => {
       </div>
       <div className="p-4 space-y-5 pt-content-safe">
         {aboutCard}
-        {ataPanel}
       </div>
     </div>
   );

@@ -4,7 +4,7 @@ import {
   Info, BookOpen, GraduationCap,
   MessageCircle, Target, Compass, Heart, Users, HandHeart,
   Book, Calendar, LogIn, Scroll, ClipboardList, FileSignature,
-  HelpCircle, Star, FileBarChart, Stamp,
+  HelpCircle, Star, FileBarChart, Stamp, ShieldCheck,
   ChevronLeft,
   List,
   Cross, Church, Globe
@@ -21,6 +21,7 @@ export const getIconForItem = (itemName: string) => {
   switch(itemName) {
     // Introduction
     case '学校简介': return Info;
+    case '国际认证': return ShieldCheck;
     case '院长致辞': return MessageCircle;
     case '异象事工': return Target;
     case '教育方向': return Compass;
@@ -62,7 +63,7 @@ export const HeroSection = ({ onBack, onItemClick }: HeroSectionProps) => {
       title: '学院简介',
       subtitle: 'Introduction',
       image: STOCK_PHOTOS.lectureHall,
-      items: ['学校简介', '院长致辞', '异象事工', '教育方向', '信仰告白', '学校组织', '师资团队', '支持学校']
+      items: ['学校简介', '国际认证', '院长致辞', '异象事工', '教育方向', '信仰告白', '学校组织', '师资团队', '支持学校']
     },
     {
       id: 'study',
