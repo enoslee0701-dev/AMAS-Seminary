@@ -8,6 +8,8 @@ import { ViewState, NewsItem } from '../types';
 import { STOCK_PHOTOS } from '../services/stockPhotos';
 import type { ProgramTier } from './College/programData';
 
+const AIServiceChat = React.lazy(() => import('./AIServiceChat'));
+
 // Lazy bridge to Capacitor StatusBar — no-op in plain web preview, real call in iOS shell.
 // Param is the desired STATUS-BAR TEXT color. Capacitor's Style enum is named by the
 // BACKGROUND tone instead, so we invert: light text = Style.Dark, dark text = Style.Light.
@@ -78,6 +80,9 @@ const heroSlides: HeroSlide[] = [
 ];
 
 const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, onOpenCoursePath, newsItems, tierCounts }) => {
+  // AI customer-service overlay (opened from the floating 咨询 button).
+  const [showAIChat, setShowAIChat] = useState(false);
+
   // Scrolled past hero → show compact sticky navbar.
   const [scrolled, setScrolled] = useState(false);
   // Hero carousel — transform-based (no scroll container, no rubber-banding)
@@ -857,7 +862,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
         style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 92px)' }}
       >
         <button
-          onClick={() => onViewChange(ViewState.CHAT)}
+          onClick={() => setShowAIChat(true)}
           aria-label="客服咨询"
           className="pointer-events-auto absolute flex flex-col items-center justify-center active:scale-90 transition-transform"
           style={{
@@ -880,6 +885,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
           </span>
         </button>
       </div>
+
+      {showAIChat && (
+        <React.Suspense fallback={null}>
+          <AIServiceChat onClose={() => setShowAIChat(false)} />
+        </React.Suspense>
+      )}
     </div>
   );
 };
