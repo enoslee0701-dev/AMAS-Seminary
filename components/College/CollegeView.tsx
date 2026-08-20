@@ -11,7 +11,6 @@ import {
   OrganizationView,
   FacultyView,
   SupportSchoolView,
-  SchoolIntroView,
   AccreditationView,
 } from './HistorySection';
 import {
@@ -136,11 +135,6 @@ const CollegeView: React.FC<CollegeViewProps> = ({ onBack, initialItem }) => {
   const backToMenu = () => setSelectedItem(null);
 
   // --- Detailed Views ---
-
-  // 0. 学校简介 (About AMAS + ATA accreditation)
-  if (selectedItem === '学校简介') {
-    return <SchoolIntroView onBack={backToMenu} />;
-  }
 
   // 0b. 国际认证 (ATA accreditation)
   if (selectedItem === '国际认证') {

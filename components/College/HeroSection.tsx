@@ -7,7 +7,7 @@ import {
   HelpCircle, Star, FileBarChart, Stamp, ShieldCheck,
   ChevronLeft,
   List,
-  Cross, Church, Globe
+  Cross, Church, Globe, Sprout
 } from 'lucide-react';
 import { STOCK_PHOTOS } from '../../services/stockPhotos';
 
@@ -20,7 +20,6 @@ interface HeroSectionProps {
 export const getIconForItem = (itemName: string) => {
   switch(itemName) {
     // Introduction
-    case '学校简介': return Info;
     case '国际认证': return ShieldCheck;
     case '院长致辞': return MessageCircle;
     case '异象事工': return Target;
@@ -63,7 +62,7 @@ export const HeroSection = ({ onBack, onItemClick }: HeroSectionProps) => {
       title: '学院简介',
       subtitle: 'Introduction',
       image: STOCK_PHOTOS.lectureHall,
-      items: ['学校简介', '国际认证', '院长致辞', '异象事工', '教育方向', '信仰告白', '学校组织', '师资团队', '支持学校']
+      items: ['国际认证', '院长致辞', '异象事工', '教育方向', '信仰告白', '学校组织', '师资团队', '支持学校']
     },
     {
       id: 'study',
@@ -88,6 +87,85 @@ export const HeroSection = ({ onBack, onItemClick }: HeroSectionProps) => {
     }
   ];
 
+  // 关于 AMAS card — pinned at the top of the overview landing.
+  const aboutCard = (
+    <section>
+      <div
+        style={{
+          borderRadius: 16,
+          background: 'linear-gradient(180deg, #0B2450 0%, #071A3C 70%, #051530 100%)',
+          border: '1px solid rgba(232,201,140,0.18)',
+          boxShadow: '0 10px 24px rgba(3,18,45,0.30), 0 2px 6px rgba(16,24,40,0.10)',
+          padding: '14px 14px 12px',
+        }}
+      >
+        <div className="flex items-center justify-center" style={{ gap: 10 }}>
+          <span style={{ color: '#E8C98C', fontSize: 12, lineHeight: 1 }}>·</span>
+          <span style={{ width: 26, height: 1, backgroundColor: 'rgba(232,201,140,0.55)' }} />
+          <h3
+            style={{
+              margin: 0,
+              fontFamily: '"PingFang SC", -apple-system, "Helvetica Neue", sans-serif',
+              fontSize: 15, fontWeight: 800, letterSpacing: '2px',
+              color: '#E8C98C', whiteSpace: 'nowrap',
+            }}
+          >
+            关于 AMAS
+          </h3>
+          <span style={{ width: 26, height: 1, backgroundColor: 'rgba(232,201,140,0.55)' }} />
+          <span style={{ color: '#E8C98C', fontSize: 12, lineHeight: 1 }}>·</span>
+        </div>
+        <p
+          className="text-center"
+          style={{
+            margin: '8px 0 0',
+            fontFamily: '"PingFang SC", -apple-system, "Helvetica Neue", sans-serif',
+            fontSize: 'clamp(10px, 3.0vw, 12px)', fontWeight: 400, lineHeight: '19px',
+            color: 'rgba(255,255,255,0.85)',
+            textWrap: 'balance',
+          }}
+        >
+          以圣经为根基，以实践为导向，帮助学生在知识、生命与事奉上全面成长，装备他们在教会、职场与宣教禾场中忠心服事。
+        </p>
+        <div className="grid grid-cols-4" style={{ gap: 6, marginTop: 12 }}>
+          {[
+            { icon: BookOpen,  label: '圣经为本' },
+            { icon: HandHeart, label: '实践导向' },
+            { icon: Sprout,    label: '生命塑造' },
+            { icon: Globe,     label: '宣教视野' },
+          ].map(({ icon: Icon, label }) => (
+            <div
+              key={label}
+              className="flex flex-col items-center"
+              style={{
+                border: '1px solid rgba(232,201,140,0.30)',
+                borderRadius: 10,
+                padding: '9px 3px 8px',
+                background: 'rgba(255,255,255,0.03)',
+              }}
+            >
+              <Icon size={20} strokeWidth={1.6} color="#E8C98C" />
+              <span
+                style={{
+                  marginTop: 7,
+                  fontFamily: '"PingFang SC", -apple-system, "Helvetica Neue", sans-serif',
+                  fontSize: 11, fontWeight: 600, letterSpacing: '0.5px',
+                  color: '#E8C98C',
+                  border: '1px solid rgba(232,201,140,0.45)',
+                  borderRadius: 7,
+                  padding: '3px 7px',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {label}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+
   return (
     <div className="pb-24 min-h-screen bg-slate-100 animate-fade-in">
       {/* Main Header */}
@@ -101,6 +179,7 @@ export const HeroSection = ({ onBack, onItemClick }: HeroSectionProps) => {
       </div>
 
       <div className="p-4 space-y-6 pt-content-safe">
+        {aboutCard}
         {sections.map((section) => (
           <React.Fragment key={section.id}>
           <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-200 group hover:shadow-md transition-all duration-300">
