@@ -4,11 +4,12 @@ import {
   Building2, Globe2, MonitorPlay, Sparkles, ShieldCheck, Landmark, Megaphone,
   ClipboardList, Library, FilePen, PlayCircle, BarChart3, Headset, Church
 } from 'lucide-react';
-import { ViewState, NewsItem } from '../types';
+import { ViewState, NewsItem, Course } from '../types';
 import { STOCK_PHOTOS } from '../services/stockPhotos';
 import type { ProgramTier } from './College/programData';
 
 const AIServiceChat = React.lazy(() => import('./AIServiceChat'));
+const GlobalSearch = React.lazy(() => import('./GlobalSearch'));
 
 // Lazy bridge to Capacitor StatusBar — no-op in plain web preview, real call in iOS shell.
 // Param is the desired STATUS-BAR TEXT color. Capacitor's Style enum is named by the
@@ -31,6 +32,9 @@ interface DashboardProps {
   onOpenCoursePath?: (tier?: ProgramTier) => void;
   newsItems: NewsItem[];
   setNewsItems: (items: NewsItem[]) => void;
+  /** Full course catalog + click handler for the global search overlay. */
+  courses?: Course[];
+  onCourseClick?: (courseId: string) => void;
   /** Live course count per degree tier, shown on the 课程路径 cards. */
   tierCounts?: Partial<Record<ProgramTier, number>>;
 }
@@ -79,9 +83,11 @@ const heroSlides: HeroSlide[] = [
   },
 ];
 
-const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, onOpenCoursePath, newsItems, tierCounts }) => {
+const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, onOpenCoursePath, newsItems, tierCounts, courses = [], onCourseClick }) => {
   // AI customer-service overlay (opened from the floating 咨询 button).
   const [showAIChat, setShowAIChat] = useState(false);
+  // Global app search overlay (opened from the navbar search button).
+  const [showSearch, setShowSearch] = useState(false);
 
   // Scrolled past hero → show compact sticky navbar.
   const [scrolled, setScrolled] = useState(false);
@@ -206,7 +212,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
           <div style={{ flex: 1 }} />
           <button
             aria-label="搜索"
-            onClick={() => onViewChange(ViewState.COURSES)}
+            onClick={() => setShowSearch(true)}
             className="flex items-center justify-center active:scale-95 transition"
             style={{
               width: 34, height: 34, borderRadius: '50%',
@@ -218,6 +224,27 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
             <Search size={16} strokeWidth={2} />
           </button>
         </div>
+      </div>
+
+      {/* Floating search over the hero — hands off to the sticky navbar icon on scroll */}
+      <div className="fixed left-0 right-0 max-w-md mx-auto pointer-events-none" style={{ top: 'calc(var(--safe-top) + 10px)', zIndex: 55 }}>
+        <button
+          aria-label="搜索"
+          onClick={() => setShowSearch(true)}
+          className="absolute flex items-center justify-center active:scale-95"
+          style={{
+            right: 14,
+            width: 36, height: 36, borderRadius: '50%',
+            backgroundColor: 'rgba(4,20,45,0.38)',
+            backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+            border: '1px solid rgba(255,255,255,0.35)',
+            opacity: scrolled ? 0 : 1,
+            pointerEvents: scrolled ? 'none' : 'auto',
+            transition: 'opacity 0.25s ease',
+          }}
+        >
+          <Search size={17} color="#FFFFFF" strokeWidth={2.2} />
+        </button>
       </div>
 
       {/* === HEADER CAROUSEL === auto-advances every 4s, swipeable, no vertical drag */}
@@ -885,6 +912,19 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
           </span>
         </button>
       </div>
+
+      {showSearch && (
+        <React.Suspense fallback={null}>
+          <GlobalSearch
+            courses={courses}
+            newsItems={newsItems}
+            onClose={() => setShowSearch(false)}
+            onCourseClick={(id) => onCourseClick?.(id)}
+            onViewChange={onViewChange}
+            onOpenCollegeItem={(item) => onOpenCollegeItem?.(item)}
+          />
+        </React.Suspense>
+      )}
 
       {showAIChat && (
         <React.Suspense fallback={null}>

@@ -628,6 +628,8 @@ const App: React.FC = () => {
                         onOpenCoursePath={openCoursePath}
                         newsItems={newsItems}
                         setNewsItems={setNewsItems}
+                        courses={allCourses}
+                        onCourseClick={handleCourseClick}
                         tierCounts={{
                           '证书': allCourses.filter(c => !c.level).length,
                           '学士': allCourses.filter(c => c.level === AcademicLevel.BTH).length,
