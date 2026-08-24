@@ -114,8 +114,55 @@ export const AccreditationView = ({ onBack }: SubViewProps) => {
         </button>
         <h2 className="ml-2 font-bold text-lg text-slate-900">国际认证</h2>
       </div>
-      <div className="p-4 pt-content-safe">
+      <div className="p-4 pt-content-safe space-y-4">
         {ataPanel}
+
+        {/* 关于 ATA */}
+        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
+          <div className="flex items-center mb-3">
+            <div className="p-2 bg-amber-50 rounded-lg mr-3">
+              <Globe size={18} className="text-amber-600" />
+            </div>
+            <h3 className="font-bold text-base text-slate-800">关于 ATA</h3>
+          </div>
+          <p className="text-[13px] text-slate-600 leading-6 text-justify">
+            亚洲神学协会（Asia Theological Association，简称 ATA）成立于 1970
+            年，是服务亚洲福音派神学教育的区域性认证机构，也是国际福音派神学教育理事会（ICETE）的成员。ATA
+            联结亚洲各国数百所神学院校，通过学术评审、课程认证与资源共享，推动亚洲神学教育的质量与合一。
+          </p>
+        </div>
+
+        {/* 认证的意义 */}
+        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
+          <div className="flex items-center mb-3">
+            <div className="p-2 bg-blue-50 rounded-lg mr-3">
+              <ShieldCheck size={18} className="text-blue-700" />
+            </div>
+            <h3 className="font-bold text-base text-slate-800">认证对学员的意义</h3>
+          </div>
+          <div className="space-y-3">
+            {[
+              { t: '学术质量保证', d: '课程设置、师资力量与教学治理均通过 ATA 的外部评审，教育质量有第三方把关。' },
+            { t: '学位广受认可', d: '认证学位在 ATA 网络内的亚洲各国神学院校间更易获得承认，为继续深造铺路。' },
+              { t: '深造与服事衔接', d: '毕业后申请更高学位课程或跨机构服事时，认证背景是重要的资历凭据。' },
+              { t: '与全球教育接轨', d: '借助 ATA 与 ICETE 的国际网络，学院持续对标全球福音派神学教育标准。' },
+            ].map((item, i) => (
+              <div key={i} className="flex items-start">
+                <div className="w-5 h-5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5 mr-3">
+                  {i + 1}
+                </div>
+                <div>
+                  <h4 className="text-[13px] font-bold text-slate-800 mb-0.5">{item.t}</h4>
+                  <p className="text-xs text-slate-500 leading-5 text-justify">{item.d}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <p className="text-center text-[10.5px] text-slate-400 leading-4 px-4">
+          如需认证证书文件或更多信息，请联系学院教务处查询。
+        </p>
       </div>
     </div>
   );
