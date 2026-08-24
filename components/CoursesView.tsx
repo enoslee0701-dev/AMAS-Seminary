@@ -894,6 +894,36 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
                 height: 'calc(var(--safe-top) + 56px)',
               }}
             >
+              {searchExpanded ? (
+                <div className="flex items-center w-full" style={{ gap: 10 }}>
+                  <div className="flex items-center flex-1 bg-white border border-slate-200 rounded-full pl-3 pr-2" style={{ height: 38 }}>
+                    <Search size={15} className="text-slate-400 mr-2 shrink-0" />
+                    <input
+                      autoFocus
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="搜索课程或讲师"
+                      className="flex-1 min-w-0 bg-transparent outline-none text-[14px] text-slate-800 placeholder:text-slate-400"
+                    />
+                    {searchQuery && (
+                      <button
+                        aria-label="清空"
+                        onClick={() => setSearchQuery('')}
+                        className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center shrink-0 active:scale-95 transition"
+                      >
+                        <X size={12} className="text-slate-500" />
+                      </button>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => { setSearchQuery(''); setSearchExpanded(false); }}
+                    className="shrink-0 text-[14px] font-semibold text-[#04285F] active:opacity-60 transition"
+                  >
+                    取消
+                  </button>
+                </div>
+              ) : (<>
               <div className="flex items-center" style={{ gap: 8 }}>
                 <div className="w-8 h-8 rounded-lg bg-[#04285F] flex items-center justify-center">
                   <GraduationCap size={16} color="#E8C98C" strokeWidth={2.4} />
@@ -901,35 +931,13 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
                 <h1 className="text-[20px] font-extrabold text-slate-900 tracking-tight">学习中心</h1>
               </div>
               <div className="flex items-center" style={{ gap: 8 }}>
-                {searchExpanded ? (
-                  <div className="flex items-center bg-white border border-slate-200 rounded-full pl-3 pr-1" style={{ height: 36 }}>
-                    <Search size={14} className="text-slate-400 mr-2" />
-                    <input
-                      autoFocus
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="搜索课程或讲师"
-                      className="bg-transparent outline-none text-[13px] text-slate-800 placeholder:text-slate-400"
-                      style={{ width: 140 }}
-                    />
-                    <button
-                      aria-label="关闭搜索"
-                      onClick={() => { setSearchQuery(''); setSearchExpanded(false); }}
-                      className="w-7 h-7 rounded-full flex items-center justify-center active:scale-95 transition"
-                    >
-                      <X size={14} className="text-slate-400" />
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    aria-label="搜索"
-                    onClick={() => setSearchExpanded(true)}
-                    className="w-9 h-9 rounded-full bg-white border border-slate-200 flex items-center justify-center active:scale-95 transition"
-                  >
-                    <Search size={16} className="text-slate-500" />
-                  </button>
-                )}
+                <button
+                  aria-label="搜索"
+                  onClick={() => setSearchExpanded(true)}
+                  className="w-9 h-9 rounded-full bg-white border border-slate-200 flex items-center justify-center active:scale-95 transition"
+                >
+                  <Search size={16} className="text-slate-500" />
+                </button>
                 <button
                   onClick={() => setMyCoursesOnly(v => !v)}
                   className="flex items-center rounded-full active:scale-95 transition"
@@ -943,10 +951,11 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
                   <span className="text-[12px] font-semibold">{myCoursesOnly ? '全部课程' : '我的学习'}</span>
                 </button>
               </div>
+              </>)}
             </header>
             )}
 
-            {activeLevel === '全部' && (<>
+            {activeLevel === '全部' && !searchQuery.trim() && (<>
             {/* 2. HERO PATH CARD */}
             <section className="px-4">
               <div
@@ -1311,7 +1320,7 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
                     </button>
                   </div>
                 ) : (
-                  (activeLevel === '全部' ? visibleCourses.slice(0, 8) : visibleCourses).map((course) => {
+                  (activeLevel === '全部' && !searchQuery.trim() ? visibleCourses.slice(0, 8) : visibleCourses).map((course) => {
                     const status = statusOf(course);
                     const tone = statusTone[status.kind];
                     return (
