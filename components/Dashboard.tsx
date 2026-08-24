@@ -347,7 +347,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
                     </div>
                     <button
                       onClick={() => {
-                        if (s.action === 'admissions') onOpenCollegeItem('admissions');
+                        if (s.action === 'admissions') onOpenCollegeItem?.('入学指南');
                         else if (s.action === 'courses') onViewChange(ViewState.COURSES);
                         else if (s.action === 'live') onViewChange(ViewState.COMMUNITY);
                       }}
