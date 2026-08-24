@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Headset, Send, X } from 'lucide-react';
 import { getSupportReply, QUICK_QUESTIONS, isSmartMode } from '../services/aiSupportService';
 
@@ -43,7 +44,9 @@ const AIServiceChat: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
   const showQuick = messages.length <= 2;
 
-  return (
+  // Portal to <body>: escapes any ancestor stacking context so the overlay
+  // (and its input bar) reliably covers the bottom tab bar.
+  return createPortal(
     <div className="fixed inset-0 z-[120] max-w-md mx-auto flex flex-col bg-slate-50 animate-fade-in">
       {/* Header */}
       <div
@@ -167,7 +170,8 @@ const AIServiceChat: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           <Send size={17} color="#E8C98C" />
         </button>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 };
 
