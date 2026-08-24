@@ -119,8 +119,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
 
   const stats = [
     { icon: BookOpen, value: '120+', label: '课程', tone: 'navy' as const },
-    { icon: Church, value: '300+', label: '教会', tone: 'gold' as const },
-    { icon: GraduationCap, value: '4000+', label: '学员', tone: 'navy' as const },
+    { icon: Church, value: '200+', label: '教会', tone: 'gold' as const },
+    { icon: GraduationCap, value: '3000+', label: '学员', tone: 'navy' as const },
     { icon: Handshake, value: '20+', label: '分院', tone: 'gold' as const },
   ];
 
@@ -351,10 +351,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
       <section className="relative" style={{ paddingLeft: 14, paddingRight: 14, marginTop: -12 }}>
         <div
           style={{
-            width: '100%', height: 64,
-            borderRadius: 18,
+            width: '100%', height: 56,
+            borderRadius: 16,
             backgroundColor: '#FFFFFF',
-            paddingLeft: 8, paddingRight: 8,
+            paddingLeft: 6, paddingRight: 6,
             boxShadow: '0 18px 36px rgba(16,24,40,0.12), 0 4px 10px rgba(16,24,40,0.05)',
           }}
         >
@@ -367,22 +367,22 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
                     <div
                       className="flex items-center justify-center shrink-0"
                       style={{
-                        width: 34, height: 34, borderRadius: '50%',
+                        width: 29, height: 29, borderRadius: '50%',
                         backgroundColor: s.tone === 'navy' ? '#04285F' : '#C99A45',
                       }}
                     >
                       <Icon
-                        size={17}
+                        size={15}
                         strokeWidth={2}
                         color={s.tone === 'navy' ? '#E8C98C' : '#FFFFFF'}
                         fill="transparent"
                       />
                     </div>
-                    <div style={{ marginLeft: 8 }}>
+                    <div style={{ marginLeft: 6 }}>
                       <div
                         style={{
                           fontFamily: '-apple-system, "SF Pro Display", "Helvetica Neue", sans-serif',
-                          fontSize: 14, fontWeight: 600, lineHeight: '18px',
+                          fontSize: 'clamp(11.5px, 3.3vw, 13px)', fontWeight: 600, lineHeight: '16px',
                           color: '#2B2B2B', letterSpacing: '-0.2px',
                         }}
                       >
@@ -391,7 +391,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
                       <div
                         style={{
                           fontFamily: '"PingFang SC", -apple-system, "Helvetica Neue", sans-serif',
-                          fontSize: 12, fontWeight: 500, lineHeight: '16px',
+                          fontSize: 'clamp(10px, 2.9vw, 11px)', fontWeight: 500, lineHeight: '14px',
                           color: '#8C8C8C',
                         }}
                       >
@@ -400,7 +400,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
                     </div>
                   </div>
                   {i < stats.length - 1 && (
-                    <div style={{ width: 1, height: 32, backgroundColor: '#F0EDE6', flexShrink: 0 }} />
+                    <div style={{ width: 1, height: 26, backgroundColor: '#F0EDE6', flexShrink: 0 }} />
                   )}
                 </React.Fragment>
               );

@@ -806,7 +806,7 @@ const CommunityView: React.FC<CommunityViewProps> = ({
   return (
     <div
       className="min-h-screen bg-slate-50 pb-24 relative animate-fade-in"
-      style={{ paddingTop: 'calc(max(env(safe-area-inset-top, 47px), 47px) + 76px)' }}
+      style={{ paddingTop: 'calc(var(--safe-top) + 76px)' }}
     >
         {/* Global UI Components */}
         {showToastMsg && (
@@ -968,7 +968,7 @@ const CommunityView: React.FC<CommunityViewProps> = ({
         {/* 1. Page Header — Tab bar serves as the header (title row removed) */}
         <div
           className="bg-white fixed top-0 left-0 right-0 max-w-md mx-auto z-[50] border-b border-slate-100 shadow-sm px-4"
-          style={{ paddingTop: 'max(env(safe-area-inset-top, 47px), 47px)' }}
+          style={{ paddingTop: 'var(--safe-top)' }}
         >
             {/* Top Navigation Tabs - Icon Based and Balanced */}
             <div className="bg-white px-2 py-2">

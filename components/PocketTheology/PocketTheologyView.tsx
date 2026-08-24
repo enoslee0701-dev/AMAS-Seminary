@@ -105,12 +105,12 @@ const PocketTheologyView: React.FC<Props> = ({ onBack }) => {
 
   // ====================== SHARED HEADER ======================
   const Header: React.FC<{ title: string; subtitle?: string; onBackLocal?: () => void }> = ({ title, subtitle, onBackLocal }) => {
-    const totalH = 'calc(max(env(safe-area-inset-top, 47px), 47px) + 56px)';
+    const totalH = 'calc(var(--safe-top) + 56px)';
     return (
       <>
         <div
           className="bg-white border-b border-slate-100 px-4 flex items-center fixed top-0 left-0 right-0 max-w-md mx-auto z-[60] shadow-sm"
-          style={{ paddingTop: 'max(env(safe-area-inset-top, 47px), 47px)', height: totalH }}
+          style={{ paddingTop: 'var(--safe-top)', height: totalH }}
         >
           <button onClick={onBackLocal || onBack} className="p-1 -ml-1 rounded-full text-slate-800"><ArrowLeft size={22} /></button>
           <div className="ml-2 flex-1 min-w-0">
@@ -175,7 +175,7 @@ const PocketTheologyView: React.FC<Props> = ({ onBack }) => {
         <div
           className="fixed top-0 left-0 right-0 max-w-md mx-auto z-[60]"
           style={{
-            paddingTop: 'max(env(safe-area-inset-top, 47px), 47px)',
+            paddingTop: 'var(--safe-top)',
             paddingBottom: 14,
             paddingLeft: 16,
             paddingRight: 16,
@@ -228,7 +228,7 @@ const PocketTheologyView: React.FC<Props> = ({ onBack }) => {
         </div>
 
         {/* Spacer to offset the fixed header */}
-        <div aria-hidden style={{ height: 'calc(max(env(safe-area-inset-top, 47px), 47px) + 52px)' }} />
+        <div aria-hidden style={{ height: 'calc(var(--safe-top) + 52px)' }} />
 
         <div className="px-4 pb-6" style={{ background: '#F8FAFF', display: 'flex', flexDirection: 'column', gap: 14 }}>
           {/* ============ Today Hero Card ============ */}
@@ -906,8 +906,8 @@ const PocketTheologyView: React.FC<Props> = ({ onBack }) => {
         <div
           className="flex items-center sticky top-0 z-30 px-4"
           style={{
-            paddingTop: 'max(env(safe-area-inset-top, 47px), 47px)',
-            height: 'calc(max(env(safe-area-inset-top, 47px), 47px) + 60px)',
+            paddingTop: 'var(--safe-top)',
+            height: 'calc(var(--safe-top) + 60px)',
             background: 'linear-gradient(180deg, rgba(220,236,255,0.96) 0%, rgba(220,236,255,0.78) 60%, rgba(220,236,255,0) 100%)',
             gap: 10,
           }}
@@ -1888,7 +1888,7 @@ const PocketTheologyView: React.FC<Props> = ({ onBack }) => {
     };
     return (
       <div className="fixed inset-0 z-[80] bg-slate-50 flex flex-col animate-fade-in">
-        <div className="bg-white border-b border-slate-100 px-4 flex items-center" style={{ paddingTop: 'max(env(safe-area-inset-top, 47px), 47px)', height: 'calc(max(env(safe-area-inset-top, 47px), 47px) + 56px)' }}>
+        <div className="bg-white border-b border-slate-100 px-4 flex items-center" style={{ paddingTop: 'var(--safe-top)', height: 'calc(var(--safe-top) + 56px)' }}>
           <button onClick={() => setRoute({ name: 'home' })} className="p-1 -ml-1 rounded-full text-slate-500"><X size={22} /></button>
           <div className="flex-1 mx-3">
             <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
@@ -2836,7 +2836,7 @@ const PocketTheologyView: React.FC<Props> = ({ onBack }) => {
     const recTrad = tradId ? TRADITIONS.find(t => t.id === tradId) : null;
 
     return (
-      <div className="min-h-screen bg-gradient-to-br from-[#04285F] via-[#0A3878] to-[#0F4690] text-white flex flex-col" style={{ paddingTop: 'max(env(safe-area-inset-top, 47px), 47px)' }}>
+      <div className="min-h-screen bg-gradient-to-br from-[#04285F] via-[#0A3878] to-[#0F4690] text-white flex flex-col" style={{ paddingTop: 'var(--safe-top)' }}>
         {/* Progress bar */}
         <div className="px-4 flex items-center" style={{ gap: 6 }}>
           <button onClick={skipOnboarding} className="text-[11px] text-white/60 font-bold py-2 pr-2">跳过</button>

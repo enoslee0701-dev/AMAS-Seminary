@@ -543,13 +543,13 @@ const ProfileView: React.FC<ProfileViewProps> = ({ favoriteCourseIds = [], onLog
       )}
 
       {/* Header — role-aware identity */}
-      <div className="relative bg-[#0F172A] rounded-b-[2rem] overflow-hidden" style={{ paddingTop: 'max(env(safe-area-inset-top, 47px), 47px)', paddingBottom: 48 }}>
+      <div className="relative bg-[#0F172A] rounded-b-[2rem] overflow-hidden" style={{ paddingTop: 'var(--safe-top)', paddingBottom: 48 }}>
         <div className="absolute inset-0 bg-gradient-to-b from-blue-900/40 to-transparent"></div>
 
         <button
           onClick={() => setIsSettingsOpen(true)}
           className="absolute right-6 p-2 text-white/70 hover:text-white transition-colors z-10"
-          style={{ top: 'calc(max(env(safe-area-inset-top, 47px), 47px) + 4px)' }}
+          style={{ top: 'calc(var(--safe-top) + 4px)' }}
           aria-label="设置"
         >
           <Settings size={22} />

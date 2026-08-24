@@ -41,22 +41,27 @@
         object-fit: cover;
       }
 
-      /* Safe Area Utilities — must clear Dynamic Island (~59px) */
+      /* Safe Area Utilities.
+         --safe-top is the real safe-area inset (0 on Android/desktop
+         browsers). Only the iOS native shell (html.native-shell, set by the
+         inline script below) enforces the 47px Dynamic-Island floor. */
+      :root { --safe-top: env(safe-area-inset-top, 0px); }
+      html.native-shell { --safe-top: max(env(safe-area-inset-top, 47px), 47px); }
       .pt-safe-top {
-        padding-top: max(env(safe-area-inset-top, 47px), 47px) !important;
+        padding-top: var(--safe-top) !important;
       }
       .pb-safe-area {
         padding-bottom: env(safe-area-inset-bottom);
       }
       .pt-content-safe {
-        padding-top: calc(max(env(safe-area-inset-top, 47px), 47px) + 60px) !important;
+        padding-top: calc(var(--safe-top) + 60px) !important;
       }
       /* Sticky page header that clears Dynamic Island / notch */
       .app-sticky-header {
         position: sticky;
         top: 0;
         z-index: 50;
-        padding-top: max(env(safe-area-inset-top, 47px), 47px);
+        padding-top: var(--safe-top);
       }
       
       /* Scrollbar Hide Utility */
@@ -136,7 +141,16 @@
 }
 </script>
 <link rel="stylesheet" href="/index.css">
-</head>
+    <script>
+      // Capacitor injects its bridge before app scripts; flag the native
+      // shell so CSS can apply the notch floor only there.
+      try {
+        if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) {
+          document.documentElement.classList.add('native-shell');
+        }
+      } catch (e) {}
+    </script>
+  </head>
   <body>
     <div id="root"></div>
   <script type="module" src="/index.tsx"></script>

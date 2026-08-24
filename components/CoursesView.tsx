@@ -881,8 +881,8 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
             style={{
               paddingTop:
                 activeLevel === '全部'
-                  ? 'calc(max(env(safe-area-inset-top, 47px), 47px) + 56px)'
-                  : 'max(env(safe-area-inset-top, 47px), 47px)',
+                  ? 'calc(var(--safe-top) + 56px)'
+                  : 'var(--safe-top)',
             }}
           >
             {/* 1. HEADER (FIXED — only shown on the main hub) */}
@@ -890,8 +890,8 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
             <header
               className="fixed top-0 left-0 right-0 max-w-md mx-auto z-50 bg-slate-50/95 backdrop-blur-md px-5 flex items-center justify-between border-b border-slate-100/60"
               style={{
-                paddingTop: 'max(env(safe-area-inset-top, 47px), 47px)',
-                height: 'calc(max(env(safe-area-inset-top, 47px), 47px) + 56px)',
+                paddingTop: 'var(--safe-top)',
+                height: 'calc(var(--safe-top) + 56px)',
               }}
             >
               <div className="flex items-center" style={{ gap: 8 }}>
@@ -1185,7 +1185,7 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
                   className="px-4 pt-3 pb-3 bg-slate-50"
                   style={{
                     position: 'sticky',
-                    top: 'max(env(safe-area-inset-top, 47px), 47px)',
+                    top: 'var(--safe-top)',
                     zIndex: 40,
                   }}>
                   <button
