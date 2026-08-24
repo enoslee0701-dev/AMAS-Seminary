@@ -412,8 +412,8 @@ export const StatementOfFaithView = ({ onBack }: SubViewProps) => (
               "遵行神话语的生活才是真正的信仰和活信心。",
               "我们依靠圣灵的引导和能力，可以直到地极把福音传给万民，并积极付诸行动上。"
             ].map((text, idx) => (
-               <div key={idx} className="bg-white p-4 rounded-xl border border-slate-200 shadow-[0_2px_8px_rgba(0,0,0,0.02)] flex items-start group hover:border-blue-200 transition-all">
-                  <div className="w-6 h-6 bg-slate-100 text-slate-600 rounded-full flex items-center justify-center font-bold text-xs shrink-0 mr-3 mt-0.5 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+               <div key={idx} className="bg-white p-4 rounded-xl border border-slate-200 shadow-[0_2px_8px_rgba(0,0,0,0.02)] flex items-start">
+                  <div className="w-6 h-6 bg-slate-100 text-slate-600 rounded-full flex items-center justify-center font-bold text-xs shrink-0 mr-3 mt-0.5">
                      {idx + 1}
                   </div>
                   <p className="text-sm text-slate-700 leading-relaxed text-justify">
