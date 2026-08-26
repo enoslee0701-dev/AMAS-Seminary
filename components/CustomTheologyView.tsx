@@ -4,6 +4,7 @@ import {
   ShieldCheck, RefreshCw, BookOpen, ArrowDown, Compass, AlertTriangle, ClipboardList,
 } from 'lucide-react';
 import { Course } from '../types';
+import { STOCK_PHOTOS } from '../services/stockPhotos';
 
 /**
  * 定制化神学 — AI 个性化神学装备系统 (v2)。
@@ -513,74 +514,6 @@ interface Props {
 
 // ---------- 首页视觉：高保真落地页组件 ----------
 
-const HeroArt: React.FC = () => (
-  <svg
-    viewBox="0 0 216 260"
-    fill="none"
-    aria-hidden="true"
-    style={{ position: 'absolute', right: -6, top: 0, bottom: 0, width: 216, height: '100%', pointerEvents: 'none' }}
-  >
-    <defs>
-      <radialGradient id="ctGlow" cx="50%" cy="34%" r="52%">
-        <stop offset="0%" stopColor="#FFE9B8" stopOpacity=".95" />
-        <stop offset="34%" stopColor="#F2CF8C" stopOpacity=".38" />
-        <stop offset="100%" stopColor="#F2CF8C" stopOpacity="0" />
-      </radialGradient>
-      <linearGradient id="ctRay" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor="#FFE9B8" stopOpacity=".55" />
-        <stop offset="100%" stopColor="#FFE9B8" stopOpacity="0" />
-      </linearGradient>
-      <linearGradient id="ctCross" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor="#FFF6DF" />
-        <stop offset="100%" stopColor="#EFC87E" />
-      </linearGradient>
-      <linearGradient id="ctPage" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor="#F6DFAC" stopOpacity=".9" />
-        <stop offset="100%" stopColor="#D9AE5F" stopOpacity=".55" />
-      </linearGradient>
-      <filter id="ctSoft" x="-60%" y="-60%" width="220%" height="220%">
-        <feGaussianBlur stdDeviation="5" />
-      </filter>
-    </defs>
-    <circle cx="128" cy="92" r="86" fill="url(#ctGlow)" />
-    <g opacity=".8">
-      <polygon points="126,18 132,18 146,96 112,96" fill="url(#ctRay)" />
-      <polygon points="88,34 93,30 122,98 108,104" fill="url(#ctRay)" opacity=".55" />
-      <polygon points="166,32 171,36 148,102 136,97" fill="url(#ctRay)" opacity=".55" />
-    </g>
-    <g filter="url(#ctSoft)" opacity=".55">
-      <rect x="123" y="46" width="10" height="74" rx="5" fill="#FFEFC8" />
-      <rect x="99" y="66" width="58" height="10" rx="5" fill="#FFEFC8" />
-    </g>
-    <rect x="124" y="47" width="8" height="72" rx="4" fill="url(#ctCross)" />
-    <rect x="100" y="67" width="56" height="8" rx="4" fill="url(#ctCross)" />
-    <g fill="#F7E3B4">
-      <path d="M63 58l1.6 4.4L69 64l-4.4 1.6L63 70l-1.6-4.4L57 64l4.4-1.6z" opacity=".9" />
-      <path d="M178 118l1.2 3.3 3.3 1.2-3.3 1.2-1.2 3.3-1.2-3.3-3.3-1.2 3.3-1.2z" opacity=".7" />
-      <path d="M86 128l1 2.7 2.7 1-2.7 1-1 2.7-1-2.7-2.7-1 2.7-1z" opacity=".55" />
-      <circle cx="160" cy="52" r="1.6" opacity=".8" />
-      <circle cx="72" cy="96" r="1.3" opacity=".5" />
-      <circle cx="190" cy="86" r="1.2" opacity=".6" />
-    </g>
-    <g transform="translate(52 150)">
-      <ellipse cx="76" cy="66" rx="86" ry="16" fill="#000A24" opacity=".35" />
-      <path d="M76 18 C 52 4, 18 6, 2 16 L 2 58 C 18 48, 52 46, 76 60 Z" fill="url(#ctPage)" opacity=".28" />
-      <path d="M76 18 C 52 4, 18 6, 2 16 L 2 58 C 18 48, 52 46, 76 60 Z" stroke="#E8C98C" strokeWidth="2.4" fill="none" strokeLinejoin="round" />
-      <path d="M76 18 C 100 4, 134 6, 150 16 L 150 58 C 134 48, 100 46, 76 60 Z" fill="url(#ctPage)" opacity=".28" />
-      <path d="M76 18 C 100 4, 134 6, 150 16 L 150 58 C 134 48, 100 46, 76 60 Z" stroke="#E8C98C" strokeWidth="2.4" fill="none" strokeLinejoin="round" />
-      <path d="M76 18 L76 60" stroke="#E8C98C" strokeWidth="2.4" strokeLinecap="round" />
-      <g stroke="#E8C98C" strokeWidth="1.3" opacity=".55" strokeLinecap="round">
-        <path d="M14 24 C 32 17, 54 16, 68 24" />
-        <path d="M14 34 C 32 27, 54 26, 68 33" />
-        <path d="M14 44 C 32 37, 54 36, 68 42" />
-        <path d="M84 24 C 98 16, 120 17, 138 24" />
-        <path d="M84 33 C 98 26, 120 27, 138 34" />
-        <path d="M84 42 C 98 36, 120 37, 138 44" />
-      </g>
-    </g>
-  </svg>
-);
-
 const SectionEyebrow: React.FC<{ title: string; en: string }> = ({ title, en }) => (
   <div className="flex items-center" style={{ gap: 8, marginBottom: 12 }}>
     <svg width="15" height="15" viewBox="0 0 24 24" fill="#C99A45" className="shrink-0">
@@ -1024,50 +957,49 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick })
       </div>
 
       <div className="p-4 pt-content-safe">
-        {/* ===== 英雄区 ===== */}
+        {/* ===== 英雄区：写实照片 + 深蓝压边 ===== */}
         <section
           className="relative overflow-hidden"
           style={{
-            borderRadius: 24, padding: '26px 20px 22px', color: '#FFF',
-            background:
-              'radial-gradient(120% 90% at 88% 0%, rgba(240,205,135,.28) 0%, rgba(240,205,135,0) 46%), linear-gradient(160deg, #0B2450 0%, #071A3C 70%, #051530 100%)',
+            borderRadius: 18, minHeight: 148,
             border: '1px solid rgba(232,201,140,.22)',
-            boxShadow: '0 14px 30px rgba(4,28,74,.28), 0 3px 8px rgba(4,28,74,.14)',
+            boxShadow: '0 10px 24px rgba(4,28,74,.22), 0 2px 6px rgba(4,28,74,.10)',
           }}
         >
-          <HeroArt />
-          <div className="inline-flex items-center" style={{ gap: 6, marginBottom: 10, position: 'relative', zIndex: 2 }}>
-            <span style={{ width: 18, height: 1, background: 'linear-gradient(90deg, transparent, rgba(232,201,140,.7))' }} />
-            <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '2.4px', color: 'rgba(232,201,140,.92)' }}>AI PERSONALIZED THEOLOGY</span>
-            <span style={{ width: 18, height: 1, background: 'linear-gradient(90deg, rgba(232,201,140,.7), transparent)' }} />
-          </div>
-          <h1
+          <div
+            className="absolute inset-0"
             style={{
-              position: 'relative', zIndex: 2, margin: '0 0 12px', maxWidth: 220,
-              fontSize: 26, lineHeight: 1.28, fontWeight: 900, letterSpacing: '1px',
-              background: 'linear-gradient(180deg, #F7E3B4 10%, #E4BC6E 90%)',
-              WebkitBackgroundClip: 'text', backgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
+              backgroundImage: 'url(' + STOCK_PHOTOS.prayingBible + ')',
+              backgroundSize: 'cover', backgroundPosition: 'center right',
             }}
-          >
-            认识你，<br />才能装备你
-          </h1>
-          <p style={{ position: 'relative', zIndex: 2, margin: '0 0 18px', maxWidth: 226, fontSize: 12.5, lineHeight: 1.85, color: 'rgba(233,238,248,.92)', fontWeight: 500 }}>
-            不是每个人都需要从同一课开始。AI 将透过访谈式对话，从
-            <b style={{ color: '#F2D493' }}> 知道 · 理解 · 应用 · 教导 </b>
-            四个层面诊断你的真实装备程度，为你建立专属成长路径。
-          </p>
-          <button onClick={startQuiz} className="active:scale-95 transition-transform" style={{ ...goldBtn, position: 'relative', zIndex: 2 }}>
-            {ct ? '重新进行 AI 诊断' : '开始 AI 诊断（约 6–8 分钟）'}
-            <ChevronRight size={15} strokeWidth={2.6} />
-          </button>
-          <div className="flex" style={{ gap: 14, marginTop: 15, position: 'relative', zIndex: 2, fontSize: 10, color: 'rgba(233,238,248,.55)', fontWeight: 600, letterSpacing: '0.4px' }}>
-            {['访谈式对话', '动态追问', '随学习持续更新'].map(x => (
-              <span key={x} className="inline-flex items-center" style={{ gap: 4 }}>
-                <i style={{ width: 3, height: 3, borderRadius: '50%', background: 'rgba(232,201,140,.8)', display: 'inline-block' }} />
-                {x}
-              </span>
-            ))}
+          />
+          <div
+            className="absolute inset-0"
+            style={{
+              background: 'linear-gradient(90deg, #071A3C 0%, rgba(7,26,60,0.94) 36%, rgba(7,26,60,0.55) 66%, rgba(7,26,60,0.18) 100%)',
+            }}
+          />
+          <div className="relative z-10" style={{ padding: '18px 16px 16px' }}>
+            <p style={{ margin: '0 0 6px', fontSize: 9.5, fontWeight: 800, letterSpacing: '2.2px', color: 'rgba(232,201,140,.9)' }}>
+              AI PERSONALIZED THEOLOGY
+            </p>
+            <h1
+              style={{
+                margin: '0 0 7px', fontSize: 21, lineHeight: 1.3, fontWeight: 900, letterSpacing: '0.8px',
+                background: 'linear-gradient(180deg, #F7E3B4 10%, #E4BC6E 90%)',
+                WebkitBackgroundClip: 'text', backgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+              }}
+            >
+              认识你，才能装备你
+            </h1>
+            <p style={{ margin: '0 0 14px', maxWidth: 232, fontSize: 12, lineHeight: 1.75, color: 'rgba(233,238,248,.9)', fontWeight: 500 }}>
+              AI 透过对话诊断你的装备程度，为你生成专属成长路径。
+            </p>
+            <button onClick={startQuiz} className="active:scale-95 transition-transform" style={{ ...goldBtn, height: 38, fontSize: 12.5 }}>
+              {ct ? '重新进行 AI 诊断' : '开始 AI 诊断（约 6–8 分钟）'}
+              <ChevronRight size={14} strokeWidth={2.6} />
+            </button>
           </div>
         </section>
 

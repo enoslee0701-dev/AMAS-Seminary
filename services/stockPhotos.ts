@@ -45,6 +45,14 @@ export const STOCK_PHOTOS = {
   study: '/images/stock/study.jpg',
   /** 校园团契 */
   campusCommunity: '/images/stock/campus-community.jpg',
+  worshipHands: '/images/stock/worship-hands.jpg',
+  prayingBible: '/images/stock/praying-bible.jpg',
+  preaching: '/images/stock/preaching.jpg',
+  armor: '/images/stock/armor.jpg',
+  jesusWorship: '/images/stock/jesus-worship.jpg',
+  baptismWater: '/images/stock/baptism-water.jpg',
+  asiaStreet: '/images/stock/asia-street.jpg',
+  churchCongregation: '/images/stock/church-congregation.jpg',
 } as const;
 
 export type StockPhotoKey = keyof typeof STOCK_PHOTOS;
