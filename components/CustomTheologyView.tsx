@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ChevronLeft, ChevronRight, Sparkles, Target, TrendingUp,
-  ShieldCheck, RefreshCw, BookOpen, ArrowDown, Compass, AlertTriangle, ClipboardList,
+  ShieldCheck, RefreshCw, BookOpen, ArrowDown, Compass, AlertTriangle, ClipboardList, Trash2,
 } from 'lucide-react';
 import { Course } from '../types';
 import { STOCK_PHOTOS } from '../services/stockPhotos';
@@ -817,6 +817,18 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick })
     if (nq) setCurrent(nq); else finish();
   };
 
+  // 撤销诊断：清除画像与路径，恢复初始落地页
+  const clearDiagnosis = () => {
+    if (!window.confirm('确定撤销本次诊断吗？成长画像与装备路径将被清除，页面恢复到初始状态。')) return;
+    try { localStorage.removeItem(STORAGE_KEY); } catch {}
+    setCt(null);
+  };
+  const fmtTime = (iso: string) => {
+    const d = new Date(iso);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  };
+
   // ---------- 画像派生 ----------
   const derive = (s: CTState) => {
     const entries = DIMS.map(d => ({ meta: d, score: s.scores[d.key] }));
@@ -1040,11 +1052,17 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick })
                   >
                     <Sparkles size={9} /> {portrait.stage.name} · LEVEL {portrait.stage.level} · 综合 {portrait.avg}
                   </span>
-                  <button onClick={startQuiz} aria-label="重新诊断" className="p-2 rounded-full text-slate-300 hover:text-slate-500 transition">
-                    <RefreshCw size={14} />
-                  </button>
+                  <div className="flex items-center">
+                    <button onClick={startQuiz} aria-label="重新诊断" title="重新诊断" className="p-2 rounded-full text-slate-300 hover:text-slate-500 transition">
+                      <RefreshCw size={14} />
+                    </button>
+                    <button onClick={clearDiagnosis} aria-label="撤销诊断" title="撤销诊断" className="p-2 rounded-full text-slate-300 hover:text-rose-500 transition">
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
                 </div>
-                <p style={{ margin: '8px 0 4px', fontSize: 11.5, color: '#667085' }}>{portrait.stage.desc}</p>
+                <p style={{ margin: '8px 0 2px', fontSize: 11.5, color: '#667085' }}>{portrait.stage.desc}</p>
+                <p style={{ margin: '0 0 4px', fontSize: 10, color: '#B6BDC9' }}>诊断于 {fmtTime(ct.completedAt)} · 可随时重新诊断或撤销</p>
                 <div className="flex justify-center" style={{ margin: '2px 0 6px' }}>
                   <RadarChart values={radarVals} />
                 </div>
