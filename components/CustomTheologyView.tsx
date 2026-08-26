@@ -859,6 +859,9 @@ const ARCHETYPES: ArchMeta[] = [
   },
 ];
 
+/** 角色 IP 卡图（用户提供的 12 张设计卡，public/images/archetypes/）。 */
+const archImg = (k: ArchKey) => `/images/archetypes/arch_${k}.jpg`;
+
 const ARCH_DISCLAIMER =
   '成长角色用于帮助理解当前呈现的恩赐、能力、侍奉与成长倾向，不等同于属灵身份、教会职分或神对个人呼召的最终确认。角色判断应继续结合圣经、祷告、教会群体、导师、真实侍奉与长期果效进行辨识。';
 
@@ -1976,6 +1979,35 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                     </div>
 
                     <div style={{ padding: '14px 16px 13px' }}>
+                      {/* 主/辅角色 IP 卡 */}
+                      <div className="grid grid-cols-2" style={{ gap: 8, marginBottom: 13 }}>
+                        {[pri, sec].map((r, i) => (
+                          <div key={r.a.key} className="relative">
+                            <img
+                              src={archImg(r.a.key)}
+                              alt={r.a.label}
+                              loading="lazy"
+                              style={{
+                                width: '100%', borderRadius: 13,
+                                border: i === 0 ? '1.5px solid rgba(201,154,69,.55)' : '1px solid rgba(20,40,90,0.10)',
+                                boxShadow: '0 4px 12px rgba(16,24,40,.08)',
+                              }}
+                            />
+                            <span
+                              className="absolute"
+                              style={{
+                                top: 7, left: 7, fontSize: 9, fontWeight: 800, letterSpacing: '0.5px',
+                                color: i === 0 ? '#8A6519' : '#33456F',
+                                background: i === 0 ? 'rgba(251,246,234,.95)' : 'rgba(255,255,255,.92)',
+                                border: i === 0 ? '1px solid rgba(201,154,69,.5)' : '1px solid rgba(20,40,90,.14)',
+                                borderRadius: 999, padding: '2px 8px',
+                              }}
+                            >
+                              {i === 0 ? '主角色' : '辅助角色'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
                       {/* 主 / 辅 / 第三 */}
                       <div className="grid grid-cols-3" style={{ gap: 8, marginBottom: 13 }}>
                         {[
@@ -2076,20 +2108,30 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                           {ARCH_GROUPS.map(g => (
                             <div key={g.key} style={{ marginBottom: 9 }}>
                               <p style={{ margin: '0 0 5px', fontSize: 10.5, fontWeight: 800, color: '#8A6519' }}>{g.en} · {g.cn}</p>
-                              <div className="flex flex-wrap" style={{ gap: 6 }}>
+                              <div className="grid grid-cols-3" style={{ gap: 7 }}>
                                 {rows.filter(r => r.a.group === g.key).map(r => (
-                                  <span
-                                    key={r.a.key}
-                                    className="inline-flex items-center"
-                                    style={{
-                                      gap: 4, fontSize: 11, fontWeight: 700, borderRadius: 999, padding: '4px 10px',
-                                      color: r.a.key === pri.a.key ? '#8A6519' : '#475467',
-                                      background: r.a.key === pri.a.key ? '#FBF6EA' : '#F6F7F9',
-                                      border: r.a.key === pri.a.key ? '1px solid rgba(201,154,69,.45)' : '1px solid #ECEEF2',
-                                    }}
-                                  >
-                                    {r.a.icon} {r.a.label} {r.score}
-                                  </span>
+                                  <div key={r.a.key} className="relative">
+                                    <img
+                                      src={archImg(r.a.key)}
+                                      alt={r.a.label}
+                                      loading="lazy"
+                                      style={{
+                                        width: '100%', borderRadius: 10,
+                                        border: r.a.key === pri.a.key ? '1.5px solid rgba(201,154,69,.6)' : '1px solid #ECEEF2',
+                                      }}
+                                    />
+                                    <span
+                                      className="absolute"
+                                      style={{
+                                        right: 4, bottom: 4, fontSize: 9.5, fontWeight: 900,
+                                        color: r.a.key === pri.a.key ? '#8A6519' : '#33456F',
+                                        background: 'rgba(255,255,255,.94)', borderRadius: 999, padding: '1px 7px',
+                                        border: '1px solid rgba(20,40,90,.12)',
+                                      }}
+                                    >
+                                      {r.score}
+                                    </span>
+                                  </div>
                                 ))}
                               </div>
                             </div>
@@ -2326,30 +2368,30 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
             {/* ===== 十二大成长角色总览 ===== */}
             <section style={{ marginTop: 26 }}>
               <SectionEyebrow title="十二大成长角色" en="Growth Archetypes" />
-              <div className="grid grid-cols-2" style={{ gap: 11 }}>
+              <div
+                className="flex overflow-x-auto"
+                style={{ gap: 10, margin: '0 -16px', padding: '2px 16px 8px', scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch' }}
+              >
+                {ARCHETYPES.map(a => (
+                  <img
+                    key={a.key}
+                    src={archImg(a.key)}
+                    alt={`${a.label} ${a.en}`}
+                    loading="lazy"
+                    className="shrink-0"
+                    style={{
+                      width: 178, borderRadius: 15, scrollSnapAlign: 'start',
+                      border: '1px solid rgba(20,40,90,0.10)',
+                      boxShadow: '0 4px 12px rgba(16,24,40,.08)',
+                    }}
+                  />
+                ))}
+              </div>
+              <div className="flex flex-wrap justify-center" style={{ gap: 6, marginTop: 8 }}>
                 {ARCH_GROUPS.map(g => (
-                  <div key={g.key} style={{ ...ctCard, padding: '14px 13px 12px' }}>
-                    <div className="flex items-baseline" style={{ gap: 6, marginBottom: 4 }}>
-                      <span style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 12, fontWeight: 700, letterSpacing: '1.5px', color: '#C1A76A' }}>{g.en}</span>
-                      <span style={{ fontSize: 13.5, fontWeight: 900, color: '#14295A' }}>{g.cn}</span>
-                    </div>
-                    <p style={{ margin: '0 0 9px', fontSize: 10, lineHeight: 1.65, color: '#98A2B3', fontWeight: 500 }}>{g.q}</p>
-                    <div className="flex flex-wrap" style={{ gap: 5 }}>
-                      {ARCHETYPES.filter(a => a.group === g.key).map(a => (
-                        <span
-                          key={a.key}
-                          className="inline-flex items-center"
-                          style={{
-                            gap: 4, fontSize: 10.5, fontWeight: 700, color: '#22345E',
-                            background: '#F8FAFF', border: '1px solid rgba(4,40,95,.16)',
-                            borderRadius: 999, padding: '3px 9px',
-                          }}
-                        >
-                          {a.icon} {a.label}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
+                  <span key={g.key} style={{ fontSize: 10, fontWeight: 800, color: '#8A6519', background: '#FBF6EA', border: '1px solid rgba(201,154,69,.28)', borderRadius: 999, padding: '3px 10px' }}>
+                    {g.en} {g.cn} · {ARCHETYPES.filter(a => a.group === g.key).map(a => a.label).join(' / ')}
+                  </span>
                 ))}
               </div>
               <p style={{ margin: '10px 2px 0', fontSize: 10, color: '#98A2B3', lineHeight: 1.7, textAlign: 'center' }}>
