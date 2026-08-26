@@ -1449,6 +1449,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
 
   // ---- 成长角色版本历史：主+辅组合发生变化时追加一条 ----
   const [showAllRoles, setShowAllRoles] = useState(false);
+  const [roleDetail, setRoleDetail] = useState<ArchKey | null>(null);
   useEffect(() => {
     if (!ct?.gifts) return;
     const { boost } = learningBoost(courses);
@@ -1611,6 +1612,102 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
               服事记录会填充恩赐的「实际服事」证据层，并解锁档案的服事验证模块。导师/同工的正式评价功能将在教会后台开通后加入。
             </p>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ================= 角色详情页 =================
+
+  if (roleDetail) {
+    const a = ARCHETYPES.find(x => x.key === roleDetail)!;
+    const grp = ARCH_GROUPS.find(x => x.key === a.group)!;
+    let myScore: number | null = null;
+    let myRank = 0;
+    if (ct?.gifts) {
+      const { boost } = learningBoost(courses);
+      const rows = computeArchetypes(ct.gifts, k => Math.min(100, ct.scores[k] + boost[k]), ct.service ?? []);
+      myRank = rows.findIndex(r => r.a.key === a.key) + 1;
+      myScore = rows[myRank - 1].score;
+    }
+    const num = String(ARCHETYPES.indexOf(a) + 1).padStart(2, '0');
+    return (
+      <div className="fixed inset-0 z-[120] max-w-md mx-auto flex flex-col bg-slate-50 animate-fade-in">
+        <div className="flex items-center px-4 bg-white border-b border-slate-200" style={{ paddingTop: 'calc(var(--safe-top) + 8px)', paddingBottom: 10 }}>
+          <button onClick={() => setRoleDetail(null)} aria-label="返回" className="p-1 -ml-2 rounded-full hover:bg-slate-100 transition">
+            <ChevronLeft size={24} className="text-slate-900" />
+          </button>
+          <p className="ml-2" style={{ margin: 0, fontSize: 15, fontWeight: 800, color: '#1F2A37' }}>{num} {a.label} · 角色详情</p>
+          <span className="ml-auto" style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '1px', color: '#8A6519', background: '#FBF6EA', border: '1px solid rgba(201,154,69,.28)', borderRadius: 999, padding: '3px 9px' }}>
+            {grp.en} · {grp.cn}
+          </span>
+        </div>
+        <div className="flex-1 overflow-y-auto px-4 py-4" style={{ paddingBottom: 30 }}>
+          <img
+            src={archImg(a.key)}
+            alt={a.label}
+            style={{ width: '100%', borderRadius: 18, border: '1px solid rgba(20,40,90,0.10)', boxShadow: '0 8px 20px rgba(16,24,40,.10)' }}
+          />
+
+          {myScore !== null && (
+            <div className="flex items-center" style={{ gap: 10, marginTop: 12, padding: '11px 14px', background: 'linear-gradient(160deg, #0B2450 0%, #071A3C 100%)', borderRadius: 14, border: '1px solid rgba(232,201,140,.22)' }}>
+              <Sparkles size={15} color="#F2D493" className="shrink-0" />
+              <p style={{ margin: 0, fontSize: 12, color: 'rgba(233,238,248,.92)', lineHeight: 1.7 }}>
+                你在此角色的当前得分 <b style={{ color: '#F2D493', fontSize: 14 }}>{myScore}</b>，
+                位列你 12 个角色中的第 <b style={{ color: '#F2D493' }}>{myRank}</b> 位
+                {myRank === 1 ? '——这是你的主角色。' : myRank === 2 ? '——这是你的辅助角色。' : '。'}
+              </p>
+            </div>
+          )}
+
+          <div style={{ ...ctCard, padding: '15px 16px', marginTop: 12 }}>
+            <p style={{ margin: '0 0 4px', fontSize: 10, fontWeight: 800, letterSpacing: '1.5px', color: '#C1A76A' }}>CORE MOTIVATION · 核心动机</p>
+            <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: '#14295A', lineHeight: 1.7 }}>“{a.core}。”</p>
+            <p style={{ margin: '6px 0 0', fontSize: 11, color: '#98A2B3', lineHeight: 1.7 }}>{grp.q}</p>
+          </div>
+
+          <div style={{ ...ctCard, padding: '15px 16px', marginTop: 10 }}>
+            <p style={{ margin: '0 0 6px', fontSize: 11.5, fontWeight: 800, color: '#137A4F' }}>✦ 常见优势</p>
+            <div className="flex flex-wrap" style={{ gap: 6, marginBottom: 13 }}>
+              {a.strengths.map(s => (
+                <span key={s} style={{ fontSize: 11.5, fontWeight: 700, color: '#0F5138', background: '#EDFAF3', border: '1px solid #C7EDDA', borderRadius: 999, padding: '4px 11px' }}>{s}</span>
+              ))}
+            </div>
+            <p style={{ margin: '0 0 5px', fontSize: 11.5, fontWeight: 800, color: '#B42318' }}>✦ 潜在盲点</p>
+            {a.risks.map(r => (
+              <p key={r} style={{ margin: '0 0 3px', fontSize: 12.5, color: '#475467', lineHeight: '19px' }}>· {r}</p>
+            ))}
+          </div>
+
+          <div style={{ ...ctCard, padding: '15px 16px', marginTop: 10 }}>
+            <p style={{ margin: '0 0 6px', fontSize: 11.5, fontWeight: 800, color: '#22345E' }}>✦ 适合探索的侍奉</p>
+            <div className="flex flex-wrap" style={{ gap: 6, marginBottom: 13 }}>
+              {a.ministries.map(m => (
+                <span key={m} style={{ fontSize: 11.5, fontWeight: 700, color: '#04285F', background: '#F8FAFF', border: '1px solid rgba(4,40,95,.22)', borderRadius: 999, padding: '4px 11px' }}>{m}</span>
+              ))}
+            </div>
+            <p style={{ margin: '0 0 6px', fontSize: 11.5, fontWeight: 800, color: '#8A6519' }}>✦ 推荐装备方向</p>
+            <div className="flex flex-wrap" style={{ gap: 6 }}>
+              {a.equip.map(e => (
+                <span key={e} style={{ fontSize: 11.5, fontWeight: 700, color: '#7A5A16', background: '#FBF6EA', border: '1px solid rgba(201,154,69,.3)', borderRadius: 999, padding: '4px 11px' }}>{e}</span>
+              ))}
+            </div>
+          </div>
+
+          {myScore === null && (
+            <button
+              onClick={() => { setRoleDetail(null); if (!ct) startQuiz(); else startGifts(); }}
+              className="w-full active:scale-[0.98] transition"
+              style={{ ...goldBtn, justifyContent: 'center', marginTop: 14 }}
+            >
+              {!ct ? '开始 AI 诊断，发现我的成长角色' : '完成恩赐辨识，解锁我的成长角色'}
+              <ChevronRight size={15} strokeWidth={2.6} />
+            </button>
+          )}
+
+          <p style={{ margin: '14px 2px 0', fontSize: 10, color: '#98A2B3', lineHeight: '16px' }}>
+            {ARCH_DISCLAIMER}
+          </p>
         </div>
       </div>
     );
@@ -1982,7 +2079,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                       {/* 主/辅角色 IP 卡 */}
                       <div className="grid grid-cols-2" style={{ gap: 8, marginBottom: 13 }}>
                         {[pri, sec].map((r, i) => (
-                          <div key={r.a.key} className="relative">
+                          <div key={r.a.key} className="relative active:scale-[0.98] transition-transform" style={{ cursor: 'pointer' }} onClick={() => setRoleDetail(r.a.key)}>
                             <img
                               src={archImg(r.a.key)}
                               alt={r.a.label}
@@ -2110,7 +2207,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                               <p style={{ margin: '0 0 5px', fontSize: 10.5, fontWeight: 800, color: '#8A6519' }}>{g.en} · {g.cn}</p>
                               <div className="grid grid-cols-3" style={{ gap: 7 }}>
                                 {rows.filter(r => r.a.group === g.key).map(r => (
-                                  <div key={r.a.key} className="relative">
+                                  <div key={r.a.key} className="relative active:scale-[0.97] transition-transform" style={{ cursor: 'pointer' }} onClick={() => setRoleDetail(r.a.key)}>
                                     <img
                                       src={archImg(r.a.key)}
                                       alt={r.a.label}
@@ -2306,6 +2403,49 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
 
         {!ct && (
           <>
+            {/* ===== 十二大成长角色总览（点击查看角色详情） ===== */}
+            <section style={{ marginTop: 26 }}>
+              <SectionEyebrow title="十二大成长角色" en="Growth Archetypes" />
+              <div
+                className="flex overflow-x-auto"
+                style={{ gap: 10, margin: '0 -16px', padding: '2px 16px 8px', scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch' }}
+              >
+                {ARCHETYPES.map(a => (
+                  <button
+                    key={a.key}
+                    onClick={() => setRoleDetail(a.key)}
+                    className="shrink-0 active:scale-[0.98] transition-transform"
+                    style={{ padding: 0, border: 'none', background: 'none', scrollSnapAlign: 'start', cursor: 'pointer' }}
+                    aria-label={`查看${a.label}详情`}
+                  >
+                    <img
+                      src={archImg(a.key)}
+                      alt={`${a.label} ${a.en}`}
+                      loading="lazy"
+                      style={{
+                        width: 178, borderRadius: 15, display: 'block',
+                        border: '1px solid rgba(20,40,90,0.10)',
+                        boxShadow: '0 4px 12px rgba(16,24,40,.08)',
+                      }}
+                    />
+                    <span className="flex items-center justify-center" style={{ gap: 3, fontSize: 10, fontWeight: 800, color: '#98A2B3', marginTop: 5 }}>
+                      查看详情 <ChevronRight size={11} />
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-wrap justify-center" style={{ gap: 6, marginTop: 6 }}>
+                {ARCH_GROUPS.map(g => (
+                  <span key={g.key} style={{ fontSize: 10, fontWeight: 800, color: '#8A6519', background: '#FBF6EA', border: '1px solid rgba(201,154,69,.28)', borderRadius: 999, padding: '3px 10px' }}>
+                    {g.en} {g.cn} · {ARCHETYPES.filter(a => a.group === g.key).map(a => a.label).join(' / ')}
+                  </span>
+                ))}
+              </div>
+              <p style={{ margin: '10px 2px 0', fontSize: 10, color: '#98A2B3', lineHeight: 1.7, textAlign: 'center' }}>
+                完成 AI 诊断与恩赐辨识后，将为你生成「主角色 × 辅助角色」的专属成长角色。角色用于帮助理解成长倾向，不等同于最终呼召判断。
+              </p>
+            </section>
+
             {/* ===== 四个层面 ===== */}
             <section style={{ marginTop: 26 }}>
               <SectionEyebrow title="AI 将从这 4 个层面认识你" en="Four Levels" />
@@ -2363,40 +2503,6 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                   </div>
                 ))}
               </div>
-            </section>
-
-            {/* ===== 十二大成长角色总览 ===== */}
-            <section style={{ marginTop: 26 }}>
-              <SectionEyebrow title="十二大成长角色" en="Growth Archetypes" />
-              <div
-                className="flex overflow-x-auto"
-                style={{ gap: 10, margin: '0 -16px', padding: '2px 16px 8px', scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch' }}
-              >
-                {ARCHETYPES.map(a => (
-                  <img
-                    key={a.key}
-                    src={archImg(a.key)}
-                    alt={`${a.label} ${a.en}`}
-                    loading="lazy"
-                    className="shrink-0"
-                    style={{
-                      width: 178, borderRadius: 15, scrollSnapAlign: 'start',
-                      border: '1px solid rgba(20,40,90,0.10)',
-                      boxShadow: '0 4px 12px rgba(16,24,40,.08)',
-                    }}
-                  />
-                ))}
-              </div>
-              <div className="flex flex-wrap justify-center" style={{ gap: 6, marginTop: 8 }}>
-                {ARCH_GROUPS.map(g => (
-                  <span key={g.key} style={{ fontSize: 10, fontWeight: 800, color: '#8A6519', background: '#FBF6EA', border: '1px solid rgba(201,154,69,.28)', borderRadius: 999, padding: '3px 10px' }}>
-                    {g.en} {g.cn} · {ARCHETYPES.filter(a => a.group === g.key).map(a => a.label).join(' / ')}
-                  </span>
-                ))}
-              </div>
-              <p style={{ margin: '10px 2px 0', fontSize: 10, color: '#98A2B3', lineHeight: 1.7, textAlign: 'center' }}>
-                完成 AI 诊断与恩赐辨识后，将为你生成「主角色 × 辅助角色」的专属成长角色。角色用于帮助理解成长倾向，不等同于最终呼召判断。
-              </p>
             </section>
 
             {/* ===== 诊断流程 ===== */}
