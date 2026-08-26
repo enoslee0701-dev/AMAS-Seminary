@@ -136,7 +136,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
     { icon: Landmark, title: '了解学校', sub: '学校介绍详情', view: ViewState.COLLEGE_OVERVIEW },
     { icon: Megaphone, title: '最新公告', sub: '通知与活动', view: ViewState.ALL_ANNOUNCEMENTS },
     { icon: PlayCircle, title: '课程试听', sub: '体验精选课程', view: ViewState.COURSE_TRIAL },
-    { icon: Sparkles, title: '定制化神学', sub: '量身推荐课程路径', view: ViewState.COURSES, wizard: true },
+    { icon: Sparkles, title: '定制化神学', sub: 'AI 为你建立专属装备路径', view: ViewState.CUSTOM_THEOLOGY },
   ];
 
   const coursePaths: { level: string; tier: ProgramTier; cn: string; tone: string; tint: string }[] = [
@@ -476,7 +476,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
               return (
                 <button
                   key={q.title}
-                  onClick={() => (q as any).wizard ? onOpenPathWizard?.() : onViewChange(q.view)}
+                  onClick={() => onViewChange(q.view)}
                   className="flex flex-col items-center text-center active:scale-95 transition-transform"
                   style={{ padding: '4px 4px' }}
                 >
