@@ -1689,6 +1689,41 @@ test('PT state is per-user: user B does not see user A state', async () => {
   assert.equal(gotB.json<{ state: unknown }>().state, null, 'user B must not inherit user A state');
 });
 
+test('GET /api/growth/state without auth returns 401', async () => {
+  const r = await request('GET', '/api/growth/state');
+  assert.equal(r.status, 401, `expected 401, got ${r.status} body=${r.body}`);
+});
+
+test('Growth state round-trip and per-user isolation', async () => {
+  const regA = await request('POST', '/api/auth/register', {
+    email: 'growth-a@example.com', password: 'goodpassword1', name: 'GrowthA',
+  });
+  const regB = await request('POST', '/api/auth/register', {
+    email: 'growth-b@example.com', password: 'goodpassword1', name: 'GrowthB',
+  });
+  assert.equal(regA.status, 200);
+  assert.equal(regB.status, 200);
+  const authA = { authorization: `Bearer ${regA.json<AuthTokens>().accessToken}` };
+  const authB = { authorization: `Bearer ${regB.json<AuthTokens>().accessToken}` };
+
+  const state = {
+    v: 2,
+    scores: { bible: 70 },
+    gifts: { scores: { teaching: 88 }, behavior: 75, completedAt: '2026-08-26T00:00:00Z' },
+    completedAt: '2026-08-25T00:00:00Z',
+  };
+  const put = await request('PUT', '/api/growth/state', { state }, authA);
+  assert.equal(put.status, 200, `expected 200, got ${put.status} body=${put.body}`);
+
+  const got = await request('GET', '/api/growth/state', undefined, authA);
+  assert.equal(got.status, 200);
+  const body = got.json<{ state: typeof state }>();
+  assert.equal(body.state.gifts.scores.teaching, 88);
+
+  const gotB = await request('GET', '/api/growth/state', undefined, authB);
+  assert.equal(gotB.json<{ state: unknown }>().state, null, 'user B must not see user A profile');
+});
+
 test('WS /api/gemini/live accepts upgrade and emits error or closed', async () => {
   const ws = new WebSocket(`ws://127.0.0.1:${port}/api/gemini/live?token=${APP_SECRET}`);
 

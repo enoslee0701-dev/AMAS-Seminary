@@ -256,6 +256,16 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_course_files_course ON course_files(course_id, uploaded_at);
 
+  -- Christian growth profile (定制化神学/恩赐/事奉 modules) — one JSON doc
+  -- per user, same pattern as pt_state. The assessment engines live in the
+  -- client today; this is the shared, headless profile store both the App
+  -- and a future Web Discover entry read/write.
+  CREATE TABLE IF NOT EXISTS growth_state (
+    user_id TEXT PRIMARY KEY,
+    state_json TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+
   -- Pocket Theology per-user state (XP / streak / lesson progress /
   -- journal / favorites). Stored as one JSON blob per user: the frontend
   -- owns the merge semantics and the whole state is read & written
@@ -299,5 +309,6 @@ export function resetDb(): void {
     DELETE FROM recordings;
     DELETE FROM course_files;
     DELETE FROM pt_state;
+    DELETE FROM growth_state;
   `);
 }

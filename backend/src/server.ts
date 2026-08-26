@@ -19,6 +19,7 @@ import { registerFriendRoutes } from './routes/friends.js';
 import { registerLibraryRoutes } from './routes/library.js';
 import { registerPushRoutes } from './routes/push.js';
 import { registerPtRoutes } from './routes/pt.js';
+import { registerGrowthRoutes } from './routes/growth.js';
 import { requireAuth, requireAdmin, warnIfNoAppSecret, warnIfJwtDerived } from './middleware/auth.js';
 import { generalApiLimiter, tokenLimiter } from './middleware/rateLimit.js';
 
@@ -78,6 +79,7 @@ registerFriendRoutes(app);
 registerLibraryRoutes(app);
 registerPushRoutes(app);
 registerPtRoutes(app);
+registerGrowthRoutes(app);
 
 const server = http.createServer(app);
 
