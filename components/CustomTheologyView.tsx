@@ -1030,7 +1030,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick })
           style={{
             borderRadius: 24, padding: '26px 20px 22px', color: '#FFF',
             background:
-              'radial-gradient(120% 90% at 88% 0%, rgba(240,205,135,.28) 0%, rgba(240,205,135,0) 46%), linear-gradient(142deg, #061C4A 0%, #0A2A66 48%, #0D3376 100%)',
+              'radial-gradient(120% 90% at 88% 0%, rgba(240,205,135,.28) 0%, rgba(240,205,135,0) 46%), linear-gradient(160deg, #0B2450 0%, #071A3C 70%, #051530 100%)',
             border: '1px solid rgba(232,201,140,.22)',
             boxShadow: '0 14px 30px rgba(4,28,74,.28), 0 3px 8px rgba(4,28,74,.14)',
           }}
@@ -1456,7 +1456,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick })
               style={{
                 marginTop: 24, padding: '20px 18px', borderRadius: 24, color: '#FFF',
                 background:
-                  'radial-gradient(90% 120% at 12% 0%, rgba(240,205,135,.16) 0%, rgba(240,205,135,0) 42%), linear-gradient(135deg, #061C4A 0%, #0A2A66 100%)',
+                  'radial-gradient(90% 120% at 12% 0%, rgba(240,205,135,.16) 0%, rgba(240,205,135,0) 42%), linear-gradient(160deg, #0B2450 0%, #071A3C 100%)',
                 border: '1px solid rgba(232,201,140,.22)',
                 boxShadow: '0 14px 30px rgba(4,28,74,.28)',
               }}
