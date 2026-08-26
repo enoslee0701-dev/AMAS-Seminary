@@ -606,7 +606,7 @@ const App: React.FC = () => {
               </Suspense>
             ) : currentView === ViewState.CUSTOM_THEOLOGY ? (
               <Suspense fallback={<ViewLoadingFallback />}>
-                <CustomTheologyView onBack={handleBackToHome} courses={allCourses} onCourseClick={handleCourseClick} />
+                <CustomTheologyView onBack={handleBackToHome} courses={allCourses} onCourseClick={handleCourseClick} user={currentUser} />
               </Suspense>
             ) : currentView === ViewState.COURSE_TRIAL ? (
               <Suspense fallback={<ViewLoadingFallback />}>

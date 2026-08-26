@@ -1,29 +1,28 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ChevronLeft, ChevronRight, Sparkles, Target, TrendingUp,
-  ShieldCheck, RefreshCw, BookOpen, ArrowDown, Compass, AlertTriangle, ClipboardList, Trash2,
+  ShieldCheck, RefreshCw, BookOpen, ArrowDown, AlertTriangle, Trash2, Undo2, X,
 } from 'lucide-react';
 import { Course } from '../types';
 import { STOCK_PHOTOS } from '../services/stockPhotos';
 import { fetchServerGrowth, scheduleGrowthPush } from '../services/growthSyncService';
+import { submitCooperation } from '../services/cooperationService';
 
 /**
- * 定制化神学 — AI 个性化神学装备系统 (v2)。
+ * 定制化神学 — 基督徒成长档案系统（完整版）。
  *
- * 诊断引擎：
- * - 背景采集（身份 / 受训 / 信主年限 / 优先方向 / 现实处境）
- * - 核心五维（圣经·解经·神学·福音·事奉）采用「阶梯式追问」：
- *   每维 3 级题目（知道→应用→教导），起点按身份层级决定，
- *   答得好升级追问、答得弱降级确认 —— 用最少题量逼近真实水平。
- * - 其余四维（生命·教会·护教·宣教）单题多信号。
- * 输出：分段诊断语 + 阶段画像 + 风险提示 + 处境任务 + 三阶段装备处方
- * （学习课程 / 训练点 / 实践任务 / 检验标准）。
+ * 闭环：ASSESS（九维阶梯诊断 + 恩赐辨识）→ PROFILE（成长画像/证据等级）
+ * → RECOMMEND（装备路径/事奉匹配）→ LEARN（课程完成反哺画像分数）
+ * → SERVE（服事记录填充证据层 + 事奉申请）→ REASSESS。
  *
- * 全部由本地规则驱动；配置 GEMINI_API_KEY 后可在同一数据结构上升级为
- * 自由对话式诊断与模拟训练。
+ * 答题为“一页一题”卡片式，支持随时撤销上一题（历史快照栈）。
+ * 档案以版本化 JSON 存 localStorage + 后端 /api/growth/state（较新者胜）。
+ * 全部评分由本地结构化引擎完成；LLM 仅在配置后用于解释与追问（预留）。
  */
 
-// ---------- 九维模型 ----------
+// ============================================================
+// 九维模型
+// ============================================================
 
 type DimKey =
   | 'bible' | 'hermeneutics' | 'theology' | 'gospel' | 'life'
@@ -35,8 +34,8 @@ interface DimMeta {
   /** 按分数段的诊断语：<45 / 45-64 / 65-79 / >=80 */
   bands: [string, string, string, string];
   training: string[];
-  practice: string;   // 实践任务
-  check: string;      // 检验标准
+  practice: string;
+  check: string;
   courseIds: string[];
   weeks: number;
 }
@@ -161,11 +160,50 @@ const DIMS: DimMeta[] = [
   },
 ];
 
-const DIM_BY_KEY: Record<string, DimMeta> = Object.fromEntries(DIMS.map(d => [d.key, d]));
 const bandText = (d: DimMeta, score: number) =>
   d.bands[score < 45 ? 0 : score < 65 ? 1 : score < 80 ? 2 : 3];
 
-// ---------- 处境库 ----------
+// ============================================================
+// 学习反哺（Phase 4 闭环）：完成课程 → 提升对应维度
+// ============================================================
+
+const COURSE_DIM_MAP: Record<string, DimKey[]> = {
+  c_bible_intro: ['bible'], c_1cor: ['bible'], c_john: ['bible'], c_matthew: ['bible'],
+  c_acts: ['bible'], c_hebrews: ['bible'], c_2cor: ['bible'], c_revelation: ['bible'],
+  c_dr_mark: ['bible'], c_dr_luke: ['bible'], c_dr_galatians: ['bible'], c_dr_colossians: ['bible'],
+  c_dr_philippians: ['bible'], c_dr_philemon: ['bible'], c_dr_pastoral: ['bible'],
+  c_dr_peter: ['bible'], c_dr_johannine: ['bible'], c_dr_james: ['bible'], c_dr_jude: ['apologetics'],
+  c_dr_genesis: ['bible'],
+  c_ephesians: ['gospel'], c_romans: ['gospel'], c_assurance: ['gospel', 'life'],
+  c_dr_marking: ['hermeneutics'], c_greek: ['hermeneutics'],
+  c_lay_systematic: ['theology'], c_dr_reformed: ['theology'],
+  c_basics: ['life', 'gospel'], c_prayer: ['life'],
+  c_worship_order: ['church'], c_church_ops: ['church'],
+  c_disciple: ['ministry'], c_smallgroup: ['ministry'], c_newbeliever: ['ministry'],
+  c_counseling: ['ministry'], c_healing: ['ministry'],
+  c_evangelism: ['mission', 'ministry'], c_contextual: ['mission'],
+  c_warfare: ['apologetics'],
+};
+
+/** 每门完成课程给映射维度 +4，单维度学习加成上限 +12。 */
+function learningBoost(courses: Course[]): { boost: Record<DimKey, number>; count: number } {
+  const boost = {} as Record<DimKey, number>;
+  for (const d of DIMS) boost[d.key] = 0;
+  let count = 0;
+  for (const c of courses) {
+    const done = c.progress >= 100 || (c.totalLessons > 0 && c.completedLessons >= c.totalLessons);
+    if (!done) continue;
+    const dims = COURSE_DIM_MAP[c.id];
+    if (!dims) continue;
+    count++;
+    for (const k of dims) boost[k] = Math.min(12, boost[k] + 4);
+  }
+  return { boost, count };
+}
+
+// ============================================================
+// 处境库
+// ============================================================
 
 interface Scenario {
   id: string; label: string; theme: string;
@@ -199,13 +237,15 @@ const SCENARIOS: Scenario[] = [
   },
 ];
 
-// ---------- 题库 ----------
+// ============================================================
+// 诊断题库（背景 + 核心五维阶梯 + 单题四维）
+// ============================================================
 
 interface QOption { text: string; score?: number; tier?: number; focus?: DimKey; years?: number; scenario?: string }
 interface Question {
   id: string;
   dim?: DimKey;
-  level?: 1 | 2 | 3;   // 阶梯级别：1 知道/现状 · 2 理解/应用 · 3 教导/进阶
+  level?: 1 | 2 | 3;
   text: string;
   options: QOption[];
 }
@@ -269,7 +309,6 @@ const BG_QUESTIONS: Question[] = [
   },
 ];
 
-// 核心五维：每维 3 级阶梯题
 const LADDER: Record<string, Question[]> = {
   bible: [
     {
@@ -433,7 +472,6 @@ const LADDER: Record<string, Question[]> = {
   ],
 };
 
-// 其余四维：单题
 const SINGLE_QUESTIONS: Question[] = [
   {
     id: 'life_q', dim: 'life',
@@ -477,204 +515,9 @@ const SINGLE_QUESTIONS: Question[] = [
   },
 ];
 
-// ---------- 状态 ----------
-
-interface CTState {
-  v: 2;
-  tier: number;
-  years: number;
-  focus: DimKey | null;
-  scenario: string | null;
-  scores: Record<DimKey, number>;
-  levels: Partial<Record<DimKey, number>>; // 核心维度达到的阶梯级别
-  completedAt: string;
-  gifts?: GiftsResult;
-}
-
-const STORAGE_KEY = 'amas_ct_state_v2';
-const loadCT = (): CTState | null => {
-  try { const raw = localStorage.getItem(STORAGE_KEY); const s = raw ? JSON.parse(raw) : null; return s && s.v === 2 ? s : null; } catch { return null; }
-};
-const saveCT = (s: CTState) => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); } catch {} };
-
-const stageOf = (avg: number, tier: number, years: number): { name: string; level: number; desc: string } => {
-  if (avg >= 78 && tier >= 2) return { name: '成熟装备者', level: 4, desc: '根基与经验兼备，接下来重在深化专项与培育他人。' };
-  if (avg >= 63) return { name: '成长型服事者', level: 3, desc: '已进入带领与教导阶段，装备重点是把经验系统化。' };
-  if (avg >= 47 || years >= 3) return { name: '稳定成长者', level: 2, desc: '信仰生活稳定，是建立系统根基的最佳时期。' };
-  return { name: '初信扎根者', level: 1, desc: '从福音确据与读经生活开始，一步步扎根。' };
-};
-
-interface ChatMsg { id: string; role: 'ai' | 'me'; text: string }
-
-interface Props {
-  onBack: () => void;
-  courses: Course[];
-  onCourseClick: (id: string) => void;
-}
-
-// ---------- 组件 ----------
-
-// ---------- 首页视觉：高保真落地页组件 ----------
-
-const SectionEyebrow: React.FC<{ title: string; en: string }> = ({ title, en }) => (
-  <div className="flex items-center" style={{ gap: 8, marginBottom: 12 }}>
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="#C99A45" className="shrink-0">
-      <path d="M12 1l2.4 7.2L22 10l-7.6 1.8L12 19l-2.4-7.2L2 10l7.6-1.8z" />
-    </svg>
-    <h3 style={{ margin: 0, fontSize: 16, fontWeight: 900, color: '#172A57', letterSpacing: '0.3px' }}>{title}</h3>
-    <span
-      style={{
-        marginLeft: 'auto',
-        fontFamily: '"Cormorant Garamond", Georgia, serif',
-        fontSize: 10, fontWeight: 700, letterSpacing: '2px',
-        color: '#B9C0CF', textTransform: 'uppercase',
-      }}
-    >
-      {en}
-    </span>
-  </div>
-);
-
-const ctCard: React.CSSProperties = {
-  background: '#FFFFFF',
-  border: '1px solid rgba(20,40,90,0.08)',
-  borderRadius: 18,
-  boxShadow: '0 1px 2px rgba(16,24,40,.04), 0 2px 8px rgba(16,24,40,.04)',
-};
-
-interface Level4 { num: string; t: string; en: string; d: string; icon: React.ReactNode }
-const LEVELS4: Level4[] = [
-  {
-    num: 'Ⅰ', t: '知道', en: 'KNOW', d: '你掌握了多少关键真理与圣经知识',
-    icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2 4.5C4.5 3 8 3 12 5.5c4-2.5 7.5-2.5 10-1V18c-2.5-1.5-6-1.5-10 1-4-2.5-7.5-2.5-10-1z" /><path d="M12 5.5V19" /></svg>,
-  },
-  {
-    num: 'Ⅱ', t: '理解', en: 'UNDERSTAND', d: '你是否真正明白其含义与神学脉络',
-    icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18h6M10 21h4" /><path d="M12 3a6.5 6.5 0 0 0-4 11.6c.8.7 1.3 1.5 1.5 2.4h5a4.6 4.6 0 0 1 1.5-2.4A6.5 6.5 0 0 0 12 3z" /></svg>,
-  },
-  {
-    num: 'Ⅲ', t: '应用', en: 'APPLY', d: '你能否将真理活出在现实生活与处境中',
-    icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 21V10" /><path d="M12 10c0-4-2.5-6.5-7-7 0 4.5 2.5 7 7 7z" /><path d="M12 13c0-3.2 2-5.2 5.6-5.6 0 3.6-2 5.6-5.6 5.6z" /></svg>,
-  },
-  {
-    num: 'Ⅳ', t: '教导', en: 'TEACH', d: '你是否能以合宜方式解释并帮助他人成长',
-    icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="8" r="3.2" /><path d="M3.5 20c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5" /><path d="M15.5 4.5h5M15.5 8h5M17.5 11.5h3" /></svg>,
-  },
-];
-
-const GAINS = [
-  {
-    t: '成长画像', d: '多维度评估你的当前装备水平与优势短板',
-    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="3" /><circle cx="9" cy="11" r="2.2" /><path d="M5.8 17c.5-1.9 1.7-2.9 3.2-2.9s2.7 1 3.2 2.9" /><path d="M14.5 9.5H18M14.5 13H18" /></svg>,
-  },
-  {
-    t: '专属装备路径', d: '依你的需要，生成个性化课程与成长建议',
-    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="6" cy="19" r="2.4" /><circle cx="18" cy="5" r="2.4" /><path d="M8.4 19H15a4 4 0 0 0 0-8H9a4 4 0 0 1 0-8h6.6" /></svg>,
-  },
-  {
-    t: '训练与专业建议', d: '获得导师推荐、实践操练与延伸学习方向',
-    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a8 8 0 0 1-8 8H4l2.2-2.6A8 8 0 1 1 21 12z" /><path d="M8.5 10.5h7M8.5 14h4.5" /></svg>,
-  },
-];
-
-const FLOW_STEPS = [
-  {
-    n: 1, t: '背景了解', d: '建立基本信息与事奉脉络',
-    icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="3.6" /><path d="M5 20c.8-3.8 3.4-5.8 7-5.8s6.2 2 7 5.8" /></svg>,
-  },
-  {
-    n: 2, t: '核心筛查', d: '评估四大层面基础掌握度',
-    icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="3.5" width="14" height="17" rx="2.5" /><path d="M9 3.5V6h6V3.5" /><path d="M9 11h6M9 15h4" /></svg>,
-  },
-  {
-    n: 3, t: '情境判断', d: '透过情境题检视应用能力',
-    icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M8 15a6 6 0 1 1 4 1.7L8 18z" /><path d="M17.5 14.5a5 5 0 0 1-1.6 6.1L19.5 22l-3.7-1.2" /></svg>,
-  },
-  {
-    n: 4, t: '生成路径', d: 'AI 生成专属成长路径', gold: true,
-    icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="4.6" /><circle cx="12" cy="12" r="1.2" fill="currentColor" /></svg>,
-  },
-];
-
-// ---------- 五轴雷达图 ----------
-
-const RADAR_AXES = ['圣经', '神学', '解经', '生命', '事奉'];
-const RADAR_LABEL_POS: [number, number][] = [[0, -95], [97, -24], [60, 88], [-60, 88], [-97, -24]];
-
-function radarXY(idx: number, value: number, rMax = 85): [number, number] {
-  const a = ((-90 + idx * 72) * Math.PI) / 180;
-  const r = (value / 100) * rMax;
-  return [Math.cos(a) * r, Math.sin(a) * r];
-}
-function radarRing(frac: number): string {
-  return RADAR_AXES.map((_, i) => radarXY(i, frac * 100).map(n => n.toFixed(1)).join(',')).join(' ');
-}
-
-const RadarChart: React.FC<{ values: number[] }> = ({ values }) => {
-  const pts = values.map((v, i) => radarXY(i, v));
-  const dataPts = pts.map(p => p.map(n => n.toFixed(1)).join(',')).join(' ');
-  return (
-    <svg width="176" height="176" viewBox="0 0 220 220" role="img" aria-label="成长画像雷达图">
-      <defs>
-        <linearGradient id="ctRadarFill" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#3B62B8" stopOpacity=".62" />
-          <stop offset="100%" stopColor="#173B84" stopOpacity=".7" />
-        </linearGradient>
-        <radialGradient id="ctRadarGlow" cx="50%" cy="50%" r="55%">
-          <stop offset="0%" stopColor="#F2D493" stopOpacity=".22" />
-          <stop offset="100%" stopColor="#F2D493" stopOpacity="0" />
-        </radialGradient>
-      </defs>
-      <g transform="translate(110,112)">
-        <circle r="92" fill="url(#ctRadarGlow)" />
-        <polygon points={radarRing(1)} fill="#FBF7EC" stroke="#E9D9B2" strokeWidth="1.6" />
-        <polygon points={radarRing(0.75)} fill="#FFFFFF" stroke="#EBDDBC" strokeWidth="1.2" />
-        <polygon points={radarRing(0.5)} fill="#FBF7EC" stroke="#EDE1C6" strokeWidth="1" />
-        <polygon points={radarRing(0.25)} fill="#FFFFFF" stroke="#F0E6D0" strokeWidth="1" />
-        <g stroke="#E2D8BE" strokeWidth="1">
-          {RADAR_AXES.map((_, i) => {
-            const [x, y] = radarXY(i, 100);
-            return <line key={i} x1="0" y1="0" x2={x.toFixed(1)} y2={y.toFixed(1)} />;
-          })}
-        </g>
-        <polygon points={dataPts} fill="url(#ctRadarFill)" stroke="#2C55A6" strokeWidth="2.2" strokeLinejoin="round" />
-        <g fill="#FFFFFF" stroke="#2C55A6" strokeWidth="2">
-          {pts.map((p, i) => <circle key={i} cx={p[0].toFixed(1)} cy={p[1].toFixed(1)} r="3.4" />)}
-        </g>
-        {RADAR_AXES.map((label, i) => (
-          <g key={label}>
-            <text x={RADAR_LABEL_POS[i][0]} y={RADAR_LABEL_POS[i][1]} textAnchor="middle" style={{ fontSize: 11, fill: '#33456F', fontWeight: 800 }}>{label}</text>
-            <text x={RADAR_LABEL_POS[i][0]} y={RADAR_LABEL_POS[i][1] + 12} textAnchor="middle" style={{ fontSize: 8.5, fill: '#A98230', fontWeight: 800 }}>{values[i]}</text>
-          </g>
-        ))}
-      </g>
-    </svg>
-  );
-};
-
-const SAMPLE_RADAR = [85, 72, 68, 80, 75];
-
-const goldBtn: React.CSSProperties = {
-  display: 'inline-flex', alignItems: 'center', gap: 8,
-  padding: '0 20px', height: 44, border: 'none', borderRadius: 999,
-  background: 'linear-gradient(180deg, #F4D796 0%, #E1B75F 100%)',
-  color: '#123061', fontSize: 13.5, fontWeight: 800, letterSpacing: '0.4px',
-  boxShadow: '0 8px 18px rgba(160,116,38,.28), inset 0 1px 0 rgba(255,255,255,.55)',
-  cursor: 'pointer',
-};
-
-const FooterBrand: React.FC = () => (
-  <div className="flex flex-col items-center" style={{ gap: 5, marginTop: 22, color: '#C2C8D4' }}>
-    <div className="flex items-center" style={{ gap: 8 }}>
-      <span style={{ width: 34, height: 1, background: '#DFE3EA' }} />
-      <span style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 12, fontWeight: 700, letterSpacing: '3px', color: '#A9B1C1' }}>AMAS</span>
-      <span style={{ width: 34, height: 1, background: '#DFE3EA' }} />
-    </div>
-    <span style={{ fontSize: 8.5, letterSpacing: '2px', fontWeight: 600 }}>ASIAN MISSIONARY ASSOCIATION SEMINARY</span>
-  </div>
-);
-
-// ---------- 恩赐辨识模块（A04）+ 事奉匹配（A05） ----------
+// ============================================================
+// 恩赐辨识（A04）+ 事奉匹配（A05）
+// ============================================================
 
 type GiftKey =
   | 'teaching' | 'shepherding' | 'evangelism' | 'leadership'
@@ -693,14 +536,15 @@ const GIFTS: GiftMeta[] = [
   { key: 'discernment', label: '分辨', desc: '对教导与灵界事物有敏锐的判断力' },
 ];
 
+const GIFT_LABEL: Record<GiftKey, string> = Object.fromEntries(GIFTS.map(g => [g.key, g.label])) as Record<GiftKey, string>;
+
 interface GiftQ {
   id: string;
   text: string;
-  behavior?: boolean; // 情境题：计入“行为佐证”证据层
+  behavior?: boolean;
   options: { text: string; g?: Partial<Record<GiftKey, number>>; b?: number }[];
 }
 
-// 12 题：10 道行为化自评 + 2 道情境题（行为佐证）
 const GIFT_QUESTIONS: GiftQ[] = [
   {
     id: 'g1',
@@ -826,9 +670,12 @@ const GIFT_QUESTIONS: GiftQ[] = [
 
 interface GiftsResult {
   scores: Record<GiftKey, number>;
-  behavior: number; // 情境题（行为佐证）得分 0-100
+  behavior: number;
   completedAt: string;
 }
+
+interface ServiceEntry { gift: GiftKey; role: string; note: string; at: string }
+interface Application { role: string; at: string }
 
 interface MinistryRole { name: string; weights: Partial<Record<GiftKey, number>>; desc: string }
 const MINISTRY_ROLES: MinistryRole[] = [
@@ -848,78 +695,320 @@ const giftMatches = (g: GiftsResult) =>
     ),
   })).sort((a, b) => b.pct - a.pct);
 
-/** 证据点（●●●○○）：level 0-5 */
 const Dots: React.FC<{ level: number; total?: number }> = ({ level, total = 5 }) => (
   <span style={{ letterSpacing: 2, fontSize: 10, color: '#C99A45' }}>
     {'●'.repeat(Math.max(0, Math.min(total, level)))}
-    <span style={{ color: '#E4DCC8' }}>{'●'.repeat(Math.max(0, total - level))}</span>
+    <span style={{ color: '#E4DCC8' }}>{'●'.repeat(Math.max(0, total - Math.min(total, level)))}</span>
   </span>
 );
 
+// ============================================================
+// 档案状态
+// ============================================================
+
+interface CTState {
+  v: 2;
+  tier: number;
+  years: number;
+  focus: DimKey | null;
+  scenario: string | null;
+  scores: Record<DimKey, number>;
+  levels: Partial<Record<DimKey, number>>;
+  completedAt: string;
+  gifts?: GiftsResult;
+  service?: ServiceEntry[];
+  applications?: Application[];
+}
+
+const STORAGE_KEY = 'amas_ct_state_v2';
+const loadCT = (): CTState | null => {
+  try { const raw = localStorage.getItem(STORAGE_KEY); const s = raw ? JSON.parse(raw) : null; return s && s.v === 2 ? s : null; } catch { return null; }
+};
+const saveCT = (s: CTState) => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); } catch {} };
+
+const stageOf = (avg: number, tier: number, years: number): { name: string; level: number; desc: string } => {
+  if (avg >= 78 && tier >= 2) return { name: '成熟装备者', level: 4, desc: '根基与经验兼备，接下来重在深化专项与培育他人。' };
+  if (avg >= 63) return { name: '成长型服事者', level: 3, desc: '已进入带领与教导阶段，装备重点是把经验系统化。' };
+  if (avg >= 47 || years >= 3) return { name: '稳定成长者', level: 2, desc: '信仰生活稳定，是建立系统根基的最佳时期。' };
+  return { name: '初信扎根者', level: 1, desc: '从福音确据与读经生活开始，一步步扎根。' };
+};
+
+// ============================================================
+// 视觉组件
+// ============================================================
+
+const SectionEyebrow: React.FC<{ title: string; en: string }> = ({ title, en }) => (
+  <div className="flex items-center" style={{ gap: 8, marginBottom: 12 }}>
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="#C99A45" className="shrink-0">
+      <path d="M12 1l2.4 7.2L22 10l-7.6 1.8L12 19l-2.4-7.2L2 10l7.6-1.8z" />
+    </svg>
+    <h3 style={{ margin: 0, fontSize: 16, fontWeight: 900, color: '#172A57', letterSpacing: '0.3px' }}>{title}</h3>
+    <span
+      style={{
+        marginLeft: 'auto',
+        fontFamily: '"Cormorant Garamond", Georgia, serif',
+        fontSize: 10, fontWeight: 700, letterSpacing: '2px',
+        color: '#B9C0CF', textTransform: 'uppercase',
+      }}
+    >
+      {en}
+    </span>
+  </div>
+);
+
+const ctCard: React.CSSProperties = {
+  background: '#FFFFFF',
+  border: '1px solid rgba(20,40,90,0.08)',
+  borderRadius: 18,
+  boxShadow: '0 1px 2px rgba(16,24,40,.04), 0 2px 8px rgba(16,24,40,.04)',
+};
+
+interface Level4 { num: string; t: string; en: string; d: string; icon: React.ReactNode }
+const LEVELS4: Level4[] = [
+  {
+    num: 'Ⅰ', t: '知道', en: 'KNOW', d: '你掌握了多少关键真理与圣经知识',
+    icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2 4.5C4.5 3 8 3 12 5.5c4-2.5 7.5-2.5 10-1V18c-2.5-1.5-6-1.5-10 1-4-2.5-7.5-2.5-10-1z" /><path d="M12 5.5V19" /></svg>,
+  },
+  {
+    num: 'Ⅱ', t: '理解', en: 'UNDERSTAND', d: '你是否真正明白其含义与神学脉络',
+    icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18h6M10 21h4" /><path d="M12 3a6.5 6.5 0 0 0-4 11.6c.8.7 1.3 1.5 1.5 2.4h5a4.6 4.6 0 0 1 1.5-2.4A6.5 6.5 0 0 0 12 3z" /></svg>,
+  },
+  {
+    num: 'Ⅲ', t: '应用', en: 'APPLY', d: '你能否将真理活出在现实生活与处境中',
+    icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 21V10" /><path d="M12 10c0-4-2.5-6.5-7-7 0 4.5 2.5 7 7 7z" /><path d="M12 13c0-3.2 2-5.2 5.6-5.6 0 3.6-2 5.6-5.6 5.6z" /></svg>,
+  },
+  {
+    num: 'Ⅳ', t: '教导', en: 'TEACH', d: '你是否能以合宜方式解释并帮助他人成长',
+    icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="8" r="3.2" /><path d="M3.5 20c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5" /><path d="M15.5 4.5h5M15.5 8h5M17.5 11.5h3" /></svg>,
+  },
+];
+
+const GAINS = [
+  {
+    t: '成长画像', d: '多维度评估你的当前装备水平与优势短板',
+    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="3" /><circle cx="9" cy="11" r="2.2" /><path d="M5.8 17c.5-1.9 1.7-2.9 3.2-2.9s2.7 1 3.2 2.9" /><path d="M14.5 9.5H18M14.5 13H18" /></svg>,
+  },
+  {
+    t: '专属装备路径', d: '依你的需要，生成个性化课程与成长建议',
+    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="6" cy="19" r="2.4" /><circle cx="18" cy="5" r="2.4" /><path d="M8.4 19H15a4 4 0 0 0 0-8H9a4 4 0 0 1 0-8h6.6" /></svg>,
+  },
+  {
+    t: '训练与专业建议', d: '获得导师推荐、实践操练与延伸学习方向',
+    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a8 8 0 0 1-8 8H4l2.2-2.6A8 8 0 1 1 21 12z" /><path d="M8.5 10.5h7M8.5 14h4.5" /></svg>,
+  },
+];
+
+const FLOW_STEPS = [
+  {
+    n: 1, t: '背景了解', d: '建立基本信息与事奉脉络',
+    icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="3.6" /><path d="M5 20c.8-3.8 3.4-5.8 7-5.8s6.2 2 7 5.8" /></svg>,
+  },
+  {
+    n: 2, t: '核心筛查', d: '评估四大层面基础掌握度',
+    icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="3.5" width="14" height="17" rx="2.5" /><path d="M9 3.5V6h6V3.5" /><path d="M9 11h6M9 15h4" /></svg>,
+  },
+  {
+    n: 3, t: '情境判断', d: '透过情境题检视应用能力',
+    icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M8 15a6 6 0 1 1 4 1.7L8 18z" /><path d="M17.5 14.5a5 5 0 0 1-1.6 6.1L19.5 22l-3.7-1.2" /></svg>,
+  },
+  {
+    n: 4, t: '生成路径', d: 'AI 生成专属成长路径', gold: true,
+    icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="4.6" /><circle cx="12" cy="12" r="1.2" fill="currentColor" /></svg>,
+  },
+];
+
+const RADAR_AXES = ['圣经', '神学', '解经', '生命', '事奉'];
+const RADAR_LABEL_POS: [number, number][] = [[0, -95], [97, -24], [60, 88], [-60, 88], [-97, -24]];
+
+function radarXY(idx: number, value: number, rMax = 85): [number, number] {
+  const a = ((-90 + idx * 72) * Math.PI) / 180;
+  const r = (value / 100) * rMax;
+  return [Math.cos(a) * r, Math.sin(a) * r];
+}
+function radarRing(frac: number): string {
+  return RADAR_AXES.map((_, i) => radarXY(i, frac * 100).map(n => n.toFixed(1)).join(',')).join(' ');
+}
+
+const RadarChart: React.FC<{ values: number[] }> = ({ values }) => {
+  const pts = values.map((v, i) => radarXY(i, v));
+  const dataPts = pts.map(p => p.map(n => n.toFixed(1)).join(',')).join(' ');
+  return (
+    <svg width="176" height="176" viewBox="0 0 220 220" role="img" aria-label="成长画像雷达图">
+      <defs>
+        <linearGradient id="ctRadarFill" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#3B62B8" stopOpacity=".62" />
+          <stop offset="100%" stopColor="#173B84" stopOpacity=".7" />
+        </linearGradient>
+        <radialGradient id="ctRadarGlow" cx="50%" cy="50%" r="55%">
+          <stop offset="0%" stopColor="#F2D493" stopOpacity=".22" />
+          <stop offset="100%" stopColor="#F2D493" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      <g transform="translate(110,112)">
+        <circle r="92" fill="url(#ctRadarGlow)" />
+        <polygon points={radarRing(1)} fill="#FBF7EC" stroke="#E9D9B2" strokeWidth="1.6" />
+        <polygon points={radarRing(0.75)} fill="#FFFFFF" stroke="#EBDDBC" strokeWidth="1.2" />
+        <polygon points={radarRing(0.5)} fill="#FBF7EC" stroke="#EDE1C6" strokeWidth="1" />
+        <polygon points={radarRing(0.25)} fill="#FFFFFF" stroke="#F0E6D0" strokeWidth="1" />
+        <g stroke="#E2D8BE" strokeWidth="1">
+          {RADAR_AXES.map((_, i) => {
+            const [x, y] = radarXY(i, 100);
+            return <line key={i} x1="0" y1="0" x2={x.toFixed(1)} y2={y.toFixed(1)} />;
+          })}
+        </g>
+        <polygon points={dataPts} fill="url(#ctRadarFill)" stroke="#2C55A6" strokeWidth="2.2" strokeLinejoin="round" />
+        <g fill="#FFFFFF" stroke="#2C55A6" strokeWidth="2">
+          {pts.map((p, i) => <circle key={i} cx={p[0].toFixed(1)} cy={p[1].toFixed(1)} r="3.4" />)}
+        </g>
+        {RADAR_AXES.map((label, i) => (
+          <g key={label}>
+            <text x={RADAR_LABEL_POS[i][0]} y={RADAR_LABEL_POS[i][1]} textAnchor="middle" style={{ fontSize: 11, fill: '#33456F', fontWeight: 800 }}>{label}</text>
+            <text x={RADAR_LABEL_POS[i][0]} y={RADAR_LABEL_POS[i][1] + 12} textAnchor="middle" style={{ fontSize: 8.5, fill: '#A98230', fontWeight: 800 }}>{values[i]}</text>
+          </g>
+        ))}
+      </g>
+    </svg>
+  );
+};
+
+const SAMPLE_RADAR = [85, 72, 68, 80, 75];
+
+const goldBtn: React.CSSProperties = {
+  display: 'inline-flex', alignItems: 'center', gap: 8,
+  padding: '0 20px', height: 44, border: 'none', borderRadius: 999,
+  background: 'linear-gradient(180deg, #F4D796 0%, #E1B75F 100%)',
+  color: '#123061', fontSize: 13.5, fontWeight: 800, letterSpacing: '0.4px',
+  boxShadow: '0 8px 18px rgba(160,116,38,.28), inset 0 1px 0 rgba(255,255,255,.55)',
+  cursor: 'pointer',
+};
+
+const FooterBrand: React.FC = () => (
+  <div className="flex flex-col items-center" style={{ gap: 5, marginTop: 22, color: '#C2C8D4' }}>
+    <div className="flex items-center" style={{ gap: 8 }}>
+      <span style={{ width: 34, height: 1, background: '#DFE3EA' }} />
+      <span style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 12, fontWeight: 700, letterSpacing: '3px', color: '#A9B1C1' }}>AMAS</span>
+      <span style={{ width: 34, height: 1, background: '#DFE3EA' }} />
+    </div>
+    <span style={{ fontSize: 8.5, letterSpacing: '2px', fontWeight: 600 }}>ASIAN MISSIONARY ASSOCIATION SEMINARY</span>
+  </div>
+);
+
+// ============================================================
+// 一页一题答题壳（支持撤销上一题）
+// ============================================================
+
+const QuizShell: React.FC<{
+  title: string;
+  cur: number;
+  total: number;
+  question: string;
+  options: { text: string }[];
+  onPick: (idx: number) => void;
+  onUndo: () => void;
+  canUndo: boolean;
+  onExit: () => void;
+  hint?: string;
+}> = ({ title, cur, total, question, options, onPick, onUndo, canUndo, onExit, hint }) => (
+  <div className="fixed inset-0 z-[120] max-w-md mx-auto flex flex-col bg-slate-50 animate-fade-in">
+    <div className="flex items-center px-4 bg-white border-b border-slate-200" style={{ paddingTop: 'calc(var(--safe-top) + 8px)', paddingBottom: 10 }}>
+      <button onClick={onExit} aria-label="退出" className="p-1 -ml-2 rounded-full hover:bg-slate-100 transition">
+        <X size={22} className="text-slate-500" />
+      </button>
+      <div className="flex-1 ml-2">
+        <p style={{ margin: 0, fontSize: 15, fontWeight: 800, color: '#1F2A37' }}>{title}</p>
+        <div className="rounded-full overflow-hidden" style={{ height: 4, backgroundColor: '#EEF1F5', marginTop: 5 }}>
+          <div style={{ height: '100%', width: `${Math.min(96, (cur / total) * 100)}%`, background: 'linear-gradient(90deg,#04285F,#C99A45)', transition: 'width 0.3s ease' }} />
+        </div>
+      </div>
+      <span className="ml-3 shrink-0" style={{ fontSize: 11, fontWeight: 700, color: '#98A2B3' }}>{cur + 1}/{total}</span>
+    </div>
+
+    <div className="flex-1 overflow-y-auto flex flex-col justify-center px-5" style={{ paddingBottom: 20, paddingTop: 12 }}>
+      {hint && (
+        <p style={{ margin: '0 0 14px', fontSize: 11.5, lineHeight: '18px', color: '#98A2B3', textAlign: 'center' }}>{hint}</p>
+      )}
+      <div style={{ ...ctCard, padding: '20px 18px' }}>
+        <span
+          style={{
+            display: 'inline-block', fontSize: 10, fontWeight: 800, letterSpacing: '1px',
+            color: '#C99A45', background: '#FBF6EA', border: '1px solid rgba(201,154,69,0.28)',
+            borderRadius: 999, padding: '2px 9px', marginBottom: 10,
+          }}
+        >
+          第 {cur + 1} 题
+        </span>
+        <p style={{ margin: '0 0 16px', fontSize: 15.5, lineHeight: '25px', color: '#1F2A37', fontWeight: 700 }}>{question}</p>
+        <div className="flex flex-col" style={{ gap: 9 }}>
+          {options.map((o, i) => (
+            <button
+              key={i}
+              onClick={() => onPick(i)}
+              className="text-left active:scale-[0.99] transition-transform"
+              style={{
+                fontSize: 13.5, lineHeight: '20px', color: '#04285F', fontWeight: 600,
+                border: '1.5px solid rgba(4,40,95,0.22)', borderRadius: 13,
+                padding: '12px 13px', background: '#F8FAFF',
+              }}
+            >
+              {o.text}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="flex justify-center" style={{ marginTop: 14 }}>
+        <button
+          onClick={onUndo}
+          disabled={!canUndo}
+          className="inline-flex items-center active:scale-95 transition disabled:opacity-35"
+          style={{
+            gap: 6, fontSize: 12.5, fontWeight: 700, color: '#475467',
+            border: '1px solid #E2E5EB', borderRadius: 999, padding: '8px 16px', background: '#FFFFFF',
+          }}
+        >
+          <Undo2 size={14} /> 上一题
+        </button>
+      </div>
+    </div>
+  </div>
+);
+
+// ============================================================
+// 组件
+// ============================================================
+
 const CORE_DIMS: DimKey[] = ['bible', 'hermeneutics', 'theology', 'gospel', 'ministry'];
 
-const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick }) => {
+interface Props {
+  onBack: () => void;
+  courses: Course[];
+  onCourseClick: (id: string) => void;
+  user?: { name?: string; email?: string } | null;
+}
+
+interface DiagSnapshot {
+  st: string;
+  current: Question;
+  asked: number;
+}
+
+const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, user }) => {
   const [ct, setCt] = useState<CTState | null>(() => loadCT());
-  const [mode, setMode] = useState<'home' | 'quiz' | 'gifts'>('home');
+  const [mode, setMode] = useState<'home' | 'quiz' | 'gifts' | 'serve'>('home');
 
-  // ---- 恩赐辨识状态 ----
-  const [giftIdx, setGiftIdx] = useState(0);
-  const giftAcc = useRef<{ scores: Partial<Record<GiftKey, { t: number; w: number }>>; b: number[] }>({ scores: {}, b: [] });
-
-  const startGifts = () => {
-    giftAcc.current = { scores: {}, b: [] };
-    setGiftIdx(0);
-    setMsgs([{ id: 'gw', role: 'ai', text: '接下来是恩赐辨识：12 个真实处境的选择，约 4 分钟。恩赐没有高低之分——请按你真实的反应选择，而不是“应该”的答案。' }]);
-    setMode('gifts');
-  };
-
-  const answerGift = (opt: { text: string; g?: Partial<Record<GiftKey, number>>; b?: number }) => {
-    const q = GIFT_QUESTIONS[giftIdx];
-    setMsgs(prev => [
-      ...prev,
-      { id: `gq-${q.id}`, role: 'ai', text: q.text },
-      { id: `ga-${q.id}`, role: 'me', text: opt.text },
-    ]);
-    const A = giftAcc.current;
-    if (opt.g) for (const [k, v] of Object.entries(opt.g)) {
-      const cur = A.scores[k as GiftKey] ?? { t: 0, w: 0 };
-      A.scores[k as GiftKey] = { t: cur.t + (v as number), w: cur.w + 1 };
-    }
-    if (opt.b !== undefined) A.b.push(opt.b);
-
-    if (giftIdx + 1 < GIFT_QUESTIONS.length) {
-      setGiftIdx(giftIdx + 1);
-    } else {
-      const scores = {} as Record<GiftKey, number>;
-      for (const gm of GIFTS) {
-        const acc = A.scores[gm.key];
-        scores[gm.key] = acc ? Math.round(acc.t / acc.w) : 45;
-      }
-      const behavior = A.b.length ? Math.round(A.b.reduce((a, b) => a + b, 0) / A.b.length) : 0;
-      if (!ct) return; // 恩赐模块仅在完成九维诊断后开放
-      const next: CTState = { ...ct, gifts: { scores, behavior, completedAt: new Date().toISOString() } };
-      saveCT(next); setCt(next); scheduleGrowthPush(next);
-      setMsgs(prev => [...prev, { id: 'gdone', role: 'ai', text: '恩赐辨识完成！已写入你的成长档案。记住：测评只是“辨识的起点”，恩赐要在真实服事中被验证。' }]);
-      setTimeout(() => setMode('home'), 900);
-    }
-  };
-
-  const [msgs, setMsgs] = useState<ChatMsg[]>([]);
+  // ---- 九维诊断状态 ----
   const [current, setCurrent] = useState<Question | null>(null);
   const [asked, setAsked] = useState(0);
-  const endRef = useRef<HTMLDivElement>(null);
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs, current]);
+  const history = useRef<DiagSnapshot[]>([]);
 
-  // 诊断过程可变状态（用 ref 简化连续流程）
   const st = useRef({
     tier: 0, years: 1, focus: null as DimKey | null, scenario: null as string | null,
     scores: {} as Partial<Record<DimKey, { total: number; weight: number }>>,
     levels: {} as Partial<Record<DimKey, number>>,
     phase: 'bg' as 'bg' | 'ladder' | 'single',
     bgIdx: 0,
-    coreIdx: 0,            // 当前核心维度序号
-    ladderStep: 0,         // 该维度已问的题数（最多 2）
-    ladderLevelIdx: 0,     // 当前阶梯题在 LADDER[dim] 中的下标
+    coreIdx: 0,
+    ladderStep: 0,
+    ladderLevelIdx: 0,
     singleIdx: 0,
     coreOrder: [] as DimKey[],
   });
@@ -929,7 +1018,6 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick })
     st.current.scores[dim] = { total: cur.total + score * weight, weight: cur.weight + weight };
   };
 
-  // 预计总题数（背景 5~6 + 核心 5×2 + 单题 4）
   const estTotal = 6 + CORE_DIMS.length * 2 + SINGLE_QUESTIONS.length;
 
   const startQuiz = () => {
@@ -939,8 +1027,8 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick })
       coreIdx: 0, ladderStep: 0, ladderLevelIdx: 0, singleIdx: 0,
       coreOrder: [...CORE_DIMS],
     };
+    history.current = [];
     setAsked(0);
-    setMsgs([{ id: 'w', role: 'ai', text: '你好！我是你的装备顾问。接下来大约 6–8 分钟，我会先认识你，再从五个核心能力逐一了解你的真实水平——答得好我会追问更深的问题，所以放轻松，按真实情况选择就好。' }]);
     setCurrent(BG_QUESTIONS[0]);
     setMode('quiz');
   };
@@ -948,18 +1036,16 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick })
   const nextQuestion = (): Question | null => {
     const S = st.current;
     if (S.phase === 'bg') {
-      // 处境第一组选了具体处境则跳过第二组
       while (S.bgIdx < BG_QUESTIONS.length) {
         const q = BG_QUESTIONS[S.bgIdx];
         if (q.id === 'bg_scenario2' && S.scenario && S.scenario !== 'none') { S.bgIdx++; continue; }
         return q;
       }
-      // 进入核心阶梯：优先从用户关注的维度开始
       if (S.focus && CORE_DIMS.includes(S.focus)) {
         S.coreOrder = [S.focus, ...CORE_DIMS.filter(d => d !== S.focus)];
       }
       S.phase = 'ladder';
-      S.ladderLevelIdx = S.tier >= 2 ? 1 : 0; // 同工以上从 L2 起步
+      S.ladderLevelIdx = S.tier >= 2 ? 1 : 0;
       return LADDER[S.coreOrder[0]][S.ladderLevelIdx];
     }
     if (S.phase === 'ladder') {
@@ -980,28 +1066,26 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick })
       const acc = S.scores[d.key];
       full[d.key] = acc ? Math.round(acc.total / acc.weight) : 50;
     }
-    // 处境加权：真实处境对应的维度略降，确保进入装备路径
     const sc = SCENARIOS.find(x => x.id === S.scenario);
     if (sc) full[sc.boost] = Math.max(20, full[sc.boost] - 5);
+    const prev = ct;
     const state: CTState = {
       v: 2, tier: S.tier, years: S.years, focus: S.focus, scenario: S.scenario,
       scores: full, levels: S.levels, completedAt: new Date().toISOString(),
+      gifts: prev?.gifts, service: prev?.service, applications: prev?.applications,
     };
-    saveCT(state); setCt(state); scheduleGrowthPush(state); setCurrent(null);
-    setMsgs(prev => [...prev, { id: 'done', role: 'ai', text: '诊断完成！我已经为你生成了「神学成长画像」、装备路径和当前处境任务，一起来看看。' }]);
-    setTimeout(() => setMode('home'), 900);
+    saveCT(state); setCt(state); scheduleGrowthPush(state);
+    history.current = [];
+    setCurrent(null);
+    setMode('home');
   };
 
-  const answer = (opt: QOption) => {
+  const answer = (optIdx: number) => {
     if (!current) return;
-    const S = st.current;
-    setMsgs(prev => [
-      ...prev,
-      { id: `q-${current.id}-${asked}`, role: 'ai', text: current.text },
-      { id: `a-${current.id}-${asked}`, role: 'me', text: opt.text },
-    ]);
-    setAsked(n => n + 1);
+    const opt = current.options[optIdx];
+    history.current.push({ st: JSON.stringify(st.current), current, asked });
 
+    const S = st.current;
     if (S.phase === 'bg') {
       if (opt.tier !== undefined) S.tier = Math.max(S.tier, opt.tier);
       if (opt.years !== undefined) S.years = opt.years;
@@ -1011,39 +1095,134 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick })
     } else if (S.phase === 'ladder') {
       const dim = S.coreOrder[S.coreIdx];
       const score = opt.score ?? 50;
-      // 第二问权重更高（更接近真实水平的探测）
       record(dim, score, S.ladderStep === 0 ? 1 : 1.4);
       S.levels[dim] = Math.max(S.levels[dim] ?? 0, (S.ladderLevelIdx + 1));
       S.ladderStep++;
       const ladder = LADDER[dim];
       if (S.ladderStep >= 2) {
-        // 该维度完成，进入下一维度
         S.coreIdx++; S.ladderStep = 0;
         S.ladderLevelIdx = S.tier >= 2 ? 1 : 0;
       } else if (score >= 70 && S.ladderLevelIdx < ladder.length - 1) {
-        S.ladderLevelIdx++;           // 升级追问
+        S.ladderLevelIdx++;
       } else if (score < 50 && S.ladderLevelIdx > 0) {
-        S.ladderLevelIdx--;           // 降级确认
+        S.ladderLevelIdx--;
       } else if (score >= 70) {
-        // 已在顶层且答得好 → 直接结束该维度
         record(dim, Math.min(100, score + 4), 0.6);
         S.coreIdx++; S.ladderStep = 0;
         S.ladderLevelIdx = S.tier >= 2 ? 1 : 0;
       } else {
-        // 中间水平，用相邻题确认
         S.ladderLevelIdx = Math.min(S.ladderLevelIdx + 1, ladder.length - 1);
       }
     } else {
-      const q = current;
-      if (q.dim && opt.score !== undefined) record(q.dim, opt.score, 1);
+      if (current.dim && opt.score !== undefined) record(current.dim, opt.score, 1);
       S.singleIdx++;
     }
 
+    setAsked(a => a + 1);
     const nq = nextQuestion();
     if (nq) setCurrent(nq); else finish();
   };
 
-  // 撤销诊断：清除画像与路径，恢复初始落地页
+  const undo = () => {
+    const snap = history.current.pop();
+    if (!snap) return;
+    st.current = JSON.parse(snap.st);
+    setCurrent(snap.current);
+    setAsked(snap.asked);
+  };
+
+  // ---- 恩赐辨识状态 ----
+  const [giftIdx, setGiftIdx] = useState(0);
+  const giftAcc = useRef<{ scores: Partial<Record<GiftKey, { t: number; w: number }>>; b: number[] }>({ scores: {}, b: [] });
+  const giftHistory = useRef<{ idx: number; acc: string }[]>([]);
+
+  const startGifts = () => {
+    giftAcc.current = { scores: {}, b: [] };
+    giftHistory.current = [];
+    setGiftIdx(0);
+    setMode('gifts');
+  };
+
+  const answerGift = (optIdx: number) => {
+    const q = GIFT_QUESTIONS[giftIdx];
+    const opt = q.options[optIdx];
+    giftHistory.current.push({ idx: giftIdx, acc: JSON.stringify(giftAcc.current) });
+    const A = giftAcc.current;
+    if (opt.g) for (const [k, v] of Object.entries(opt.g)) {
+      const cur = A.scores[k as GiftKey] ?? { t: 0, w: 0 };
+      A.scores[k as GiftKey] = { t: cur.t + (v as number), w: cur.w + 1 };
+    }
+    if (opt.b !== undefined) A.b.push(opt.b);
+
+    if (giftIdx + 1 < GIFT_QUESTIONS.length) {
+      setGiftIdx(giftIdx + 1);
+    } else {
+      const scores = {} as Record<GiftKey, number>;
+      for (const gm of GIFTS) {
+        const acc = A.scores[gm.key];
+        scores[gm.key] = acc ? Math.round(acc.t / acc.w) : 45;
+      }
+      const behavior = A.b.length ? Math.round(A.b.reduce((a, b) => a + b, 0) / A.b.length) : 0;
+      if (!ct) { setMode('home'); return; }
+      const next: CTState = { ...ct, gifts: { scores, behavior, completedAt: new Date().toISOString() } };
+      saveCT(next); setCt(next); scheduleGrowthPush(next);
+      setMode('home');
+    }
+  };
+
+  const undoGift = () => {
+    const snap = giftHistory.current.pop();
+    if (!snap) return;
+    giftAcc.current = JSON.parse(snap.acc);
+    setGiftIdx(snap.idx);
+  };
+
+  // ---- 服事记录（Phase 6 证据层） ----
+  const [serveGift, setServeGift] = useState<GiftKey>('serving');
+  const [serveRole, setServeRole] = useState('');
+  const [serveNote, setServeNote] = useState('');
+
+  const openServe = () => {
+    if (ct?.gifts) {
+      const top = GIFTS.map(m => ({ k: m.key, s: ct.gifts!.scores[m.key] })).sort((a, b) => b.s - a.s)[0];
+      setServeGift(top.k);
+    }
+    setServeRole(''); setServeNote('');
+    setMode('serve');
+  };
+
+  const saveServe = () => {
+    if (!ct || !serveRole.trim()) return;
+    const entry: ServiceEntry = { gift: serveGift, role: serveRole.trim().slice(0, 40), note: serveNote.trim().slice(0, 200), at: new Date().toISOString() };
+    const next: CTState = { ...ct, service: [...(ct.service ?? []), entry] };
+    saveCT(next); setCt(next); scheduleGrowthPush(next);
+    setMode('home');
+  };
+
+  // ---- 事奉申请（Phase 7） ----
+  const [applyBusy, setApplyBusy] = useState<string | null>(null);
+  const applyMinistry = async (roleName: string, pct: number) => {
+    if (!ct) return;
+    if (ct.applications?.some(a => a.role === roleName)) return;
+    if (!window.confirm(`向教务提交「${roleName}」的事奉申请意向吗？同工会与你联系确认。`)) return;
+    setApplyBusy(roleName);
+    try {
+      const r = await submitCooperation({
+        name: user?.name || '学员',
+        email: user?.email || 'app@amas.local',
+        organization: 'AMAS App · 定制化神学',
+        type: '事奉申请',
+        message: `【成长档案·事奉申请】角色：${roleName}（匹配度 ${pct}%）。来自定制化神学的恩赐辨识匹配。`,
+      });
+      const next: CTState = { ...ct, applications: [...(ct.applications ?? []), { role: roleName, at: new Date().toISOString() }] };
+      saveCT(next); setCt(next); scheduleGrowthPush(next);
+      window.alert(r.ok ? '申请已提交，教务同工会与你联系。' : '已记录申请意向（当前离线，联网后请与教务确认）。');
+    } finally {
+      setApplyBusy(null);
+    }
+  };
+
+  // ---- 撤销诊断 / 时间 ----
   const clearDiagnosis = () => {
     if (!window.confirm('确定撤销本次诊断吗？成长画像与装备路径将被清除，页面恢复到初始状态。')) return;
     try { localStorage.removeItem(STORAGE_KEY); } catch {}
@@ -1055,7 +1234,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick })
     return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
   };
 
-  // 启动时拉取服务器档案：completedAt 较新者胜（跨设备同步）
+  // ---- 跨设备同步 ----
   useEffect(() => {
     let cancelled = false;
     void fetchServerGrowth<CTState>().then(server => {
@@ -1063,40 +1242,46 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick })
       setCt(local => {
         if (!local) { saveCT(server); return server; }
         const lt = Date.parse(local.gifts?.completedAt ?? local.completedAt);
-        const st = Date.parse(server.gifts?.completedAt ?? server.completedAt);
-        if (st > lt) { saveCT(server); return server; }
+        const stt = Date.parse(server.gifts?.completedAt ?? server.completedAt);
+        if (stt > lt) { saveCT(server); return server; }
         return local;
       });
     });
     return () => { cancelled = true; };
   }, []);
 
-  // ---------- 画像派生 ----------
+  // ---- 画像派生（含学习反哺） ----
   const derive = (s: CTState) => {
-    const entries = DIMS.map(d => ({ meta: d, score: s.scores[d.key] }));
+    const { boost, count: learnedCount } = learningBoost(courses);
+    const entries = DIMS.map(d => ({
+      meta: d,
+      base: s.scores[d.key],
+      boost: boost[d.key],
+      score: Math.min(100, s.scores[d.key] + boost[d.key]),
+    }));
     const sortedAsc = [...entries].sort((a, b) => a.score - b.score);
     const weak = sortedAsc.slice(0, 3);
     const strong = [...entries].sort((a, b) => b.score - a.score).filter(e => e.score >= 72).slice(0, 3);
     const avg = Math.round(entries.reduce((t, e) => t + e.score, 0) / entries.length);
     const stage = stageOf(avg, s.tier, s.years);
 
-    // 风险提示：角色与根基的错配
     const risks: string[] = [];
-    if (s.tier >= 2 && s.scores.gospel < 62) risks.push('你已在带领/教导岗位，但福音根基维度偏低——恩典与行为关系的偏差会直接进入你的教导，建议优先补强救恩论。');
-    if (s.tier >= 2 && s.scores.hermeneutics < 58) risks.push('你有教导责任，但解经流程尚不稳固，信息容易偏离经文原意，建议尽快完成释经基础训练。');
-    if (s.scenario === 'cult' && s.scores.apologetics < 60) risks.push('你正面对异端处境，而护教分辨能力还不足以应对，请优先完成下方的处境任务，必要时寻求教牧同工支持。');
-    if (s.tier <= 1 && s.scores.ministry >= 80) risks.push('你的服事负担超前于目前的装备阶段，建议先夯实根基再扩大服事范围，避免服事透支。');
+    const sc = (k: DimKey) => entries.find(e => e.meta.key === k)!.score;
+    if (s.tier >= 2 && sc('gospel') < 62) risks.push('你已在带领/教导岗位，但福音根基维度偏低——恩典与行为关系的偏差会直接进入你的教导，建议优先补强救恩论。');
+    if (s.tier >= 2 && sc('hermeneutics') < 58) risks.push('你有教导责任，但解经流程尚不稳固，信息容易偏离经文原意，建议尽快完成释经基础训练。');
+    if (s.scenario === 'cult' && sc('apologetics') < 60) risks.push('你正面对异端处境，而护教分辨能力还不足以应对，请优先完成处境任务，必要时寻求教牧同工支持。');
+    if (s.tier <= 1 && sc('ministry') >= 80) risks.push('你的服事负担超前于目前的装备阶段，建议先夯实根基再扩大服事范围，避免服事透支。');
 
     const pathDims: typeof weak = [];
     if (s.focus) pathDims.push(entries.find(e => e.meta.key === s.focus)!);
     for (const w of weak) if (!pathDims.some(p => p.meta.key === w.meta.key)) pathDims.push(w);
     const scenario = SCENARIOS.find(x => x.id === s.scenario) ?? null;
-    return { entries, strong, weak, avg, stage, risks, scenario, path: pathDims.slice(0, 3) };
+    return { entries, strong, weak, avg, stage, risks, scenario, learnedCount, path: pathDims.slice(0, 3) };
   };
 
   const courseById = (id: string) => courses.find(c => c.id === id);
 
-  const Bar: React.FC<{ label: string; score: number; highlight?: boolean }> = ({ label, score, highlight }) => (
+  const Bar: React.FC<{ label: string; score: number; highlight?: boolean; boosted?: boolean }> = ({ label, score, highlight, boosted }) => (
     <div className="flex items-center" style={{ gap: 10 }}>
       <span className="shrink-0" style={{ width: 58, fontSize: 12, fontWeight: 600, color: highlight ? '#9A1239' : '#475467' }}>{label}</span>
       <div className="flex-1 rounded-full overflow-hidden" style={{ height: 8, backgroundColor: '#EEF1F5' }}>
@@ -1113,143 +1298,123 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick })
           }}
         />
       </div>
-      <span className="shrink-0 text-right" style={{ width: 26, fontSize: 12, fontWeight: 800, color: '#1F2A37' }}>{score}</span>
+      <span className="shrink-0 text-right flex items-center justify-end" style={{ width: 34, fontSize: 12, fontWeight: 800, color: '#1F2A37', gap: 2 }}>
+        {score}{boosted && <TrendingUp size={9} color="#137A4F" />}
+      </span>
     </div>
   );
 
+  // ================= 答题模式（一页一题 + 撤销） =================
+
+  if (mode === 'quiz' && current) {
+    return (
+      <QuizShell
+        title="AI 装备诊断"
+        cur={asked}
+        total={estTotal}
+        question={current.text}
+        options={current.options}
+        onPick={answer}
+        onUndo={undo}
+        canUndo={history.current.length > 0}
+        onExit={() => setMode('home')}
+        hint={asked === 0 ? '约 6–8 分钟 · 按真实情况选择即可 · 答得好会自动追问更深的问题' : undefined}
+      />
+    );
+  }
 
   if (mode === 'gifts') {
     const q = GIFT_QUESTIONS[giftIdx];
     return (
-      <div className="fixed inset-0 z-[120] max-w-md mx-auto flex flex-col bg-slate-50 animate-fade-in">
-        <div className="flex items-center px-4 bg-white border-b border-slate-200" style={{ paddingTop: 'calc(var(--safe-top) + 8px)', paddingBottom: 10 }}>
-          <button onClick={() => setMode('home')} aria-label="返回" className="p-1 -ml-2 rounded-full hover:bg-slate-100 transition">
-            <ChevronLeft size={24} className="text-slate-900" />
-          </button>
-          <div className="flex-1 ml-2">
-            <p style={{ margin: 0, fontSize: 15, fontWeight: 800, color: '#1F2A37' }}>恩赐辨识</p>
-            <div className="rounded-full overflow-hidden" style={{ height: 4, backgroundColor: '#EEF1F5', marginTop: 5 }}>
-              <div style={{ height: '100%', width: `${(giftIdx / GIFT_QUESTIONS.length) * 100}%`, background: 'linear-gradient(90deg,#04285F,#C99A45)', transition: 'width 0.4s ease' }} />
-            </div>
-          </div>
-          <span className="ml-3 shrink-0" style={{ fontSize: 11, fontWeight: 700, color: '#98A2B3' }}>{giftIdx}/{GIFT_QUESTIONS.length}</span>
-        </div>
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
-          {msgs.map(m => (
-            <div key={m.id} className={`flex ${m.role === 'me' ? 'justify-end' : 'justify-start'}`}>
-              <div
-                className="max-w-[86%] whitespace-pre-wrap"
-                style={{
-                  padding: '10px 13px', fontSize: 13.5, lineHeight: '21px',
-                  borderRadius: m.role === 'me' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-                  ...(m.role === 'me'
-                    ? { background: '#04285F', color: '#FFF' }
-                    : { background: '#FFF', color: '#1F2A37', border: '1px solid #E8E4DA' }),
-                }}
-              >
-                {m.text}
-              </div>
-            </div>
-          ))}
-          <div className="flex justify-start">
-            <div className="max-w-[92%]" style={{ padding: '12px 14px', borderRadius: '16px 16px 16px 4px', background: '#FFF', border: '1px solid #E8E4DA' }}>
-              <p style={{ margin: 0, fontSize: 13.5, lineHeight: '21px', color: '#1F2A37', fontWeight: 600 }}>{q.text}</p>
-              <div className="flex flex-col" style={{ gap: 8, marginTop: 12 }}>
-                {q.options.map((o, i) => (
-                  <button
-                    key={i}
-                    onClick={() => answerGift(o)}
-                    className="text-left active:scale-[0.99] transition-transform"
-                    style={{
-                      fontSize: 13, lineHeight: '19px', color: '#04285F', fontWeight: 600,
-                      border: '1.5px solid rgba(4,40,95,0.22)', borderRadius: 12,
-                      padding: '10px 12px', background: '#F8FAFF',
-                    }}
-                  >
-                    {o.text}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-          <div ref={endRef} />
-        </div>
-      </div>
+      <QuizShell
+        title="恩赐辨识"
+        cur={giftIdx}
+        total={GIFT_QUESTIONS.length}
+        question={q.text}
+        options={q.options}
+        onPick={answerGift}
+        onUndo={undoGift}
+        canUndo={giftHistory.current.length > 0}
+        onExit={() => setMode('home')}
+        hint={giftIdx === 0 ? '恩赐没有高低之分 · 请按你真实的反应选择，而不是“应该”的答案' : undefined}
+      />
     );
   }
 
-  // ================= 诊断界面 =================
-  if (mode === 'quiz') {
+  // ================= 服事记录 =================
+
+  if (mode === 'serve') {
     return (
       <div className="fixed inset-0 z-[120] max-w-md mx-auto flex flex-col bg-slate-50 animate-fade-in">
         <div className="flex items-center px-4 bg-white border-b border-slate-200" style={{ paddingTop: 'calc(var(--safe-top) + 8px)', paddingBottom: 10 }}>
           <button onClick={() => setMode('home')} aria-label="返回" className="p-1 -ml-2 rounded-full hover:bg-slate-100 transition">
             <ChevronLeft size={24} className="text-slate-900" />
           </button>
-          <div className="flex-1 ml-2">
-            <p style={{ margin: 0, fontSize: 15, fontWeight: 800, color: '#1F2A37' }}>AI 装备诊断</p>
-            <div className="rounded-full overflow-hidden" style={{ height: 4, backgroundColor: '#EEF1F5', marginTop: 5 }}>
-              <div style={{ height: '100%', width: `${Math.min(96, (asked / estTotal) * 100)}%`, background: 'linear-gradient(90deg,#04285F,#C99A45)', transition: 'width 0.4s ease' }} />
-            </div>
-          </div>
-          <span className="ml-3 shrink-0" style={{ fontSize: 11, fontWeight: 700, color: '#98A2B3' }}>{asked}/{estTotal}</span>
+          <p className="ml-2" style={{ margin: 0, fontSize: 15, fontWeight: 800, color: '#1F2A37' }}>记录一次实际服事</p>
         </div>
-
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
-          {msgs.map(m => (
-            <div key={m.id} className={`flex ${m.role === 'me' ? 'justify-end' : 'justify-start'}`}>
-              <div
-                className="max-w-[86%] whitespace-pre-wrap"
-                style={{
-                  padding: '10px 13px', fontSize: 13.5, lineHeight: '21px',
-                  borderRadius: m.role === 'me' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-                  ...(m.role === 'me'
-                    ? { background: '#04285F', color: '#FFF' }
-                    : { background: '#FFF', color: '#1F2A37', border: '1px solid #E8E4DA' }),
-                }}
-              >
-                {m.text}
-              </div>
+        <div className="flex-1 overflow-y-auto px-4 py-5">
+          <div style={{ ...ctCard, padding: '18px 16px' }}>
+            <p style={{ margin: '0 0 6px', fontSize: 12, fontWeight: 800, color: '#22345E' }}>这次服事主要操练了哪项恩赐？</p>
+            <div className="flex flex-wrap" style={{ gap: 7, marginBottom: 16 }}>
+              {GIFTS.map(g => (
+                <button
+                  key={g.key}
+                  onClick={() => setServeGift(g.key)}
+                  className="active:scale-95 transition"
+                  style={{
+                    fontSize: 12, fontWeight: 700, borderRadius: 999, padding: '6px 12px',
+                    border: serveGift === g.key ? '1.5px solid #04285F' : '1px solid #E2E5EB',
+                    background: serveGift === g.key ? '#04285F' : '#FFFFFF',
+                    color: serveGift === g.key ? '#E8C98C' : '#475467',
+                  }}
+                >
+                  {g.label}
+                </button>
+              ))}
             </div>
-          ))}
-          {current && (
-            <div className="flex justify-start">
-              <div className="max-w-[92%]" style={{ padding: '12px 14px', borderRadius: '16px 16px 16px 4px', background: '#FFF', border: '1px solid #E8E4DA' }}>
-                <p style={{ margin: 0, fontSize: 13.5, lineHeight: '21px', color: '#1F2A37', fontWeight: 600 }}>{current.text}</p>
-                <div className="flex flex-col" style={{ gap: 8, marginTop: 12 }}>
-                  {current.options.map((o, i) => (
-                    <button
-                      key={i}
-                      onClick={() => answer(o)}
-                      className="text-left active:scale-[0.99] transition-transform"
-                      style={{
-                        fontSize: 13, lineHeight: '19px', color: '#04285F', fontWeight: 600,
-                        border: '1.5px solid rgba(4,40,95,0.22)', borderRadius: 12,
-                        padding: '10px 12px', background: '#F8FAFF',
-                      }}
-                    >
-                      {o.text}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-          <div ref={endRef} />
+            <p style={{ margin: '0 0 6px', fontSize: 12, fontWeight: 800, color: '#22345E' }}>服事内容 *</p>
+            <input
+              value={serveRole}
+              onChange={e => setServeRole(e.target.value)}
+              placeholder="例如：带领周三小组查经"
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-900"
+              style={{ fontSize: 13.5, padding: '10px 12px', marginBottom: 14 }}
+            />
+            <p style={{ margin: '0 0 6px', fontSize: 12, fontWeight: 800, color: '#22345E' }}>简单反思（可选）</p>
+            <textarea
+              value={serveNote}
+              onChange={e => setServeNote(e.target.value)}
+              placeholder="进行得如何？哪里顺利、哪里吃力？"
+              rows={3}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-900"
+              style={{ fontSize: 13.5, padding: '10px 12px', resize: 'none' }}
+            />
+            <button
+              onClick={saveServe}
+              disabled={!serveRole.trim()}
+              className="w-full active:scale-[0.98] transition disabled:opacity-40"
+              style={{ ...goldBtn, justifyContent: 'center', marginTop: 16 }}
+            >
+              保存服事记录
+            </button>
+            <p style={{ margin: '10px 0 0', fontSize: 10.5, color: '#98A2B3', lineHeight: '16px' }}>
+              服事记录会填充恩赐的「实际服事」证据层，并解锁档案的服事验证模块。导师/同工的正式评价功能将在教会后台开通后加入。
+            </p>
+          </div>
         </div>
       </div>
     );
   }
 
-// ================= 主页 =================
+  // ================= 主页 =================
+
   const portrait = ct ? derive(ct) : null;
-  const s = ct?.scores;
-  const radarVals = s ? [
-    s.bible,
-    Math.round((s.theology + s.gospel) / 2),
-    s.hermeneutics,
-    Math.round((s.life + s.church) / 2),
-    Math.round((s.ministry + s.apologetics + s.mission) / 3),
+  const radarVals = portrait ? [
+    portrait.entries.find(e => e.meta.key === 'bible')!.score,
+    Math.round((portrait.entries.find(e => e.meta.key === 'theology')!.score + portrait.entries.find(e => e.meta.key === 'gospel')!.score) / 2),
+    portrait.entries.find(e => e.meta.key === 'hermeneutics')!.score,
+    Math.round((portrait.entries.find(e => e.meta.key === 'life')!.score + portrait.entries.find(e => e.meta.key === 'church')!.score) / 2),
+    Math.round((portrait.entries.find(e => e.meta.key === 'ministry')!.score + portrait.entries.find(e => e.meta.key === 'apologetics')!.score + portrait.entries.find(e => e.meta.key === 'mission')!.score) / 3),
   ] : SAMPLE_RADAR;
 
   return (
@@ -1284,7 +1449,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick })
           <div
             className="absolute inset-0"
             style={{
-              backgroundImage: 'url(' + STOCK_PHOTOS.prayingBible + ')',
+              backgroundImage: `url(${STOCK_PHOTOS.prayingBible})`,
               backgroundSize: 'cover', backgroundPosition: 'center right',
             }}
           />
@@ -1346,12 +1511,21 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick })
               <SectionEyebrow title="我的成长档案" en="Christian Profile" />
               <div style={{ ...ctCard, padding: '15px 16px 13px' }}>
                 {(() => {
-                  const pct = 15 + 45 + (ct.gifts ? 25 : 0);
-                  const rows = [
+                  const hasLearn = portrait.learnedCount > 0;
+                  const hasServe = (ct.service?.length ?? 0) > 0;
+                  const pct = 15 + 35 + (ct.gifts ? 20 : 0) + (hasLearn ? 15 : 0) + (hasServe ? 15 : 0);
+                  const rows: { t: string; done?: boolean; sub?: string; action?: () => void; actionText?: string }[] = [
                     { t: '背景与处境', done: true },
                     { t: '神学九维画像', done: true },
-                    { t: '恩赐辨识', done: Boolean(ct.gifts), action: !ct.gifts ? startGifts : undefined },
-                    { t: '服事验证', locked: true },
+                    ct.gifts
+                      ? { t: '恩赐辨识', done: true }
+                      : { t: '恩赐辨识', action: startGifts, actionText: '开始（约 4 分钟）' },
+                    hasLearn
+                      ? { t: '学习佐证', done: true, sub: `已计入 ${portrait.learnedCount} 门完成课程` }
+                      : { t: '学习佐证', sub: '完成任一门装备路径课程后自动计入' },
+                    hasServe
+                      ? { t: '服事验证', done: true, sub: `${ct.service!.length} 条服事记录` }
+                      : { t: '服事验证', action: ct.gifts ? openServe : undefined, actionText: '记录服事', sub: ct.gifts ? undefined : '先完成恩赐辨识' },
                   ];
                   return (
                     <>
@@ -1360,18 +1534,21 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick })
                         <span style={{ fontSize: 13, fontWeight: 900, color: '#04285F' }}>{pct}%</span>
                       </div>
                       <div className="rounded-full overflow-hidden" style={{ height: 6, backgroundColor: '#EEF1F5', marginBottom: 12 }}>
-                        <div style={{ height: '100%', width: `${pct}%`, background: 'linear-gradient(90deg,#04285F,#C99A45)', borderRadius: 99 }} />
+                        <div style={{ height: '100%', width: `${pct}%`, background: 'linear-gradient(90deg,#04285F,#C99A45)', borderRadius: 99, transition: 'width .5s ease' }} />
                       </div>
                       {rows.map(r => (
                         <div key={r.t} className="flex items-center justify-between" style={{ padding: '7px 0', borderTop: '1px solid #F3F1EA' }}>
-                          <span style={{ fontSize: 12.5, fontWeight: 600, color: r.locked ? '#B6BDC9' : '#334155' }}>{r.t}</span>
+                          <div>
+                            <span style={{ fontSize: 12.5, fontWeight: 600, color: '#334155' }}>{r.t}</span>
+                            {r.sub && <p style={{ margin: 0, fontSize: 10, color: '#98A2B3' }}>{r.sub}</p>}
+                          </div>
                           {r.done && <span style={{ fontSize: 11, fontWeight: 800, color: '#137A4F' }}>✓ 已完成</span>}
                           {!r.done && r.action && (
                             <button onClick={r.action} className="active:scale-95 transition" style={{ fontSize: 11, fontWeight: 800, color: '#04285F', border: '1px solid rgba(4,40,95,0.3)', borderRadius: 999, padding: '3px 10px', background: '#F8FAFF' }}>
-                              开始（约 4 分钟）
+                              {r.actionText}
                             </button>
                           )}
-                          {r.locked && <span style={{ fontSize: 10.5, fontWeight: 700, color: '#B6BDC9' }}>进入真实服事后解锁</span>}
+                          {!r.done && !r.action && <span style={{ fontSize: 10.5, fontWeight: 700, color: '#B6BDC9' }}>待完成</span>}
                         </div>
                       ))}
                       <p style={{ margin: '8px 0 0', fontSize: 10, color: '#98A2B3', lineHeight: '15px' }}>
@@ -1383,68 +1560,8 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick })
               </div>
             </section>
 
-            {/* ===== 恩赐辨识结果 ===== */}
-            {ct.gifts && (() => {
-              const g = ct.gifts!;
-              const top = GIFTS.map(m => ({ m, s: g.scores[m.key] })).sort((a, b) => b.s - a.s).slice(0, 3);
-              return (
-                <section style={{ marginTop: 26 }}>
-                  <SectionEyebrow title="恩赐辨识" en="Spiritual Gifts" />
-                  <div style={{ ...ctCard, padding: '16px 16px 13px' }}>
-                    {top.map(({ m, s }, i) => (
-                      <div key={m.key} style={{ paddingBottom: 11, marginBottom: 11, borderBottom: i < 2 ? '1px solid #F3F1EA' : 'none' }}>
-                        <div className="flex items-center justify-between">
-                          <span style={{ fontSize: 14.5, fontWeight: 900, color: '#1F2A37' }}>{m.label}</span>
-                          <span style={{ fontSize: 13, fontWeight: 900, color: '#04285F' }}>{s}</span>
-                        </div>
-                        <p style={{ margin: '2px 0 7px', fontSize: 11, color: '#98A2B3' }}>{m.desc}</p>
-                        <div className="grid" style={{ gridTemplateColumns: '58px 1fr', rowGap: 3 }}>
-                          <span style={{ fontSize: 10.5, color: '#667085' }}>自我评估</span><Dots level={Math.round(s / 20)} />
-                          <span style={{ fontSize: 10.5, color: '#667085' }}>行为佐证</span><Dots level={Math.round(g.behavior / 25)} total={4} />
-                          <span style={{ fontSize: 10.5, color: '#667085' }}>实际服事</span><span style={{ fontSize: 10, color: '#B6BDC9', fontWeight: 700 }}>待验证</span>
-                          <span style={{ fontSize: 10.5, color: '#667085' }}>他人评价</span><span style={{ fontSize: 10, color: '#B6BDC9', fontWeight: 700 }}>待验证</span>
-                        </div>
-                      </div>
-                    ))}
-                    <p style={{ margin: '2px 0 0', fontSize: 10.5, color: '#7A6A45', lineHeight: '16px', background: '#FBF6EA', border: '1px solid rgba(201,154,69,0.25)', borderRadius: 10, padding: '8px 10px' }}>
-                      测评结果是「辨识线索」而非定论。恩赐的确认需要结合圣经、实际服事、教会群体与导师的印证——建议从下方匹配的事奉开始尝试。
-                    </p>
-                  </div>
-                </section>
-              );
-            })()}
-
-            {/* ===== 事奉方向匹配 ===== */}
-            {ct.gifts && (() => {
-              const matches = giftMatches(ct.gifts!).slice(0, 4);
-              return (
-                <section style={{ marginTop: 26 }}>
-                  <SectionEyebrow title="适合我的事奉方向" en="Ministry Match" />
-                  <div style={{ ...ctCard, padding: '14px 16px 12px' }}>
-                    {matches.map((r, i) => (
-                      <div key={r.name} className="flex items-center" style={{ gap: 12, padding: '9px 0', borderTop: i > 0 ? '1px solid #F3F1EA' : 'none' }}>
-                        <div className="flex-1 min-w-0">
-                          <p style={{ margin: 0, fontSize: 13.5, fontWeight: 800, color: '#1F2A37' }}>{r.name}</p>
-                          <p style={{ margin: '1px 0 0', fontSize: 10.5, color: '#98A2B3' }}>{r.desc}</p>
-                        </div>
-                        <div className="shrink-0 text-right" style={{ width: 84 }}>
-                          <span style={{ fontSize: 13, fontWeight: 900, color: i === 0 ? '#C99A45' : '#04285F' }}>{r.pct}%</span>
-                          <div className="rounded-full overflow-hidden" style={{ height: 4, backgroundColor: '#EEF1F5', marginTop: 4 }}>
-                            <div style={{ height: '100%', width: `${r.pct}%`, background: i === 0 ? 'linear-gradient(90deg,#C99A45,#E3C078)' : 'linear-gradient(90deg,#16397E,#2C55A6)' }} />
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                    <p style={{ margin: '10px 0 0', fontSize: 10, color: '#98A2B3', lineHeight: '15px' }}>
-                      匹配度基于恩赐辨识计算，仅供参考；实际服事安排请与教会同工及导师商议确认。
-                    </p>
-                  </div>
-                </section>
-              );
-            })()}
-
-            {/* ===== 真实成长画像 ===== */}
-            <section className="section" style={{ marginTop: 26 }}>
+            {/* ===== 成长画像 ===== */}
+            <section style={{ marginTop: 26 }}>
               <SectionEyebrow title="我的神学成长画像" en="Growth Portrait" />
               <div style={{ ...ctCard, padding: '18px 16px 14px' }}>
                 <div className="flex items-center justify-between">
@@ -1467,13 +1584,16 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick })
                   </div>
                 </div>
                 <p style={{ margin: '8px 0 2px', fontSize: 11.5, color: '#667085' }}>{portrait.stage.desc}</p>
-                <p style={{ margin: '0 0 4px', fontSize: 10, color: '#B6BDC9' }}>诊断于 {fmtTime(ct.completedAt)} · 可随时重新诊断或撤销</p>
+                <p style={{ margin: '0 0 4px', fontSize: 10, color: '#B6BDC9' }}>
+                  诊断于 {fmtTime(ct.completedAt)} · 可随时重新诊断或撤销
+                  {portrait.learnedCount > 0 && ` · 已计入 ${portrait.learnedCount} 门完成课程的学习佐证（分数右侧 ↑）`}
+                </p>
                 <div className="flex justify-center" style={{ margin: '2px 0 6px' }}>
                   <RadarChart values={radarVals} />
                 </div>
                 <div className="space-y-2.5">
                   {portrait.entries.map(e => (
-                    <Bar key={e.meta.key} label={e.meta.label} score={e.score} highlight={portrait.path[0]?.meta.key === e.meta.key} />
+                    <Bar key={e.meta.key} label={e.meta.label} score={e.score} highlight={portrait.path[0]?.meta.key === e.meta.key} boosted={e.boost > 0} />
                   ))}
                 </div>
                 {portrait.strong.length > 0 && (
@@ -1541,6 +1661,119 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick })
                   <p style={{ margin: '10px 0 0', fontSize: 10.5, color: '#98A2B3', lineHeight: '16px' }}>
                     完成学习后，可与导师或同工进行一次模拟对话来检验（AI 模拟训练将在智能模式开启后提供）。
                   </p>
+                </div>
+              </section>
+            )}
+
+            {/* ===== 恩赐辨识 ===== */}
+            {ct.gifts && (() => {
+              const g = ct.gifts!;
+              const top = GIFTS.map(m => ({ m, s: g.scores[m.key] })).sort((a, b) => b.s - a.s).slice(0, 3);
+              const serveCount = (k: GiftKey) => (ct.service ?? []).filter(e => e.gift === k).length;
+              return (
+                <section style={{ marginTop: 26 }}>
+                  <SectionEyebrow title="恩赐辨识" en="Spiritual Gifts" />
+                  <div style={{ ...ctCard, padding: '16px 16px 13px' }}>
+                    {top.map(({ m, s }, i) => (
+                      <div key={m.key} style={{ paddingBottom: 11, marginBottom: 11, borderBottom: i < 2 ? '1px solid #F3F1EA' : 'none' }}>
+                        <div className="flex items-center justify-between">
+                          <span style={{ fontSize: 14.5, fontWeight: 900, color: '#1F2A37' }}>{m.label}</span>
+                          <span style={{ fontSize: 13, fontWeight: 900, color: '#04285F' }}>{s}</span>
+                        </div>
+                        <p style={{ margin: '2px 0 7px', fontSize: 11, color: '#98A2B3' }}>{m.desc}</p>
+                        <div className="grid" style={{ gridTemplateColumns: '58px 1fr', rowGap: 3 }}>
+                          <span style={{ fontSize: 10.5, color: '#667085' }}>自我评估</span><Dots level={Math.round(s / 20)} />
+                          <span style={{ fontSize: 10.5, color: '#667085' }}>行为佐证</span><Dots level={Math.round(g.behavior / 25)} total={4} />
+                          <span style={{ fontSize: 10.5, color: '#667085' }}>实际服事</span>
+                          {serveCount(m.key) > 0
+                            ? <Dots level={Math.min(4, serveCount(m.key))} total={4} />
+                            : <span style={{ fontSize: 10, color: '#B6BDC9', fontWeight: 700 }}>待验证</span>}
+                          <span style={{ fontSize: 10.5, color: '#667085' }}>他人评价</span><span style={{ fontSize: 10, color: '#B6BDC9', fontWeight: 700 }}>待验证（导师后台·规划中）</span>
+                        </div>
+                      </div>
+                    ))}
+                    <button
+                      onClick={openServe}
+                      className="w-full active:scale-[0.98] transition"
+                      style={{
+                        marginBottom: 10, fontSize: 12.5, fontWeight: 800, color: '#04285F',
+                        border: '1.5px dashed rgba(4,40,95,0.35)', borderRadius: 12,
+                        padding: '9px 0', background: '#F8FAFF',
+                      }}
+                    >
+                      ＋ 记录一次实际服事（填充证据层）
+                    </button>
+                    <p style={{ margin: 0, fontSize: 10.5, color: '#7A6A45', lineHeight: '16px', background: '#FBF6EA', border: '1px solid rgba(201,154,69,0.25)', borderRadius: 10, padding: '8px 10px' }}>
+                      测评结果是「辨识线索」而非定论。恩赐的确认需要结合圣经、实际服事、教会群体与导师的印证——建议从下方匹配的事奉开始尝试。
+                    </p>
+                  </div>
+                </section>
+              );
+            })()}
+
+            {/* ===== 事奉方向匹配 + 申请 ===== */}
+            {ct.gifts && (() => {
+              const matches = giftMatches(ct.gifts!).slice(0, 4);
+              const applied = (name: string) => ct.applications?.some(a => a.role === name);
+              return (
+                <section style={{ marginTop: 26 }}>
+                  <SectionEyebrow title="适合我的事奉方向" en="Ministry Match" />
+                  <div style={{ ...ctCard, padding: '14px 16px 12px' }}>
+                    {matches.map((r, i) => (
+                      <div key={r.name} className="flex items-center" style={{ gap: 10, padding: '10px 0', borderTop: i > 0 ? '1px solid #F3F1EA' : 'none' }}>
+                        <div className="flex-1 min-w-0">
+                          <p style={{ margin: 0, fontSize: 13.5, fontWeight: 800, color: '#1F2A37' }}>{r.name}</p>
+                          <p style={{ margin: '1px 0 0', fontSize: 10.5, color: '#98A2B3' }}>{r.desc}</p>
+                        </div>
+                        <div className="shrink-0 text-right" style={{ width: 62 }}>
+                          <span style={{ fontSize: 13, fontWeight: 900, color: i === 0 ? '#C99A45' : '#04285F' }}>{r.pct}%</span>
+                          <div className="rounded-full overflow-hidden" style={{ height: 4, backgroundColor: '#EEF1F5', marginTop: 4 }}>
+                            <div style={{ height: '100%', width: `${r.pct}%`, background: i === 0 ? 'linear-gradient(90deg,#C99A45,#E3C078)' : 'linear-gradient(90deg,#16397E,#2C55A6)' }} />
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => applyMinistry(r.name, r.pct)}
+                          disabled={applied(r.name) || applyBusy === r.name}
+                          className="shrink-0 active:scale-95 transition disabled:opacity-60"
+                          style={{
+                            fontSize: 11, fontWeight: 800, borderRadius: 999, padding: '5px 11px',
+                            border: applied(r.name) ? '1px solid #D7DBE2' : '1px solid rgba(4,40,95,0.3)',
+                            background: applied(r.name) ? '#F4F5F8' : '#F8FAFF',
+                            color: applied(r.name) ? '#98A2B3' : '#04285F',
+                          }}
+                        >
+                          {applied(r.name) ? '已申请' : applyBusy === r.name ? '提交中…' : '申请'}
+                        </button>
+                      </div>
+                    ))}
+                    <p style={{ margin: '10px 0 0', fontSize: 10, color: '#98A2B3', lineHeight: '15px' }}>
+                      匹配度基于恩赐辨识计算，仅供参考；申请提交后由教务与教会同工确认安排。
+                    </p>
+                  </div>
+                </section>
+              );
+            })()}
+
+            {/* ===== 服事记录 ===== */}
+            {(ct.service?.length ?? 0) > 0 && (
+              <section style={{ marginTop: 26 }}>
+                <SectionEyebrow title="服事记录" en="Ministry Log" />
+                <div style={{ ...ctCard, padding: '6px 16px' }}>
+                  {ct.service!.slice().reverse().slice(0, 5).map((e, i) => (
+                    <div key={i} className="flex items-center" style={{ gap: 10, padding: '10px 0', borderTop: i > 0 ? '1px solid #F3F1EA' : 'none' }}>
+                      <span
+                        className="shrink-0"
+                        style={{ fontSize: 10, fontWeight: 800, color: '#C99A45', background: '#FBF6EA', border: '1px solid rgba(201,154,69,0.28)', borderRadius: 999, padding: '2px 8px' }}
+                      >
+                        {GIFT_LABEL[e.gift]}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p className="truncate" style={{ margin: 0, fontSize: 12.5, fontWeight: 700, color: '#1F2A37' }}>{e.role}</p>
+                        {e.note && <p className="truncate" style={{ margin: 0, fontSize: 10.5, color: '#98A2B3' }}>{e.note}</p>}
+                      </div>
+                      <span className="shrink-0" style={{ fontSize: 10, color: '#B6BDC9' }}>{fmtTime(e.at).slice(0, 10)}</span>
+                    </div>
+                  ))}
                 </div>
               </section>
             )}
@@ -1627,7 +1860,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick })
                   </React.Fragment>
                 ))}
                 <p style={{ margin: '12px 0 0', fontSize: 10.5, color: '#98A2B3', lineHeight: '16px' }}>
-                  路径会随你的学习与再次诊断动态调整；完成一个阶段的实践任务后，建议重新诊断以更新画像。
+                  完成课程后画像分数会自动计入学习佐证（↑）；完成一个阶段的实践任务后，建议重新诊断以更新画像。
                 </p>
               </div>
             </section>
@@ -1841,4 +2074,5 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick })
     </div>
   );
 };
+
 export default CustomTheologyView;
