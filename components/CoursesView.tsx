@@ -100,9 +100,11 @@ interface CoursesViewProps {
   onOpenPocketTheology?: () => void;
   /** Logged-in user's role; gates the upload/management UI. */
   userRole?: string;
+  /** Bump to auto-open the path-recommendation wizard (deep link from home). */
+  wizardRequest?: number;
 }
 
-const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdateCourse, favoriteCourseIds = [], onToggleFavorite, onCourseClick, onOpenPocketTheology, userRole }) => {
+const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdateCourse, favoriteCourseIds = [], onToggleFavorite, onCourseClick, onOpenPocketTheology, userRole, wizardRequest }) => {
   // View Mode: 'selection' (landing) or 'list' (course list)
   const [viewMode, setViewMode] = useState<'selection' | 'list'>('selection');
   
@@ -115,6 +117,14 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
 
   // Path Recommendation Wizard State
   const [showPathWizard, setShowPathWizard] = useState(false);
+  // Deep link from the home quick entry (定制化神学): each bump opens the wizard fresh.
+  useEffect(() => {
+    if (wizardRequest && wizardRequest > 0) {
+      setWizardStep(1); setWizardRole(''); setWizardInterest('');
+      setShowPathWizard(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wizardRequest]);
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
   const [wizardRole, setWizardRole] = useState<string>('');
   const [wizardInterest, setWizardInterest] = useState<string>('');

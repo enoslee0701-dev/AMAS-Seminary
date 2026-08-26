@@ -35,6 +35,8 @@ interface DashboardProps {
   /** Full course catalog + click handler for the global search overlay. */
   courses?: Course[];
   onCourseClick?: (courseId: string) => void;
+  /** Open the course path-recommendation wizard (定制化神学 quick entry). */
+  onOpenPathWizard?: () => void;
   /** Live course count per degree tier, shown on the 课程路径 cards. */
   tierCounts?: Partial<Record<ProgramTier, number>>;
 }
@@ -83,7 +85,7 @@ const heroSlides: HeroSlide[] = [
   },
 ];
 
-const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, onOpenCoursePath, newsItems, tierCounts, courses = [], onCourseClick }) => {
+const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, onOpenCoursePath, newsItems, tierCounts, courses = [], onCourseClick, onOpenPathWizard }) => {
   // AI customer-service overlay (opened from the floating 咨询 button).
   const [showAIChat, setShowAIChat] = useState(false);
   // Global app search overlay (opened from the navbar search button).
@@ -134,7 +136,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
     { icon: Landmark, title: '了解学校', sub: '学校介绍详情', view: ViewState.COLLEGE_OVERVIEW },
     { icon: Megaphone, title: '最新公告', sub: '通知与活动', view: ViewState.ALL_ANNOUNCEMENTS },
     { icon: PlayCircle, title: '课程试听', sub: '体验精选课程', view: ViewState.COURSE_TRIAL },
-    { icon: BarChart3, title: '学习档案', sub: '查看进度记录', view: ViewState.PROFILE },
+    { icon: Sparkles, title: '定制化神学', sub: '量身推荐课程路径', view: ViewState.COURSES, wizard: true },
   ];
 
   const coursePaths: { level: string; tier: ProgramTier; cn: string; tone: string; tint: string }[] = [
@@ -474,7 +476,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
               return (
                 <button
                   key={q.title}
-                  onClick={() => onViewChange(q.view)}
+                  onClick={() => (q as any).wizard ? onOpenPathWizard?.() : onViewChange(q.view)}
                   className="flex flex-col items-center text-center active:scale-95 transition-transform"
                   style={{ padding: '4px 4px' }}
                 >
