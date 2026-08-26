@@ -1104,7 +1104,8 @@ const QuizShell: React.FC<{
   canUndo: boolean;
   onExit: () => void;
   hint?: string;
-}> = ({ title, cur, total, question, options, onPick, onUndo, canUndo, onExit, hint }) => (
+  notice?: React.ReactNode;
+}> = ({ title, cur, total, question, options, onPick, onUndo, canUndo, onExit, hint, notice }) => (
   <div className="fixed inset-0 z-[120] max-w-md mx-auto flex flex-col bg-slate-50 animate-fade-in">
     <div className="flex items-center px-4 bg-white border-b border-slate-200" style={{ paddingTop: 'calc(var(--safe-top) + 8px)', paddingBottom: 10 }}>
       <button onClick={onExit} aria-label="退出" className="p-1 -ml-2 rounded-full hover:bg-slate-100 transition">
@@ -1120,6 +1121,7 @@ const QuizShell: React.FC<{
     </div>
 
     <div className="flex-1 overflow-y-auto flex flex-col justify-center px-5" style={{ paddingBottom: 20, paddingTop: 12 }}>
+      {notice && <div style={{ marginBottom: 14 }}>{notice}</div>}
       {hint && (
         <p style={{ margin: '0 0 14px', fontSize: 11.5, lineHeight: '18px', color: '#98A2B3', textAlign: 'center' }}>{hint}</p>
       )}
@@ -1530,6 +1532,27 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
         canUndo={history.current.length > 0}
         onExit={() => setMode('home')}
         hint={asked === 0 ? '约 6–8 分钟 · 按真实情况选择即可 · 答得好会自动追问更深的问题' : undefined}
+        notice={
+          <div
+            className="flex items-start"
+            style={{
+              gap: 12, padding: '13px 14px',
+              background: 'linear-gradient(180deg, #FFFDF8 0%, #FBF5E9 100%)',
+              border: '1px solid rgba(201,154,69,0.28)', borderRadius: 16,
+              boxShadow: '0 1px 2px rgba(16,24,40,.04)',
+            }}
+          >
+            <div
+              className="shrink-0 flex items-center justify-center"
+              style={{ width: 34, height: 34, borderRadius: 11, background: 'linear-gradient(160deg, #0F2E6B, #071F4E)', color: '#E8C98C', boxShadow: '0 6px 14px rgba(7,31,78,.22)' }}
+            >
+              <ShieldCheck size={16} strokeWidth={1.9} />
+            </div>
+            <p style={{ margin: 0, fontSize: 11, lineHeight: 1.8, color: '#7A6A45', fontWeight: 500 }}>
+              诊断与建议在 <b style={{ color: '#5C4A1E' }}>AMAS 神学框架</b>内进行，以圣经为最高权威，以学院官方教学为准；涉及争议性神学问题时，将以课程与导师引导为主。诊断结果仅作为装备参考，不构成对个人信仰状态的评判。
+            </p>
+          </div>
+        }
       />
     );
   }
@@ -1788,27 +1811,6 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
               <ChevronRight size={14} strokeWidth={2.6} />
             </button>
           </div>
-        </section>
-
-        {/* ===== 神学框架声明 ===== */}
-        <section
-          className="flex items-start"
-          style={{
-            gap: 13, marginTop: 14, padding: '15px 16px',
-            background: 'linear-gradient(180deg, #FFFDF8 0%, #FBF5E9 100%)',
-            border: '1px solid rgba(201,154,69,0.28)', borderRadius: 18,
-            boxShadow: '0 1px 2px rgba(16,24,40,.04)',
-          }}
-        >
-          <div
-            className="shrink-0 flex items-center justify-center"
-            style={{ width: 38, height: 38, borderRadius: 12, background: 'linear-gradient(160deg, #0F2E6B, #071F4E)', color: '#E8C98C', boxShadow: '0 6px 14px rgba(7,31,78,.22)' }}
-          >
-            <ShieldCheck size={18} strokeWidth={1.9} />
-          </div>
-          <p style={{ margin: 0, fontSize: 11.5, lineHeight: 1.85, color: '#7A6A45', fontWeight: 500 }}>
-            诊断与建议在 <b style={{ color: '#5C4A1E' }}>AMAS 神学框架</b>内进行，以圣经为最高权威，以学院官方教学为准；涉及争议性神学问题时，将以课程与导师引导为主。诊断结果仅作为装备参考，不构成对个人信仰状态的评判。
-          </p>
         </section>
 
         {ct && portrait && (
