@@ -870,19 +870,24 @@ interface ArchRow { a: ArchMeta; score: number; svc: number }
 /**
  * 角色得分 = 恩赐加权(62%) + 九维能力加权(38%，含学习反哺后的展示分)
  * + 实际服事证据加成（该角色主要恩赐的服事记录，每条 +2，上限 +6）。
+ * 未完成恩赐辨识时（g 为 null）：仅按九维能力初判（初步角色，待恩赐确认）。
  */
 function computeArchetypes(
-  g: GiftsResult,
+  g: GiftsResult | null,
   dimScore: (k: DimKey) => number,
   service: ServiceEntry[],
 ): ArchRow[] {
   return ARCHETYPES.map(a => {
-    let gp = 0, gw = 0;
-    for (const [k, w] of Object.entries(a.gifts)) { gp += (g.scores[k as GiftKey] ?? 45) * (w as number); gw += w as number; }
     let dp = 0, dw = 0;
     for (const [k, w] of Object.entries(a.dims)) { dp += dimScore(k as DimKey) * (w as number); dw += w as number; }
+    let base = dp / dw;
+    if (g) {
+      let gp = 0, gw = 0;
+      for (const [k, w] of Object.entries(a.gifts)) { gp += (g.scores[k as GiftKey] ?? 45) * (w as number); gw += w as number; }
+      base = 0.62 * (gp / gw) + 0.38 * (dp / dw);
+    }
     const svc = service.filter(e => (a.gifts[e.gift] ?? 0) >= 0.4).length;
-    const score = Math.round(Math.min(99, 0.62 * (gp / gw) + 0.38 * (dp / dw) + Math.min(6, svc * 2)));
+    const score = Math.round(Math.min(99, base + Math.min(6, svc * 2)));
     return { a, score, svc };
   }).sort((x, y) => y.score - x.score);
 }
@@ -1647,9 +1652,10 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
     const grp = ARCH_GROUPS.find(x => x.key === a.group)!;
     let myScore: number | null = null;
     let myRank = 0;
-    if (ct?.gifts) {
+    const detailPrelim = !!ct && !ct.gifts;
+    if (ct) {
       const { boost } = learningBoost(courses);
-      const rows = computeArchetypes(ct.gifts, k => Math.min(100, ct.scores[k] + boost[k]), ct.service ?? []);
+      const rows = computeArchetypes(ct.gifts ?? null, k => Math.min(100, ct.scores[k] + boost[k]), ct.service ?? []);
       myRank = rows.findIndex(r => r.a.key === a.key) + 1;
       myScore = rows[myRank - 1].score;
     }
@@ -1679,6 +1685,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                 你在此角色的当前得分 <b style={{ color: '#F2D493', fontSize: 14 }}>{myScore}</b>，
                 位列你 12 个角色中的第 <b style={{ color: '#F2D493' }}>{myRank}</b> 位
                 {myRank === 1 ? '——这是你的主角色。' : myRank === 2 ? '——这是你的辅助角色。' : '。'}
+                {detailPrelim && '（初步判定，完成恩赐辨识后确认）'}
               </p>
             </div>
           )}
@@ -1717,7 +1724,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
             </div>
           </div>
 
-          {myScore === null && (
+          {(!ct || !ct.gifts) && (
             <button
               onClick={() => { setRoleDetail(null); if (!ct) startQuiz(); else startGifts(); }}
               className="w-full active:scale-[0.98] transition"
@@ -1926,6 +1933,294 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
               </div>
             </section>
 
+            {/* ===== 成长角色：测评与 12 角色的最终融合分析 ===== */}
+            {(() => {
+              const g = ct.gifts ?? null;
+              const rows = computeArchetypes(g, k => portrait.entries.find(e => e.meta.key === k)!.score, ct.service ?? []);
+              const [pri, sec, third] = rows;
+              const combined = combinedRoleName(rows);
+              const prelim = !g;
+              const groupCn = (gk: ArchGroup) => ARCH_GROUPS.find(x => x.key === gk)!.cn;
+              const equipDim = (Object.keys(pri.a.dims) as DimKey[])
+                .map(k => portrait.entries.find(e => e.meta.key === k)!)
+                .sort((a, b) => a.score - b.score)[0];
+              const topGifts = g ? GIFTS.map(m => ({ m, s: g.scores[m.key] })).sort((a, b) => b.s - a.s).slice(0, 2) : [];
+              const topDims = [...portrait.entries].sort((a, b) => b.score - a.score).slice(0, 2);
+              const weakDim = [...portrait.entries].sort((a, b) => a.score - b.score)[0];
+              const svcCount = ct.service?.length ?? 0;
+              const evid = [
+                { t: '自我评估（恩赐测评）', ok: !!g },
+                { t: '行为佐证（情境题）', ok: !!g && g.behavior > 0 },
+                { t: '神学能力（九维诊断）', ok: true },
+                { t: '课程表现（完成课程）', ok: portrait.learnedCount > 0 },
+                { t: '实际服事（服事记录）', ok: pri.svc >= 1 },
+                { t: '导师/同工反馈', ok: false, note: '规划中' },
+              ];
+              const okCount = evid.filter(x => x.ok).length;
+              const conf = prelim ? '初步' : okCount >= 5 ? '高' : okCount >= 4 ? '较高' : okCount >= 3 ? '中等' : '初步';
+              const hist = ct.roleHistory ?? [];
+              return (
+                <section style={{ marginTop: 26 }}>
+                  <SectionEyebrow title="我的成长角色" en="Growth Archetype" />
+                  <div style={{ ...ctCard, overflow: 'hidden' }}>
+                    {/* 角色头部 */}
+                    <div
+                      style={{
+                        padding: '18px 16px 16px', color: '#FFF',
+                        background:
+                          'radial-gradient(90% 120% at 12% 0%, rgba(240,205,135,.16) 0%, rgba(240,205,135,0) 42%), linear-gradient(160deg, #0B2450 0%, #071A3C 100%)',
+                      }}
+                    >
+                      <div className="flex items-center" style={{ gap: 8, marginBottom: 6 }}>
+                        <p style={{ margin: 0, fontSize: 9.5, fontWeight: 800, letterSpacing: '2px', color: 'rgba(232,201,140,.9)' }}>
+                          CHRISTIAN GROWTH ARCHETYPE
+                        </p>
+                        {prelim && (
+                          <span style={{ fontSize: 9, fontWeight: 800, color: '#F2D493', border: '1px solid rgba(242,212,147,.5)', borderRadius: 999, padding: '2px 8px' }}>
+                            初步判定
+                          </span>
+                        )}
+                      </div>
+                      <h3
+                        style={{
+                          margin: '0 0 3px', fontSize: 23, fontWeight: 900, letterSpacing: '1px',
+                          background: 'linear-gradient(180deg, #F7E3B4 10%, #E4BC6E 90%)',
+                          WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent',
+                        }}
+                      >
+                        {combined}
+                      </h3>
+                      <p style={{ margin: '0 0 10px', fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 11, fontWeight: 700, letterSpacing: '2px', color: 'rgba(233,238,248,.6)', textTransform: 'uppercase' }}>
+                        The {pri.a.en} – {sec.a.en}
+                      </p>
+                      <p style={{ margin: 0, fontSize: 12, lineHeight: 1.8, color: 'rgba(233,238,248,.9)' }}>
+                        你倾向于{pri.a.core}；同时也乐于{sec.a.core}。
+                      </p>
+                    </div>
+
+                    <div style={{ padding: '14px 16px 13px' }}>
+                      {/* 初判提示 + 确认 CTA */}
+                      {prelim && (
+                        <div style={{ marginBottom: 13, padding: '11px 13px', background: '#FFFBEB', border: '1px solid #FCD34D', borderRadius: 13 }}>
+                          <p style={{ margin: '0 0 8px', fontSize: 11.5, color: '#78350F', lineHeight: 1.7 }}>
+                            这是根据你的<b>九维能力画像</b>做出的初步角色判定。完成恩赐辨识后，系统会把「恩赐倾向 62% + 能力画像 38%」融合计算，正式确认你的成长角色。
+                          </p>
+                          <button onClick={startGifts} className="active:scale-[0.98] transition" style={{ ...goldBtn, height: 38, fontSize: 12.5, width: '100%', justifyContent: 'center' }}>
+                            完成恩赐辨识，确认我的成长角色（约 4 分钟）
+                            <ChevronRight size={14} strokeWidth={2.6} />
+                          </button>
+                        </div>
+                      )}
+
+                      {/* 角色 IP 卡 */}
+                      {prelim ? (
+                        <div className="relative active:scale-[0.99] transition-transform" style={{ cursor: 'pointer', marginBottom: 13 }} onClick={() => setRoleDetail(pri.a.key)}>
+                          <img
+                            src={archImg(pri.a.key)}
+                            alt={pri.a.label}
+                            loading="lazy"
+                            style={{ width: '100%', borderRadius: 14, border: '1.5px solid rgba(201,154,69,.55)', boxShadow: '0 4px 12px rgba(16,24,40,.08)' }}
+                          />
+                          <span className="absolute" style={{ top: 8, left: 8, fontSize: 9.5, fontWeight: 800, color: '#8A6519', background: 'rgba(251,246,234,.95)', border: '1px solid rgba(201,154,69,.5)', borderRadius: 999, padding: '2px 9px' }}>
+                            初步主角色 · 点击看详情
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2" style={{ gap: 8, marginBottom: 13 }}>
+                          {[pri, sec].map((r, i) => (
+                            <div key={r.a.key} className="relative active:scale-[0.98] transition-transform" style={{ cursor: 'pointer' }} onClick={() => setRoleDetail(r.a.key)}>
+                              <img
+                                src={archImg(r.a.key)}
+                                alt={r.a.label}
+                                loading="lazy"
+                                style={{
+                                  width: '100%', borderRadius: 13,
+                                  border: i === 0 ? '1.5px solid rgba(201,154,69,.55)' : '1px solid rgba(20,40,90,0.10)',
+                                  boxShadow: '0 4px 12px rgba(16,24,40,.08)',
+                                }}
+                              />
+                              <span
+                                className="absolute"
+                                style={{
+                                  top: 7, left: 7, fontSize: 9, fontWeight: 800, letterSpacing: '0.5px',
+                                  color: i === 0 ? '#8A6519' : '#33456F',
+                                  background: i === 0 ? 'rgba(251,246,234,.95)' : 'rgba(255,255,255,.92)',
+                                  border: i === 0 ? '1px solid rgba(201,154,69,.5)' : '1px solid rgba(20,40,90,.14)',
+                                  borderRadius: 999, padding: '2px 8px',
+                                }}
+                              >
+                                {i === 0 ? '主角色' : '辅助角色'}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* 主 / 辅 / 第三 */}
+                      <div className="grid grid-cols-3" style={{ gap: 8, marginBottom: 13 }}>
+                        {[
+                          { tag: prelim ? '初步主角色' : '主角色', r: pri, gold: true },
+                          { tag: prelim ? '初步辅助' : '辅助角色', r: sec, gold: false },
+                          { tag: '第三倾向', r: third, gold: false },
+                        ].map(({ tag, r, gold }) => (
+                          <div
+                            key={r.a.key}
+                            onClick={() => setRoleDetail(r.a.key)}
+                            style={{
+                              textAlign: 'center', borderRadius: 13, padding: '10px 6px 9px', cursor: 'pointer',
+                              background: gold ? '#FBF6EA' : '#F8FAFC',
+                              border: gold ? '1.2px solid rgba(201,154,69,.45)' : '1px solid #EDF0F4',
+                            }}
+                          >
+                            <p style={{ margin: '0 0 3px', fontSize: 9, fontWeight: 800, letterSpacing: '1px', color: gold ? '#C99A45' : '#98A2B3' }}>{tag}</p>
+                            <div className="flex items-center justify-center" style={{ gap: 4, color: gold ? '#8A6519' : '#22345E' }}>
+                              {r.a.icon}
+                              <span style={{ fontSize: 13, fontWeight: 900, color: '#1F2A37' }}>{r.a.label}</span>
+                            </div>
+                            <p style={{ margin: '3px 0 0', fontSize: 15, fontWeight: 900, color: gold ? '#C99A45' : '#04285F' }}>{r.score}</p>
+                            <p style={{ margin: '1px 0 0', fontSize: 9, fontWeight: 700, color: '#B6BDC9' }}>{groupCn(r.a.group)}</p>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* 融合分析：为什么是这个角色 */}
+                      <div style={{ marginBottom: 13, padding: '12px 13px', background: '#F6F8FD', border: '1px solid #E2E8F4', borderRadius: 13 }}>
+                        <p style={{ margin: '0 0 7px', fontSize: 11.5, fontWeight: 900, color: '#14295A' }}>✦ 融合分析 · 为什么是「{pri.a.label}」</p>
+                        <div className="grid" style={{ gridTemplateColumns: '52px 1fr', rowGap: 6 }}>
+                          <span style={{ fontSize: 10.5, fontWeight: 800, color: '#8A6519' }}>恩赐层</span>
+                          <span style={{ fontSize: 11.5, color: '#475467', lineHeight: 1.65 }}>
+                            {g
+                              ? <>你的「<b>{topGifts[0].m.label}</b>」（{topGifts[0].s}）与「<b>{topGifts[1].m.label}</b>」（{topGifts[1].s}）最为突出</>
+                              : <span style={{ color: '#B45309' }}>待完成恩赐辨识（当前仅按能力画像初判）</span>}
+                          </span>
+                          <span style={{ fontSize: 10.5, fontWeight: 800, color: '#17397E' }}>能力层</span>
+                          <span style={{ fontSize: 11.5, color: '#475467', lineHeight: 1.65 }}>
+                            九维画像中「<b>{topDims[0].meta.label}</b>」（{topDims[0].score}）、「<b>{topDims[1].meta.label}</b>」（{topDims[1].score}）领先，「{weakDim.meta.label}」（{weakDim.score}）偏弱
+                          </span>
+                          <span style={{ fontSize: 10.5, fontWeight: 800, color: '#137A4F' }}>服事层</span>
+                          <span style={{ fontSize: 11.5, color: '#475467', lineHeight: 1.65 }}>
+                            {svcCount > 0 ? <>已有 <b>{svcCount}</b> 条服事记录印证（其中 {pri.svc} 条与主角色相关）</> : '待验证 · 记录实际服事可提升角色确认度'}
+                          </span>
+                        </div>
+                        <p style={{ margin: '9px 0 0', paddingTop: 8, borderTop: '1px dashed #DDE4F0', fontSize: 11.5, color: '#14295A', lineHeight: 1.7 }}>
+                          综合以上，与你当前最吻合的角色是「<b>{combined}</b>」——{pri.a.core}。
+                        </p>
+                      </div>
+
+                      {/* 优势 / 风险 */}
+                      <p style={{ margin: '0 0 5px', fontSize: 11, fontWeight: 800, color: '#137A4F' }}>✦ 当前优势</p>
+                      <div className="flex flex-wrap" style={{ gap: 6, marginBottom: 11 }}>
+                        {[...pri.a.strengths, sec.a.strengths[0]].map(s => (
+                          <span key={s} style={{ fontSize: 11, fontWeight: 700, color: '#0F5138', background: '#EDFAF3', border: '1px solid #C7EDDA', borderRadius: 999, padding: '3px 10px' }}>{s}</span>
+                        ))}
+                      </div>
+                      <p style={{ margin: '0 0 5px', fontSize: 11, fontWeight: 800, color: '#B42318' }}>✦ 当前成长风险</p>
+                      {[...pri.a.risks.slice(0, 2), sec.a.risks[0]].map(r => (
+                        <p key={r} style={{ margin: '0 0 3px', fontSize: 12, color: '#475467', lineHeight: '18px' }}>· {r}</p>
+                      ))}
+
+                      {/* 推荐侍奉 */}
+                      <p style={{ margin: '11px 0 5px', fontSize: 11, fontWeight: 800, color: '#22345E' }}>✦ 推荐探索的侍奉</p>
+                      <div className="flex flex-wrap" style={{ gap: 6, marginBottom: 12 }}>
+                        {[...new Set([...pri.a.ministries, ...sec.a.ministries])].slice(0, 6).map(m => (
+                          <span key={m} style={{ fontSize: 11, fontWeight: 700, color: '#04285F', background: '#F8FAFF', border: '1px solid rgba(4,40,95,.22)', borderRadius: 999, padding: '3px 10px' }}>{m}</span>
+                        ))}
+                      </div>
+
+                      {/* 装备重点 */}
+                      <div className="flex items-center" style={{ gap: 10, padding: '10px 12px', background: '#FBF6EA', border: '1px solid rgba(201,154,69,.25)', borderRadius: 12, marginBottom: 12 }}>
+                        <Target size={15} color="#A9812F" className="shrink-0" />
+                        <div className="flex-1">
+                          <p style={{ margin: 0, fontSize: 11, fontWeight: 800, color: '#5C4A1E' }}>当前装备重点：{equipDim.meta.label}（{equipDim.score} 分）</p>
+                          <p style={{ margin: '1px 0 0', fontSize: 10, color: '#7A6A45' }}>建议方向：{pri.a.equip.slice(0, 3).join(' · ')}</p>
+                        </div>
+                        {equipDim.meta.courseIds.map(id => courseById(id)).filter(Boolean).slice(0, 1).map(c => (
+                          <button
+                            key={c!.id}
+                            onClick={() => onCourseClick(c!.id)}
+                            className="shrink-0 active:scale-95 transition"
+                            style={{ fontSize: 10.5, fontWeight: 800, color: '#04285F', border: '1px solid rgba(4,40,95,.3)', borderRadius: 999, padding: '4px 10px', background: '#FFF' }}
+                          >
+                            去学习
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* 确认度 */}
+                      <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
+                        <span style={{ fontSize: 11.5, fontWeight: 800, color: '#22345E' }}>角色确认度</span>
+                        <span style={{ fontSize: 11.5, fontWeight: 900, color: okCount >= 4 ? '#137A4F' : '#C99A45' }}>{conf}（{okCount}/6 项证据）</span>
+                      </div>
+                      <div className="grid grid-cols-2" style={{ gap: '3px 10px', marginBottom: 11 }}>
+                        {evid.map(e => (
+                          <span key={e.t} style={{ fontSize: 10.5, color: e.ok ? '#137A4F' : '#B6BDC9', fontWeight: 600 }}>
+                            {e.ok ? '✓' : '✗'} {e.t}{e.note ? `（${e.note}）` : ''}
+                          </span>
+                        ))}
+                      </div>
+
+                      {/* 角色演变 */}
+                      {!prelim && hist.length > 1 && (
+                        <p style={{ margin: '0 0 10px', fontSize: 10.5, color: '#98A2B3', lineHeight: '17px' }}>
+                          角色演变：{hist.slice(-3).map((h, i) => `V${Math.max(1, hist.length - Math.min(3, hist.length)) + i} ${h.combined}`).join(' → ')}
+                          　—— 角色会随生命阶段与服事演变，这是成长的记号而非测评失误。
+                        </p>
+                      )}
+
+                      {/* 全部 12 角色 */}
+                      <button
+                        onClick={() => setShowAllRoles(v => !v)}
+                        className="w-full flex items-center justify-center active:scale-[0.99] transition"
+                        style={{ gap: 5, fontSize: 11.5, fontWeight: 800, color: '#667085', border: '1px dashed #DDE1E8', borderRadius: 11, padding: '8px 0', background: '#FAFBFC' }}
+                      >
+                        查看全部 12 个成长角色
+                        <ChevronDown size={13} style={{ transform: showAllRoles ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }} />
+                      </button>
+                      {showAllRoles && (
+                        <div style={{ marginTop: 10 }}>
+                          {ARCH_GROUPS.map(grp => (
+                            <div key={grp.key} style={{ marginBottom: 9 }}>
+                              <p style={{ margin: '0 0 5px', fontSize: 10.5, fontWeight: 800, color: '#8A6519' }}>{grp.en} · {grp.cn}</p>
+                              <div className="grid grid-cols-3" style={{ gap: 7 }}>
+                                {rows.filter(r => r.a.group === grp.key).map(r => (
+                                  <div key={r.a.key} className="relative active:scale-[0.97] transition-transform" style={{ cursor: 'pointer' }} onClick={() => setRoleDetail(r.a.key)}>
+                                    <img
+                                      src={archImg(r.a.key)}
+                                      alt={r.a.label}
+                                      loading="lazy"
+                                      style={{
+                                        width: '100%', borderRadius: 10,
+                                        border: r.a.key === pri.a.key ? '1.5px solid rgba(201,154,69,.6)' : '1px solid #ECEEF2',
+                                      }}
+                                    />
+                                    <span
+                                      className="absolute"
+                                      style={{
+                                        right: 4, bottom: 4, fontSize: 9.5, fontWeight: 900,
+                                        color: r.a.key === pri.a.key ? '#8A6519' : '#33456F',
+                                        background: 'rgba(255,255,255,.94)', borderRadius: 999, padding: '1px 7px',
+                                        border: '1px solid rgba(20,40,90,.12)',
+                                      }}
+                                    >
+                                      {r.score}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <p style={{ margin: '11px 0 0', fontSize: 10, color: '#98A2B3', lineHeight: '16px' }}>
+                        {ARCH_DISCLAIMER}
+                      </p>
+                    </div>
+                  </div>
+                </section>
+              );
+            })()}
+
             {/* ===== 风险提示 ===== */}
             {portrait.risks.length > 0 && (
               <div className="rounded-2xl p-4 border" style={{ marginTop: 14, backgroundColor: '#FFFBEB', borderColor: '#FCD34D' }}>
@@ -2015,233 +2310,6 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                     <p style={{ margin: 0, fontSize: 10.5, color: '#7A6A45', lineHeight: '16px', background: '#FBF6EA', border: '1px solid rgba(201,154,69,0.25)', borderRadius: 10, padding: '8px 10px' }}>
                       测评结果是「辨识线索」而非定论。恩赐的确认需要结合圣经、实际服事、教会群体与导师的印证——建议从下方匹配的事奉开始尝试。
                     </p>
-                  </div>
-                </section>
-              );
-            })()}
-
-            {/* ===== 成长角色（Christian Growth Archetype 解释层） ===== */}
-            {ct.gifts && (() => {
-              const rows = computeArchetypes(
-                ct.gifts!,
-                k => portrait.entries.find(e => e.meta.key === k)!.score,
-                ct.service ?? [],
-              );
-              const [pri, sec, third] = rows;
-              const combined = combinedRoleName(rows);
-              const groupCn = (g: ArchGroup) => ARCH_GROUPS.find(x => x.key === g)!.cn;
-              // 装备重点：主角色相关维度中当前分数最低的那个
-              const equipDim = (Object.keys(pri.a.dims) as DimKey[])
-                .map(k => portrait.entries.find(e => e.meta.key === k)!)
-                .sort((a, b) => a.score - b.score)[0];
-              const evid = [
-                { t: '自我评估（恩赐测评）', ok: true },
-                { t: '行为佐证（情境题）', ok: ct.gifts!.behavior > 0 },
-                { t: '神学能力（九维诊断）', ok: true },
-                { t: '课程表现（完成课程）', ok: portrait.learnedCount > 0 },
-                { t: '实际服事（服事记录）', ok: pri.svc >= 1 },
-                { t: '导师/同工反馈', ok: false, note: '规划中' },
-              ];
-              const okCount = evid.filter(e => e.ok).length;
-              const conf = okCount >= 5 ? '高' : okCount >= 4 ? '较高' : okCount >= 3 ? '中等' : '初步';
-              const hist = ct.roleHistory ?? [];
-              return (
-                <section style={{ marginTop: 26 }}>
-                  <SectionEyebrow title="我的成长角色" en="Growth Archetype" />
-                  <div style={{ ...ctCard, overflow: 'hidden' }}>
-                    {/* 角色头部 */}
-                    <div
-                      style={{
-                        padding: '18px 16px 16px', color: '#FFF',
-                        background:
-                          'radial-gradient(90% 120% at 12% 0%, rgba(240,205,135,.16) 0%, rgba(240,205,135,0) 42%), linear-gradient(160deg, #0B2450 0%, #071A3C 100%)',
-                      }}
-                    >
-                      <p style={{ margin: '0 0 6px', fontSize: 9.5, fontWeight: 800, letterSpacing: '2px', color: 'rgba(232,201,140,.9)' }}>
-                        CHRISTIAN GROWTH ARCHETYPE
-                      </p>
-                      <h3
-                        style={{
-                          margin: '0 0 3px', fontSize: 23, fontWeight: 900, letterSpacing: '1px',
-                          background: 'linear-gradient(180deg, #F7E3B4 10%, #E4BC6E 90%)',
-                          WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent',
-                        }}
-                      >
-                        {combined}
-                      </h3>
-                      <p style={{ margin: '0 0 10px', fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 11, fontWeight: 700, letterSpacing: '2px', color: 'rgba(233,238,248,.6)', textTransform: 'uppercase' }}>
-                        The {pri.a.en} – {sec.a.en}
-                      </p>
-                      <p style={{ margin: 0, fontSize: 12, lineHeight: 1.8, color: 'rgba(233,238,248,.9)' }}>
-                        你倾向于{pri.a.core}；同时也乐于{sec.a.core}。
-                      </p>
-                    </div>
-
-                    <div style={{ padding: '14px 16px 13px' }}>
-                      {/* 主/辅角色 IP 卡 */}
-                      <div className="grid grid-cols-2" style={{ gap: 8, marginBottom: 13 }}>
-                        {[pri, sec].map((r, i) => (
-                          <div key={r.a.key} className="relative active:scale-[0.98] transition-transform" style={{ cursor: 'pointer' }} onClick={() => setRoleDetail(r.a.key)}>
-                            <img
-                              src={archImg(r.a.key)}
-                              alt={r.a.label}
-                              loading="lazy"
-                              style={{
-                                width: '100%', borderRadius: 13,
-                                border: i === 0 ? '1.5px solid rgba(201,154,69,.55)' : '1px solid rgba(20,40,90,0.10)',
-                                boxShadow: '0 4px 12px rgba(16,24,40,.08)',
-                              }}
-                            />
-                            <span
-                              className="absolute"
-                              style={{
-                                top: 7, left: 7, fontSize: 9, fontWeight: 800, letterSpacing: '0.5px',
-                                color: i === 0 ? '#8A6519' : '#33456F',
-                                background: i === 0 ? 'rgba(251,246,234,.95)' : 'rgba(255,255,255,.92)',
-                                border: i === 0 ? '1px solid rgba(201,154,69,.5)' : '1px solid rgba(20,40,90,.14)',
-                                borderRadius: 999, padding: '2px 8px',
-                              }}
-                            >
-                              {i === 0 ? '主角色' : '辅助角色'}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                      {/* 主 / 辅 / 第三 */}
-                      <div className="grid grid-cols-3" style={{ gap: 8, marginBottom: 13 }}>
-                        {[
-                          { tag: '主角色', r: pri, gold: true },
-                          { tag: '辅助角色', r: sec, gold: false },
-                          { tag: '第三倾向', r: third, gold: false },
-                        ].map(({ tag, r, gold }) => (
-                          <div
-                            key={r.a.key}
-                            style={{
-                              textAlign: 'center', borderRadius: 13, padding: '10px 6px 9px',
-                              background: gold ? '#FBF6EA' : '#F8FAFC',
-                              border: gold ? '1.2px solid rgba(201,154,69,.45)' : '1px solid #EDF0F4',
-                            }}
-                          >
-                            <p style={{ margin: '0 0 3px', fontSize: 9, fontWeight: 800, letterSpacing: '1px', color: gold ? '#C99A45' : '#98A2B3' }}>{tag}</p>
-                            <div className="flex items-center justify-center" style={{ gap: 4, color: gold ? '#8A6519' : '#22345E' }}>
-                              {r.a.icon}
-                              <span style={{ fontSize: 13, fontWeight: 900, color: '#1F2A37' }}>{r.a.label}</span>
-                            </div>
-                            <p style={{ margin: '3px 0 0', fontSize: 15, fontWeight: 900, color: gold ? '#C99A45' : '#04285F' }}>{r.score}</p>
-                            <p style={{ margin: '1px 0 0', fontSize: 9, fontWeight: 700, color: '#B6BDC9' }}>{groupCn(r.a.group)}</p>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* 优势 / 风险 */}
-                      <p style={{ margin: '0 0 5px', fontSize: 11, fontWeight: 800, color: '#137A4F' }}>✦ 当前优势</p>
-                      <div className="flex flex-wrap" style={{ gap: 6, marginBottom: 11 }}>
-                        {[...pri.a.strengths, sec.a.strengths[0]].map(s => (
-                          <span key={s} style={{ fontSize: 11, fontWeight: 700, color: '#0F5138', background: '#EDFAF3', border: '1px solid #C7EDDA', borderRadius: 999, padding: '3px 10px' }}>{s}</span>
-                        ))}
-                      </div>
-                      <p style={{ margin: '0 0 5px', fontSize: 11, fontWeight: 800, color: '#B42318' }}>✦ 当前成长风险</p>
-                      {[...pri.a.risks.slice(0, 2), sec.a.risks[0]].map(r => (
-                        <p key={r} style={{ margin: '0 0 3px', fontSize: 12, color: '#475467', lineHeight: '18px' }}>· {r}</p>
-                      ))}
-
-                      {/* 推荐侍奉 */}
-                      <p style={{ margin: '11px 0 5px', fontSize: 11, fontWeight: 800, color: '#22345E' }}>✦ 推荐探索的侍奉</p>
-                      <div className="flex flex-wrap" style={{ gap: 6, marginBottom: 12 }}>
-                        {[...new Set([...pri.a.ministries, ...sec.a.ministries])].slice(0, 6).map(m => (
-                          <span key={m} style={{ fontSize: 11, fontWeight: 700, color: '#04285F', background: '#F8FAFF', border: '1px solid rgba(4,40,95,.22)', borderRadius: 999, padding: '3px 10px' }}>{m}</span>
-                        ))}
-                      </div>
-
-                      {/* 装备重点 */}
-                      <div className="flex items-center" style={{ gap: 10, padding: '10px 12px', background: '#FBF6EA', border: '1px solid rgba(201,154,69,.25)', borderRadius: 12, marginBottom: 12 }}>
-                        <Target size={15} color="#A9812F" className="shrink-0" />
-                        <div className="flex-1">
-                          <p style={{ margin: 0, fontSize: 11, fontWeight: 800, color: '#5C4A1E' }}>当前装备重点：{equipDim.meta.label}（{equipDim.score} 分）</p>
-                          <p style={{ margin: '1px 0 0', fontSize: 10, color: '#7A6A45' }}>建议方向：{pri.a.equip.slice(0, 3).join(' · ')}</p>
-                        </div>
-                        {equipDim.meta.courseIds.map(id => courseById(id)).filter(Boolean).slice(0, 1).map(c => (
-                          <button
-                            key={c!.id}
-                            onClick={() => onCourseClick(c!.id)}
-                            className="shrink-0 active:scale-95 transition"
-                            style={{ fontSize: 10.5, fontWeight: 800, color: '#04285F', border: '1px solid rgba(4,40,95,.3)', borderRadius: 999, padding: '4px 10px', background: '#FFF' }}
-                          >
-                            去学习
-                          </button>
-                        ))}
-                      </div>
-
-                      {/* 确认度 */}
-                      <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
-                        <span style={{ fontSize: 11.5, fontWeight: 800, color: '#22345E' }}>角色确认度</span>
-                        <span style={{ fontSize: 11.5, fontWeight: 900, color: okCount >= 4 ? '#137A4F' : '#C99A45' }}>{conf}（{okCount}/6 项证据）</span>
-                      </div>
-                      <div className="grid grid-cols-2" style={{ gap: '3px 10px', marginBottom: 11 }}>
-                        {evid.map(e => (
-                          <span key={e.t} style={{ fontSize: 10.5, color: e.ok ? '#137A4F' : '#B6BDC9', fontWeight: 600 }}>
-                            {e.ok ? '✓' : '✗'} {e.t}{e.note ? `（${e.note}）` : ''}
-                          </span>
-                        ))}
-                      </div>
-
-                      {/* 角色演变 */}
-                      {hist.length > 1 && (
-                        <p style={{ margin: '0 0 10px', fontSize: 10.5, color: '#98A2B3', lineHeight: '17px' }}>
-                          角色演变：{hist.slice(-3).map((h, i) => `V${Math.max(1, hist.length - Math.min(3, hist.length)) + i} ${h.combined}`).join(' → ')}
-                          　—— 角色会随生命阶段与服事演变，这是成长的记号而非测评失误。
-                        </p>
-                      )}
-
-                      {/* 全部 12 角色 */}
-                      <button
-                        onClick={() => setShowAllRoles(v => !v)}
-                        className="w-full flex items-center justify-center active:scale-[0.99] transition"
-                        style={{ gap: 5, fontSize: 11.5, fontWeight: 800, color: '#667085', border: '1px dashed #DDE1E8', borderRadius: 11, padding: '8px 0', background: '#FAFBFC' }}
-                      >
-                        查看全部 12 个成长角色
-                        <ChevronDown size={13} style={{ transform: showAllRoles ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }} />
-                      </button>
-                      {showAllRoles && (
-                        <div style={{ marginTop: 10 }}>
-                          {ARCH_GROUPS.map(g => (
-                            <div key={g.key} style={{ marginBottom: 9 }}>
-                              <p style={{ margin: '0 0 5px', fontSize: 10.5, fontWeight: 800, color: '#8A6519' }}>{g.en} · {g.cn}</p>
-                              <div className="grid grid-cols-3" style={{ gap: 7 }}>
-                                {rows.filter(r => r.a.group === g.key).map(r => (
-                                  <div key={r.a.key} className="relative active:scale-[0.97] transition-transform" style={{ cursor: 'pointer' }} onClick={() => setRoleDetail(r.a.key)}>
-                                    <img
-                                      src={archImg(r.a.key)}
-                                      alt={r.a.label}
-                                      loading="lazy"
-                                      style={{
-                                        width: '100%', borderRadius: 10,
-                                        border: r.a.key === pri.a.key ? '1.5px solid rgba(201,154,69,.6)' : '1px solid #ECEEF2',
-                                      }}
-                                    />
-                                    <span
-                                      className="absolute"
-                                      style={{
-                                        right: 4, bottom: 4, fontSize: 9.5, fontWeight: 900,
-                                        color: r.a.key === pri.a.key ? '#8A6519' : '#33456F',
-                                        background: 'rgba(255,255,255,.94)', borderRadius: 999, padding: '1px 7px',
-                                        border: '1px solid rgba(20,40,90,.12)',
-                                      }}
-                                    >
-                                      {r.score}
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      <p style={{ margin: '11px 0 0', fontSize: 10, color: '#98A2B3', lineHeight: '16px' }}>
-                        {ARCH_DISCLAIMER}
-                      </p>
-                    </div>
                   </div>
                 </section>
               );
