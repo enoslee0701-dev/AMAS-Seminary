@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  ChevronLeft, ChevronRight, Sparkles, Target, TrendingUp,
+  ChevronLeft, ChevronRight, ChevronDown, Sparkles, Target, TrendingUp,
   ShieldCheck, RefreshCw, BookOpen, ArrowDown, AlertTriangle, Trash2, Undo2, X,
+  Search, Users, Lightbulb, Heart, Flame, Megaphone, Globe, Flag, Hammer, Wrench, Handshake,
 } from 'lucide-react';
 import { Course } from '../types';
 import { STOCK_PHOTOS } from '../services/stockPhotos';
@@ -695,6 +696,196 @@ const giftMatches = (g: GiftsResult) =>
     ),
   })).sort((a, b) => b.pct - a.pct);
 
+// ============================================================
+// 十二大成长角色（Christian Growth Archetypes）— 解释层
+//
+// 角色不是恩赐测评的替代，而是把恩赐分数、九维能力、服事证据
+// 综合翻译成用户能记住并行动的「成长角色」。角色结论 =
+// 恩赐倾向(62%) + 能力画像(38%) + 实际服事证据加成，主+辅双角色输出，
+// 且随档案演变（记录版本历史），绝不作为呼召的最终判断。
+// ============================================================
+
+type ArchKey =
+  | 'teacher' | 'explorer' | 'equipper'
+  | 'shepherd' | 'encourager' | 'mercy' | 'intercessor'
+  | 'evangelist' | 'missionary'
+  | 'leader' | 'builder' | 'servant';
+
+type ArchGroup = 'TRUTH' | 'CARE' | 'MISSION' | 'BUILD';
+
+interface ArchMeta {
+  key: ArchKey;
+  label: string;       // 教导者
+  en: string;          // Teacher
+  mod: string;         // 组合命名时的修饰形：教导型
+  group: ArchGroup;
+  core: string;        // 核心动机短语（用于角色宣言）
+  strengths: string[];
+  risks: string[];
+  ministries: string[];
+  equip: string[];
+  gifts: Partial<Record<GiftKey, number>>;
+  dims: Partial<Record<DimKey, number>>;
+  icon: React.ReactNode;
+}
+
+const ARCH_GROUPS: { key: ArchGroup; cn: string; en: string; q: string }[] = [
+  { key: 'TRUTH', cn: '真理型', en: 'TRUTH', q: '我如何帮助人更准确地认识并活出真理？' },
+  { key: 'CARE', cn: '生命型', en: 'CARE', q: '我如何陪伴、扶持与建造人的生命？' },
+  { key: 'MISSION', cn: '使命型', en: 'MISSION', q: '我如何把福音带到尚未被触及的人群中？' },
+  { key: 'BUILD', cn: '建造型', en: 'BUILD', q: '我如何建立团队、系统与实际摆上，使群体健康运转？' },
+];
+
+const ARCHETYPES: ArchMeta[] = [
+  {
+    key: 'teacher', label: '教导者', en: 'Teacher', mod: '教导型', group: 'TRUTH',
+    core: '把真理讲解清楚，帮助人准确认识圣经',
+    strengths: ['清晰表达', '逻辑结构', '圣经教导', '概念解释'],
+    risks: ['知识可能大于生命', '过度强调正确、缺少倾听', '对学得慢的人缺乏耐心'],
+    ministries: ['圣经教师', '主日学', '小组查经', '门训教学', '讲道'],
+    equip: ['释经学', '系统神学', '教学法', '讲道学'],
+    gifts: { teaching: 1 }, dims: { theology: 0.4, hermeneutics: 0.35, bible: 0.25 },
+    icon: <BookOpen size={15} />,
+  },
+  {
+    key: 'explorer', label: '研道者', en: 'Scripture Explorer', mod: '研究型', group: 'TRUTH',
+    core: '深入查考圣经与神学，追寻真理的确切含义',
+    strengths: ['深度思考', '文本分析', '问题意识', '辨析能力'],
+    risks: ['容易停留在研究、实践不足', '过度批判', '难以向普通信徒讲明白'],
+    ministries: ['神学研究', '圣经研究', '教材研发', '护教写作', '内容审核'],
+    equip: ['释经方法', '原文与分析工具', '教会历史', '研究方法'],
+    gifts: { teaching: 0.35, discernment: 0.65 }, dims: { hermeneutics: 0.45, bible: 0.3, theology: 0.25 },
+    icon: <Search size={15} />,
+  },
+  {
+    key: 'equipper', label: '装备者', en: 'Equipper', mod: '装备型', group: 'TRUTH',
+    core: '训练并培育他人，使更多人能够服事',
+    strengths: ['培训门训', '设计成长路径', '发现潜力', '培育带领者'],
+    risks: ['容易把人当项目', '训练节奏太快、要求过高', '忽略陪伴过程'],
+    ministries: ['门徒训练', '同工培训', '小组长训练', '领袖培育', '教材系统开发'],
+    equip: ['门徒训练', '成人教育', '教练技术', '课程设计'],
+    gifts: { teaching: 0.45, leadership: 0.3, shepherding: 0.25 }, dims: { ministry: 0.55, hermeneutics: 0.25, theology: 0.2 },
+    icon: <Wrench size={15} />,
+  },
+  {
+    key: 'shepherd', label: '牧养者', en: 'Shepherd', mod: '牧养型', group: 'CARE',
+    core: '长期陪伴与看顾，使生命稳步成长',
+    strengths: ['倾听', '陪伴', '建立信任', '长期关怀'],
+    risks: ['过度承担、难以设立界限', '容易情绪耗竭', '不愿进行必要的纠正'],
+    ministries: ['小组牧养', '门徒陪伴', '初信者关怀', '家庭牧养', '长者关怀'],
+    equip: ['牧养学', '辅导基础', '冲突处理', '界限建立'],
+    gifts: { shepherding: 1 }, dims: { life: 0.4, ministry: 0.3, gospel: 0.3 },
+    icon: <Users size={15} />,
+  },
+  {
+    key: 'encourager', label: '劝勉者', en: 'Encourager', mod: '劝勉型', group: 'CARE',
+    core: '鼓励与劝导，帮助人重新看见希望并行动',
+    strengths: ['鼓舞人心', '务实建议', '推动改变', '生命应用'],
+    risks: ['太快给建议、倾听不够', '把复杂问题简单化', '忽略悲伤所需要的时间'],
+    ministries: ['门徒陪伴', '青少年事工', '辅导', '小组', '婚姻家庭'],
+    equip: ['圣经辅导', '沟通与倾听', '门徒训练', '实践神学'],
+    gifts: { encouragement: 1 }, dims: { gospel: 0.35, life: 0.35, ministry: 0.3 },
+    icon: <Lightbulb size={15} />,
+  },
+  {
+    key: 'mercy', label: '怜悯者', en: 'Mercy Giver', mod: '怜悯型', group: 'CARE',
+    core: '靠近受伤与有需要的人，给予实际帮助',
+    strengths: ['同理', '接纳', '实际帮助', '对弱势敏锐'],
+    risks: ['情绪卷入、界限不足', '容易被需求淹没、难以拒绝', '有时忽略真理与责任'],
+    ministries: ['慈惠事工', '医院关怀', '长者与儿童事工', '危机援助', '社区关怀'],
+    equip: ['慈惠事工', '受伤者关怀', '界限建立', '圣经辅导'],
+    gifts: { mercy: 0.8, serving: 0.2 }, dims: { life: 0.45, church: 0.3, gospel: 0.25 },
+    icon: <Heart size={15} />,
+  },
+  {
+    key: 'intercessor', label: '代祷者', en: 'Intercessor', mod: '代祷型', group: 'CARE',
+    core: '恒切祷告，把人和使命持续带到神面前',
+    strengths: ['安静专注', '持续负担', '忠心隐秘', '属灵敏锐'],
+    risks: ['以主观感觉替代分辨', '缺少行动配合', '容易把个人感动当确据'],
+    ministries: ['祷告会', '宣教代祷', '教会守望', '私下代祷', '危机祷告团队'],
+    equip: ['祷告神学', '诗篇', '属灵操练', '教会论'],
+    gifts: { discernment: 0.4, mercy: 0.3, encouragement: 0.3 }, dims: { life: 0.55, mission: 0.25, church: 0.2 },
+    icon: <Flame size={15} />,
+  },
+  {
+    key: 'evangelist', label: '传福音者', en: 'Evangelist', mod: '福音型', group: 'MISSION',
+    core: '向未信的人传讲福音，邀请人认识基督',
+    strengths: ['主动连结', '福音表达', '与陌生人交流', '行动力'],
+    risks: ['追求决志数字、跟进不足', '信息过度简化', '忽略长期门训'],
+    ministries: ['个人布道', '职场校园事工', '街头福音', '网络福音', '福音聚会'],
+    equip: ['福音神学', '护教学', '福音表达', '初信跟进'],
+    gifts: { evangelism: 1 }, dims: { mission: 0.45, gospel: 0.4, apologetics: 0.15 },
+    icon: <Megaphone size={15} />,
+  },
+  {
+    key: 'missionary', label: '差传者', en: 'Missionary', mod: '开拓型', group: 'MISSION',
+    core: '跨越文化与地域，把福音带向未及之地',
+    strengths: ['跨文化适应', '开拓精神', '使命感', '坚韧'],
+    risks: ['过快行动、忽略长期可持续性', '文化理解不足', '浪漫化宣教'],
+    ministries: ['跨文化宣教', '植堂', '未得之民', '移民事工', '宣教动员'],
+    equip: ['宣教学', '跨文化沟通', '世界宗教', '植堂与语言'],
+    gifts: { evangelism: 0.55, leadership: 0.25, mercy: 0.2 }, dims: { mission: 0.6, church: 0.2, life: 0.2 },
+    icon: <Globe size={15} />,
+  },
+  {
+    key: 'leader', label: '领袖者', en: 'Leader', mod: '领袖型', group: 'BUILD',
+    core: '带领群体朝着共同异象与使命前进',
+    strengths: ['异象与决策', '组织人手', '推动执行', '承担责任'],
+    risks: ['控制与急于结果', '忽略弱者、不善倾听', '把事工成果等同属灵成熟'],
+    ministries: ['小组领导', '事工负责人', '教会行政领导', '项目带领', '植堂'],
+    equip: ['仆人领导', '团队建设', '冲突管理', '教会治理'],
+    gifts: { leadership: 1 }, dims: { ministry: 0.45, church: 0.3, theology: 0.25 },
+    icon: <Flag size={15} />,
+  },
+  {
+    key: 'builder', label: '建造者', en: 'Builder', mod: '建造型', group: 'BUILD',
+    core: '把混乱变有结构，建立可持续运行的系统',
+    strengths: ['系统思维', '组织执行', '规划', '解决问题'],
+    risks: ['系统大于人', '沟通偏少、过度优化', '对低效率的人缺乏耐心'],
+    ministries: ['教会行政', '财务', '媒体与技术', '课程平台', '项目管理', '义工运营'],
+    equip: ['事工管理', '管家神学', '项目管理', '团队协作'],
+    gifts: { serving: 0.4, leadership: 0.35, discernment: 0.25 }, dims: { church: 0.4, ministry: 0.4, theology: 0.2 },
+    icon: <Hammer size={15} />,
+  },
+  {
+    key: 'servant', label: '服事者', en: 'Servant', mod: '服事型', group: 'BUILD',
+    core: '看见需要就补上缺口，忠心配搭服事',
+    strengths: ['忠心', '可靠', '谦逊执行', '默默摆上'],
+    risks: ['不会拒绝、容易耗竭', '长期被忽视而灰心', '只做事、忽略自己也需要成长'],
+    ministries: ['接待', '后勤', '儿童帮助', '场地与行政', '活动执行', '探访支持'],
+    equip: ['仆人领导', '团队协作', '时间管理', '恩赐辨识'],
+    gifts: { serving: 0.8, mercy: 0.2 }, dims: { church: 0.35, ministry: 0.35, life: 0.3 },
+    icon: <Handshake size={15} />,
+  },
+];
+
+const ARCH_DISCLAIMER =
+  '成长角色用于帮助理解当前呈现的恩赐、能力、侍奉与成长倾向，不等同于属灵身份、教会职分或神对个人呼召的最终确认。角色判断应继续结合圣经、祷告、教会群体、导师、真实侍奉与长期果效进行辨识。';
+
+interface ArchRow { a: ArchMeta; score: number; svc: number }
+
+/**
+ * 角色得分 = 恩赐加权(62%) + 九维能力加权(38%，含学习反哺后的展示分)
+ * + 实际服事证据加成（该角色主要恩赐的服事记录，每条 +2，上限 +6）。
+ */
+function computeArchetypes(
+  g: GiftsResult,
+  dimScore: (k: DimKey) => number,
+  service: ServiceEntry[],
+): ArchRow[] {
+  return ARCHETYPES.map(a => {
+    let gp = 0, gw = 0;
+    for (const [k, w] of Object.entries(a.gifts)) { gp += (g.scores[k as GiftKey] ?? 45) * (w as number); gw += w as number; }
+    let dp = 0, dw = 0;
+    for (const [k, w] of Object.entries(a.dims)) { dp += dimScore(k as DimKey) * (w as number); dw += w as number; }
+    const svc = service.filter(e => (a.gifts[e.gift] ?? 0) >= 0.4).length;
+    const score = Math.round(Math.min(99, 0.62 * (gp / gw) + 0.38 * (dp / dw) + Math.min(6, svc * 2)));
+    return { a, score, svc };
+  }).sort((x, y) => y.score - x.score);
+}
+
+const combinedRoleName = (rows: ArchRow[]) => rows[1].a.mod + rows[0].a.label;
+
 const Dots: React.FC<{ level: number; total?: number }> = ({ level, total = 5 }) => (
   <span style={{ letterSpacing: 2, fontSize: 10, color: '#C99A45' }}>
     {'●'.repeat(Math.max(0, Math.min(total, level)))}
@@ -718,6 +909,8 @@ interface CTState {
   gifts?: GiftsResult;
   service?: ServiceEntry[];
   applications?: Application[];
+  /** 角色演变历史（Profile V1 → V2 …），主+辅组合变化时追加。 */
+  roleHistory?: { combined: string; at: string }[];
 }
 
 const STORAGE_KEY = 'amas_ct_state_v2';
@@ -1073,6 +1266,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
       v: 2, tier: S.tier, years: S.years, focus: S.focus, scenario: S.scenario,
       scores: full, levels: S.levels, completedAt: new Date().toISOString(),
       gifts: prev?.gifts, service: prev?.service, applications: prev?.applications,
+      roleHistory: prev?.roleHistory,
     };
     saveCT(state); setCt(state); scheduleGrowthPush(state);
     history.current = [];
@@ -1249,6 +1443,19 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
     });
     return () => { cancelled = true; };
   }, []);
+
+  // ---- 成长角色版本历史：主+辅组合发生变化时追加一条 ----
+  const [showAllRoles, setShowAllRoles] = useState(false);
+  useEffect(() => {
+    if (!ct?.gifts) return;
+    const { boost } = learningBoost(courses);
+    const rows = computeArchetypes(ct.gifts, k => Math.min(100, ct.scores[k] + boost[k]), ct.service ?? []);
+    const combined = combinedRoleName(rows);
+    const hist = ct.roleHistory ?? [];
+    if (hist.length && hist[hist.length - 1].combined === combined) return;
+    const next: CTState = { ...ct, roleHistory: [...hist, { combined, at: new Date().toISOString() }] };
+    saveCT(next); setCt(next); scheduleGrowthPush(next);
+  }, [ct, courses]);
 
   // ---- 画像派生（含学习反哺） ----
   const derive = (s: CTState) => {
@@ -1711,6 +1918,194 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
               );
             })()}
 
+            {/* ===== 成长角色（Christian Growth Archetype 解释层） ===== */}
+            {ct.gifts && (() => {
+              const rows = computeArchetypes(
+                ct.gifts!,
+                k => portrait.entries.find(e => e.meta.key === k)!.score,
+                ct.service ?? [],
+              );
+              const [pri, sec, third] = rows;
+              const combined = combinedRoleName(rows);
+              const groupCn = (g: ArchGroup) => ARCH_GROUPS.find(x => x.key === g)!.cn;
+              // 装备重点：主角色相关维度中当前分数最低的那个
+              const equipDim = (Object.keys(pri.a.dims) as DimKey[])
+                .map(k => portrait.entries.find(e => e.meta.key === k)!)
+                .sort((a, b) => a.score - b.score)[0];
+              const evid = [
+                { t: '自我评估（恩赐测评）', ok: true },
+                { t: '行为佐证（情境题）', ok: ct.gifts!.behavior > 0 },
+                { t: '神学能力（九维诊断）', ok: true },
+                { t: '课程表现（完成课程）', ok: portrait.learnedCount > 0 },
+                { t: '实际服事（服事记录）', ok: pri.svc >= 1 },
+                { t: '导师/同工反馈', ok: false, note: '规划中' },
+              ];
+              const okCount = evid.filter(e => e.ok).length;
+              const conf = okCount >= 5 ? '高' : okCount >= 4 ? '较高' : okCount >= 3 ? '中等' : '初步';
+              const hist = ct.roleHistory ?? [];
+              return (
+                <section style={{ marginTop: 26 }}>
+                  <SectionEyebrow title="我的成长角色" en="Growth Archetype" />
+                  <div style={{ ...ctCard, overflow: 'hidden' }}>
+                    {/* 角色头部 */}
+                    <div
+                      style={{
+                        padding: '18px 16px 16px', color: '#FFF',
+                        background:
+                          'radial-gradient(90% 120% at 12% 0%, rgba(240,205,135,.16) 0%, rgba(240,205,135,0) 42%), linear-gradient(160deg, #0B2450 0%, #071A3C 100%)',
+                      }}
+                    >
+                      <p style={{ margin: '0 0 6px', fontSize: 9.5, fontWeight: 800, letterSpacing: '2px', color: 'rgba(232,201,140,.9)' }}>
+                        CHRISTIAN GROWTH ARCHETYPE
+                      </p>
+                      <h3
+                        style={{
+                          margin: '0 0 3px', fontSize: 23, fontWeight: 900, letterSpacing: '1px',
+                          background: 'linear-gradient(180deg, #F7E3B4 10%, #E4BC6E 90%)',
+                          WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent',
+                        }}
+                      >
+                        {combined}
+                      </h3>
+                      <p style={{ margin: '0 0 10px', fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 11, fontWeight: 700, letterSpacing: '2px', color: 'rgba(233,238,248,.6)', textTransform: 'uppercase' }}>
+                        The {pri.a.en} – {sec.a.en}
+                      </p>
+                      <p style={{ margin: 0, fontSize: 12, lineHeight: 1.8, color: 'rgba(233,238,248,.9)' }}>
+                        你倾向于{pri.a.core}；同时也乐于{sec.a.core}。
+                      </p>
+                    </div>
+
+                    <div style={{ padding: '14px 16px 13px' }}>
+                      {/* 主 / 辅 / 第三 */}
+                      <div className="grid grid-cols-3" style={{ gap: 8, marginBottom: 13 }}>
+                        {[
+                          { tag: '主角色', r: pri, gold: true },
+                          { tag: '辅助角色', r: sec, gold: false },
+                          { tag: '第三倾向', r: third, gold: false },
+                        ].map(({ tag, r, gold }) => (
+                          <div
+                            key={r.a.key}
+                            style={{
+                              textAlign: 'center', borderRadius: 13, padding: '10px 6px 9px',
+                              background: gold ? '#FBF6EA' : '#F8FAFC',
+                              border: gold ? '1.2px solid rgba(201,154,69,.45)' : '1px solid #EDF0F4',
+                            }}
+                          >
+                            <p style={{ margin: '0 0 3px', fontSize: 9, fontWeight: 800, letterSpacing: '1px', color: gold ? '#C99A45' : '#98A2B3' }}>{tag}</p>
+                            <div className="flex items-center justify-center" style={{ gap: 4, color: gold ? '#8A6519' : '#22345E' }}>
+                              {r.a.icon}
+                              <span style={{ fontSize: 13, fontWeight: 900, color: '#1F2A37' }}>{r.a.label}</span>
+                            </div>
+                            <p style={{ margin: '3px 0 0', fontSize: 15, fontWeight: 900, color: gold ? '#C99A45' : '#04285F' }}>{r.score}</p>
+                            <p style={{ margin: '1px 0 0', fontSize: 9, fontWeight: 700, color: '#B6BDC9' }}>{groupCn(r.a.group)}</p>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* 优势 / 风险 */}
+                      <p style={{ margin: '0 0 5px', fontSize: 11, fontWeight: 800, color: '#137A4F' }}>✦ 当前优势</p>
+                      <div className="flex flex-wrap" style={{ gap: 6, marginBottom: 11 }}>
+                        {[...pri.a.strengths, sec.a.strengths[0]].map(s => (
+                          <span key={s} style={{ fontSize: 11, fontWeight: 700, color: '#0F5138', background: '#EDFAF3', border: '1px solid #C7EDDA', borderRadius: 999, padding: '3px 10px' }}>{s}</span>
+                        ))}
+                      </div>
+                      <p style={{ margin: '0 0 5px', fontSize: 11, fontWeight: 800, color: '#B42318' }}>✦ 当前成长风险</p>
+                      {[...pri.a.risks.slice(0, 2), sec.a.risks[0]].map(r => (
+                        <p key={r} style={{ margin: '0 0 3px', fontSize: 12, color: '#475467', lineHeight: '18px' }}>· {r}</p>
+                      ))}
+
+                      {/* 推荐侍奉 */}
+                      <p style={{ margin: '11px 0 5px', fontSize: 11, fontWeight: 800, color: '#22345E' }}>✦ 推荐探索的侍奉</p>
+                      <div className="flex flex-wrap" style={{ gap: 6, marginBottom: 12 }}>
+                        {[...new Set([...pri.a.ministries, ...sec.a.ministries])].slice(0, 6).map(m => (
+                          <span key={m} style={{ fontSize: 11, fontWeight: 700, color: '#04285F', background: '#F8FAFF', border: '1px solid rgba(4,40,95,.22)', borderRadius: 999, padding: '3px 10px' }}>{m}</span>
+                        ))}
+                      </div>
+
+                      {/* 装备重点 */}
+                      <div className="flex items-center" style={{ gap: 10, padding: '10px 12px', background: '#FBF6EA', border: '1px solid rgba(201,154,69,.25)', borderRadius: 12, marginBottom: 12 }}>
+                        <Target size={15} color="#A9812F" className="shrink-0" />
+                        <div className="flex-1">
+                          <p style={{ margin: 0, fontSize: 11, fontWeight: 800, color: '#5C4A1E' }}>当前装备重点：{equipDim.meta.label}（{equipDim.score} 分）</p>
+                          <p style={{ margin: '1px 0 0', fontSize: 10, color: '#7A6A45' }}>建议方向：{pri.a.equip.slice(0, 3).join(' · ')}</p>
+                        </div>
+                        {equipDim.meta.courseIds.map(id => courseById(id)).filter(Boolean).slice(0, 1).map(c => (
+                          <button
+                            key={c!.id}
+                            onClick={() => onCourseClick(c!.id)}
+                            className="shrink-0 active:scale-95 transition"
+                            style={{ fontSize: 10.5, fontWeight: 800, color: '#04285F', border: '1px solid rgba(4,40,95,.3)', borderRadius: 999, padding: '4px 10px', background: '#FFF' }}
+                          >
+                            去学习
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* 确认度 */}
+                      <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
+                        <span style={{ fontSize: 11.5, fontWeight: 800, color: '#22345E' }}>角色确认度</span>
+                        <span style={{ fontSize: 11.5, fontWeight: 900, color: okCount >= 4 ? '#137A4F' : '#C99A45' }}>{conf}（{okCount}/6 项证据）</span>
+                      </div>
+                      <div className="grid grid-cols-2" style={{ gap: '3px 10px', marginBottom: 11 }}>
+                        {evid.map(e => (
+                          <span key={e.t} style={{ fontSize: 10.5, color: e.ok ? '#137A4F' : '#B6BDC9', fontWeight: 600 }}>
+                            {e.ok ? '✓' : '✗'} {e.t}{e.note ? `（${e.note}）` : ''}
+                          </span>
+                        ))}
+                      </div>
+
+                      {/* 角色演变 */}
+                      {hist.length > 1 && (
+                        <p style={{ margin: '0 0 10px', fontSize: 10.5, color: '#98A2B3', lineHeight: '17px' }}>
+                          角色演变：{hist.slice(-3).map((h, i) => `V${Math.max(1, hist.length - Math.min(3, hist.length)) + i} ${h.combined}`).join(' → ')}
+                          　—— 角色会随生命阶段与服事演变，这是成长的记号而非测评失误。
+                        </p>
+                      )}
+
+                      {/* 全部 12 角色 */}
+                      <button
+                        onClick={() => setShowAllRoles(v => !v)}
+                        className="w-full flex items-center justify-center active:scale-[0.99] transition"
+                        style={{ gap: 5, fontSize: 11.5, fontWeight: 800, color: '#667085', border: '1px dashed #DDE1E8', borderRadius: 11, padding: '8px 0', background: '#FAFBFC' }}
+                      >
+                        查看全部 12 个成长角色
+                        <ChevronDown size={13} style={{ transform: showAllRoles ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }} />
+                      </button>
+                      {showAllRoles && (
+                        <div style={{ marginTop: 10 }}>
+                          {ARCH_GROUPS.map(g => (
+                            <div key={g.key} style={{ marginBottom: 9 }}>
+                              <p style={{ margin: '0 0 5px', fontSize: 10.5, fontWeight: 800, color: '#8A6519' }}>{g.en} · {g.cn}</p>
+                              <div className="flex flex-wrap" style={{ gap: 6 }}>
+                                {rows.filter(r => r.a.group === g.key).map(r => (
+                                  <span
+                                    key={r.a.key}
+                                    className="inline-flex items-center"
+                                    style={{
+                                      gap: 4, fontSize: 11, fontWeight: 700, borderRadius: 999, padding: '4px 10px',
+                                      color: r.a.key === pri.a.key ? '#8A6519' : '#475467',
+                                      background: r.a.key === pri.a.key ? '#FBF6EA' : '#F6F7F9',
+                                      border: r.a.key === pri.a.key ? '1px solid rgba(201,154,69,.45)' : '1px solid #ECEEF2',
+                                    }}
+                                  >
+                                    {r.a.icon} {r.a.label} {r.score}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <p style={{ margin: '11px 0 0', fontSize: 10, color: '#98A2B3', lineHeight: '16px' }}>
+                        {ARCH_DISCLAIMER}
+                      </p>
+                    </div>
+                  </div>
+                </section>
+              );
+            })()}
+
             {/* ===== 事奉方向匹配 + 申请 ===== */}
             {ct.gifts && (() => {
               const matches = giftMatches(ct.gifts!).slice(0, 4);
@@ -1926,6 +2321,40 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                   </div>
                 ))}
               </div>
+            </section>
+
+            {/* ===== 十二大成长角色总览 ===== */}
+            <section style={{ marginTop: 26 }}>
+              <SectionEyebrow title="十二大成长角色" en="Growth Archetypes" />
+              <div className="grid grid-cols-2" style={{ gap: 11 }}>
+                {ARCH_GROUPS.map(g => (
+                  <div key={g.key} style={{ ...ctCard, padding: '14px 13px 12px' }}>
+                    <div className="flex items-baseline" style={{ gap: 6, marginBottom: 4 }}>
+                      <span style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 12, fontWeight: 700, letterSpacing: '1.5px', color: '#C1A76A' }}>{g.en}</span>
+                      <span style={{ fontSize: 13.5, fontWeight: 900, color: '#14295A' }}>{g.cn}</span>
+                    </div>
+                    <p style={{ margin: '0 0 9px', fontSize: 10, lineHeight: 1.65, color: '#98A2B3', fontWeight: 500 }}>{g.q}</p>
+                    <div className="flex flex-wrap" style={{ gap: 5 }}>
+                      {ARCHETYPES.filter(a => a.group === g.key).map(a => (
+                        <span
+                          key={a.key}
+                          className="inline-flex items-center"
+                          style={{
+                            gap: 4, fontSize: 10.5, fontWeight: 700, color: '#22345E',
+                            background: '#F8FAFF', border: '1px solid rgba(4,40,95,.16)',
+                            borderRadius: 999, padding: '3px 9px',
+                          }}
+                        >
+                          {a.icon} {a.label}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p style={{ margin: '10px 2px 0', fontSize: 10, color: '#98A2B3', lineHeight: 1.7, textAlign: 'center' }}>
+                完成 AI 诊断与恩赐辨识后，将为你生成「主角色 × 辅助角色」的专属成长角色。角色用于帮助理解成长倾向，不等同于最终呼召判断。
+              </p>
             </section>
 
             {/* ===== 诊断流程 ===== */}
