@@ -9,6 +9,7 @@ import {
   Building2, Handshake, BookOpen, Library as LibraryIcon,
 } from 'lucide-react';
 import { initialAvatar } from '../services/imageFallback';
+import { readGrowthRole, archImg } from '../services/growthArchetypes';
 import { listFavorites as libListFavorites } from '../services/libraryService';
 import { listFriends } from '../services/friendsService';
 import { listMyProgress, type ProgressEntry } from '../services/coursesService';
@@ -67,6 +68,7 @@ const AnimatedCounter = ({ end, duration = 1000 }: { end: number, duration?: num
 
 const ProfileView: React.FC<ProfileViewProps> = ({ favoriteCourseIds = [], onLogout, user: initialUser, courses, onNavigate, onOpenCourse }) => {
   const go = (view: ViewState) => onNavigate?.(view);
+  const [growthRole] = useState(() => readGrowthRole());
   // Open a specific course if the host wired it up; otherwise fall back to the
   // Courses tab so the row is never a dead end.
   const openCourse = (id: string) => (onOpenCourse ? onOpenCourse(id) : go(ViewState.COURSES));
@@ -607,6 +609,56 @@ const ProfileView: React.FC<ProfileViewProps> = ({ favoriteCourseIds = [], onLog
               </button>
             );
           })}
+        </div>
+      </div>
+
+      {/* Growth archetype — synced with 定制化神学 profile (shared engine) */}
+      <div className="px-6 mt-6">
+        <div className="bg-white p-5 rounded-[2rem] shadow-[0_4px_20px_rgba(0,0,0,0.05)] border border-slate-100">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center space-x-2">
+              <div className="w-1 h-4 bg-blue-900 rounded-full"></div>
+              <h3 className="font-bold text-slate-800 text-sm">我的成长角色</h3>
+            </div>
+            <button onClick={() => go(ViewState.CUSTOM_THEOLOGY)} className="text-[11px] font-bold text-blue-900 flex items-center active:opacity-60">
+              {growthRole ? '查看档案' : '开始诊断'}<ChevronRight size={12} />
+            </button>
+          </div>
+          {growthRole ? (
+            <button onClick={() => go(ViewState.CUSTOM_THEOLOGY)} className="w-full text-left flex items-center gap-3 active:opacity-70 transition-opacity">
+              <img
+                src={archImg(growthRole.primary.key)}
+                alt={growthRole.primary.label}
+                className="w-16 rounded-xl border border-slate-100 shrink-0"
+                loading="lazy"
+              />
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-base font-black text-slate-800">{growthRole.combined}</span>
+                  <span
+                    className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+                    style={{
+                      color: growthRole.prelim ? '#B45309' : '#8A6519',
+                      background: growthRole.prelim ? '#FFFBEB' : '#FBF6EA',
+                      border: `1px solid ${growthRole.prelim ? '#FCD34D' : 'rgba(201,154,69,.4)'}`,
+                    }}
+                  >
+                    {growthRole.prelim ? '初步判定' : '已确认'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">{growthRole.primary.core}</p>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  主角色 {growthRole.primary.label} {growthRole.primaryScore} · 辅助 {growthRole.secondary.label}
+                  {growthRole.prelim && ' · 完成恩赐辨识后确认'}
+                </p>
+              </div>
+            </button>
+          ) : (
+            <button onClick={() => go(ViewState.CUSTOM_THEOLOGY)} className="w-full text-left flex items-center gap-3 active:opacity-70">
+              <div className="w-10 h-10 rounded-xl bg-blue-900 text-amber-200 flex items-center justify-center shrink-0"><Sparkles size={18} /></div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">完成定制化神学的 AI 诊断（约 6–8 分钟），即可发现你在十二大成长角色中的位置。</p>
+            </button>
+          )}
         </div>
       </div>
 

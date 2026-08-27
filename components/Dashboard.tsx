@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { ViewState, NewsItem, Course } from '../types';
 import { STOCK_PHOTOS } from '../services/stockPhotos';
+import { readGrowthRole } from '../services/growthArchetypes';
 import type { ProgramTier } from './College/programData';
 
 const AIServiceChat = React.lazy(() => import('./AIServiceChat'));
@@ -132,11 +133,16 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
     { icon: Handshake, value: '20+', label: '分院', tone: 'gold' as const },
   ];
 
+  const growthRole = readGrowthRole();
   const quickEntries = [
     { icon: Landmark, title: '了解学校', sub: '学校介绍详情', view: ViewState.COLLEGE_OVERVIEW },
     { icon: Megaphone, title: '最新公告', sub: '通知与活动', view: ViewState.ALL_ANNOUNCEMENTS },
     { icon: PlayCircle, title: '课程试听', sub: '体验精选课程', view: ViewState.COURSE_TRIAL },
-    { icon: Sparkles, title: '定制化神学', sub: 'AI 为你建立专属装备路径', view: ViewState.CUSTOM_THEOLOGY },
+    {
+      icon: Sparkles, title: '定制化神学',
+      sub: growthRole ? `你的角色：${growthRole.combined}` : 'AI 为你建立专属装备路径',
+      view: ViewState.CUSTOM_THEOLOGY,
+    },
   ];
 
   const coursePaths: { level: string; tier: ProgramTier; cn: string; tone: string; tint: string }[] = [
