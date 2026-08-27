@@ -13,7 +13,7 @@ import {
   type ArchKey, type ArchGroup, type ArchetypeBase,
 } from '../services/growthArchetypes';
 import ChristianProfileView, { ResultPage } from './ChristianProfileView';
-import { readChristianProfile } from '../services/christianProfile/store';
+import { readChristianProfile, clearChristianProfile } from '../services/christianProfile/store';
 import type { ChristianProfile } from '../services/christianProfile/scoring';
 import type { AssessmentLevel } from '../services/christianProfile/items';
 
@@ -1639,6 +1639,20 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                   <div className="flex items-center" style={{ gap: 8, marginBottom: 6 }}>
                     <p style={{ margin: 0, fontSize: 9.5, fontWeight: 800, letterSpacing: '2px', color: 'rgba(232,201,140,.9)' }}>MINISTRY ORIENTATION</p>
                     <span style={{ fontSize: 9, fontWeight: 800, color: '#F2D493', border: '1px solid rgba(242,212,147,.5)', borderRadius: 999, padding: '2px 8px' }}>{cp.level === 'quick' ? '快速版 · 初步' : '标准版'}</span>
+                    <div className="flex items-center" style={{ marginLeft: 'auto' }}>
+                      <button onClick={() => openCp(cp.level)} aria-label="重新评估" title="重新评估" className="p-1.5 rounded-full active:scale-90 transition" style={{ color: 'rgba(242,212,147,.8)' }}>
+                        <RefreshCw size={14} />
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (!window.confirm('确定删除本次 Christian Profile 结果吗？12 项事奉倾向与建议将被清除，之后可以随时重新评估。')) return;
+                          clearChristianProfile(); setCp(null); setCt(loadCT());
+                        }}
+                        aria-label="删除结果" title="删除结果" className="p-1.5 rounded-full active:scale-90 transition" style={{ color: 'rgba(242,212,147,.8)' }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   </div>
                   <h3 style={{ margin: '0 0 6px', fontSize: 22, fontWeight: 900, letterSpacing: '1px', background: 'linear-gradient(180deg, #F7E3B4 10%, #E4BC6E 90%)', WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
                     {cp.multiBlend ? '多元事奉组合' : cp.combinedLabel}
@@ -1646,6 +1660,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                   <p style={{ margin: 0, fontSize: 12, lineHeight: 1.8, color: 'rgba(233,238,248,.9)' }}>
                     {cp.multiBlend ? '你的前三项倾向非常接近，目前呈现多元化的事奉组合。' : `你目前呈现较明显的「${pri.a.label}」倾向：${pri.a.core}。`}
                   </p>
+                  <p style={{ margin: '6px 0 0', fontSize: 10, color: 'rgba(233,238,248,.55)' }}>评估于 {fmtTime(cp.completedAt)} · 右上角可随时重新评估或删除结果</p>
                 </div>
                 <div style={{ padding: '12px 16px 14px' }}>
                   <div className="grid grid-cols-3" style={{ gap: 8 }}>
