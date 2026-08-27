@@ -122,6 +122,36 @@
   .dcard .lab { font-size: 10px; font-weight: 800; letter-spacing: 1.5px; color: #C1A76A; margin-bottom: 4px; }
   .dcard .core { font-size: 14px; font-weight: 800; color: #14295A; line-height: 1.7; }
   .hero-cards { display: none; }
+
+  /* ---- 营销锁定区 ---- */
+  .lock { position: relative; border-radius: 14px; overflow: hidden; margin-bottom: 12px; border: 1px solid #EEF0F4; background: #FBFBFC; }
+  .lock .blur { filter: blur(5px); pointer-events: none; user-select: none; padding: 12px 13px 6px; opacity: .8; }
+  .lock .veil { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 5px; padding: 14px; background: linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,.92)); }
+  .lock .veil .lk { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: linear-gradient(160deg, #0F2E6B, #071F4E); color: #F2D493; font-size: 15px; margin-bottom: 2px; }
+  .lock .veil b { font-size: 12.5px; color: #14295A; }
+  .lock .veil span { font-size: 10.5px; color: #667085; }
+  .lock .veil .gold-btn { height: 36px; font-size: 12px; padding: 0 16px; margin-top: 6px; }
+  .locked-line { color: #8A6519; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+  .lockchip { font-size: 11px; font-weight: 800; border-radius: 999px; padding: 3px 10px; color: #8A6519 !important; background: #FBF6EA !important; border: 1px dashed rgba(201,154,69,.6) !important; cursor: pointer; }
+  .link-btn { display: inline-flex; align-items: center; margin-top: 8px; border: none; background: none; cursor: pointer; font-size: 11.5px; font-weight: 800; color: var(--navy); text-decoration: underline; text-underline-offset: 3px; }
+  .ghost-btn { width: 100%; height: 42px; border-radius: 999px; border: 1px solid #E2E5EB; background: #fff; color: #475467; font-size: 13px; font-weight: 700; cursor: pointer; margin-top: 4px; }
+  .unlock-card { margin-top: 12px; padding: 14px 15px; border-radius: 16px; background: linear-gradient(180deg, #FFFDF8, #FBF5E9); border: 1px solid rgba(201,154,69,.35); }
+  .unlock-card b { display: block; font-size: 13px; color: #5C4A1E; margin-bottom: 8px; }
+  .unlock-card ul { list-style: none; margin-bottom: 12px; }
+  .unlock-card li { font-size: 11.5px; color: #7A6A45; line-height: 1.7; padding-left: 18px; position: relative; }
+  .unlock-card li::before { content: "✦"; position: absolute; left: 0; color: var(--gold); }
+  .sticky-cta { position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; display: flex; align-items: center; justify-content: space-between; gap: 12px; max-width: 430px; margin: 0 auto; padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); background: rgba(7,26,60,.96); backdrop-filter: blur(10px); color: #F2D493; font-size: 12px; font-weight: 800; border-top: 1px solid rgba(232,201,140,.25); }
+  .sticky-cta .gold-btn { height: 36px; font-size: 12px; padding: 0 16px; }
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 16px 18px 0; }
+  .compare .col { padding: 14px 13px; border-radius: 16px; background: #fff; border: 1px solid var(--line); }
+  .compare .col.app { background: linear-gradient(160deg, #0B2450, #071A3C); color: #fff; border: 1px solid rgba(232,201,140,.3); }
+  .compare .h { font-size: 12.5px; font-weight: 900; margin-bottom: 8px; }
+  .compare .app .h { color: #F2D493; }
+  .compare ul { list-style: none; }
+  .compare li { font-size: 10.5px; line-height: 1.8; color: #475467; }
+  .compare .app li { color: rgba(233,238,248,.9); }
+  .compare li.off { color: #B6BDC9; }
+  .compare .gold-btn { width: 100%; height: 36px; font-size: 12px; margin-top: 10px; }
   .strip::-webkit-scrollbar { display: none; }
   .strip { scrollbar-width: none; }
 
@@ -145,6 +175,8 @@
     .strip img:hover { transform: translateY(-6px); box-shadow: 0 16px 30px rgba(16,24,40,.16); }
     .groups span { font-size: 11.5px; padding: 5px 14px; }
     .note { max-width: 720px; margin: 0 auto; }
+    .compare { max-width: 860px; margin: 8px auto 0; }
+    .sticky-cta { max-width: 1120px; border-radius: 16px 16px 0 0; font-size: 13.5px; }
 
     /* 答题：居中窄卡 */
     #quiz { min-height: auto; }
@@ -159,9 +191,10 @@
     #result .rhead h2 { font-size: 32px; }
     #result .rbody { grid-area: body; display: grid; grid-template-columns: 380px 1fr; gap: 28px; padding: 24px 28px 26px; border-radius: 0 0 22px 22px; }
     #result .rr { min-width: 0; }
-    #result .cta-deep { grid-area: cta; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 24px; padding: 26px 30px; }
-    #result .cta-deep p { margin-bottom: 0; }
-    #result .cta-deep .gold-btn { width: auto !important; padding: 0 28px; }
+    #result .cta-deep { grid-area: cta; display: grid; grid-template-columns: 1fr auto; grid-template-areas: "t btn" "p btn"; align-items: center; column-gap: 32px; row-gap: 6px; padding: 26px 30px; }
+    #result .cta-deep b { grid-area: t; font-size: 18px; margin: 0; }
+    #result .cta-deep p { grid-area: p; margin-bottom: 0; max-width: 760px; }
+    #result .cta-deep .gold-btn { grid-area: btn; width: auto !important; padding: 0 28px; white-space: nowrap; }
     #result .brand { grid-area: brand; }
     #result > .gold-btn { display: none; }
 
@@ -197,6 +230,17 @@
     </div>
     <div class="strip" id="strip"></div>
     <div class="groups" id="groups"></div>
+    <div class="compare">
+      <div class="col">
+        <div class="h">网页快速版（本页）</div>
+        <ul><li>✓ 10 题九维快照</li><li>✓ 初步成长角色</li><li>✓ 角色卡与核心动机</li><li class="off">— 恩赐辨识</li><li class="off">— 成长风险与事奉匹配</li><li class="off">— 装备路径与课程</li></ul>
+      </div>
+      <div class="col app">
+        <div class="h">AMAS App 完整版</div>
+        <ul><li>✓ AI 自适应九维诊断（阶梯追问）</li><li>✓ 恩赐辨识 12 题 → 正式角色确认</li><li>✓ 三层证据融合分析与确认度</li><li>✓ 事奉方向匹配与一键申请</li><li>✓ 三阶段装备路径 + 课程</li><li>✓ 成长档案跨设备同步</li></ul>
+        <button class="gold-btn" onclick="goApp('compare')">打开 AMAS App</button>
+      </div>
+    </div>
     <p class="note disclaimer">点击卡片可查看角色介绍。测评在 AMAS 神学框架内进行，以圣经为最高权威；结果仅作装备参考，不构成对个人信仰状态的评判。完整的九维诊断、恩赐辨识与成长档案请在 AMAS App 中进行。</p>
   </div>
 
@@ -204,7 +248,7 @@
   <div id="quiz" class="hidden">
     <div class="topbar">
       <button class="x" onclick="exitQuiz()" aria-label="退出">✕</button>
-      <span class="t">快速测评</span>
+      <span class="t">快速测评 · 网页版</span>
       <div class="bar"><i id="prog"></i></div>
       <span class="count" id="count">1/10</span>
     </div>
@@ -219,10 +263,10 @@
     </div>
   </div>
 
-  <!-- ============ 结果页 ============ -->
+  <!-- ============ 结果页（营销漏斗：部分展示 + App 解锁） ============ -->
   <div id="result" class="hidden fade">
     <div class="rhead">
-      <span style="font-size:9.5px;font-weight:800;letter-spacing:2px;color:rgba(232,201,140,.9)">CHRISTIAN GROWTH ARCHETYPE</span><span class="pre">初步判定</span>
+      <span style="font-size:9.5px;font-weight:800;letter-spacing:2px;color:rgba(232,201,140,.9)">CHRISTIAN GROWTH ARCHETYPE</span><span class="pre">网页快速版 · 初步判定</span>
       <h2 id="rName"></h2>
       <div class="en" id="rEn"></div>
       <p class="decl" id="rDecl"></p>
@@ -231,38 +275,63 @@
       <div class="rl">
         <img class="rimg" id="rImg" alt="" onclick="openDetail(currentPri)" />
         <div class="three" id="three"></div>
+        <div class="unlock-card">
+          <b>在 AMAS App 里，你还能解锁</b>
+          <ul>
+            <li>恩赐辨识（12 题情境测评）→ 正式确认你的角色</li>
+            <li>三层证据融合分析与角色确认度</li>
+            <li>适合你的事奉方向匹配，一键提交申请</li>
+            <li>三阶段专属装备路径与对应课程</li>
+            <li>成长档案跨设备同步、服事记录、角色演变追踪</li>
+          </ul>
+          <button class="gold-btn" style="width:100%" onclick="goApp('unlock')">打开 AMAS App · 解锁完整结果</button>
+        </div>
       </div>
       <div class="rr">
-      <div class="fuse">
-        <b class="t" id="fuseT"></b>
-        <div class="row"><span style="color:#8A6519">恩赐层</span><span style="color:#B45309">待完成恩赐辨识（当前仅按九维能力初判，App 内可完成）</span></div>
-        <div class="row"><span style="color:#17397E">能力层</span><span id="fuseDim"></span></div>
-        <div class="concl" id="fuseC"></div>
-      </div>
-      <p class="sec-t" style="color:#137A4F">✦ 当前优势</p>
-      <div class="chips green" id="rStr"></div>
-      <p class="sec-t" style="color:#B42318">✦ 当前成长风险</p>
-      <div id="rRisk" style="margin-bottom:11px"></div>
-      <p class="sec-t" style="color:#22345E">✦ 推荐探索的侍奉</p>
-      <div class="chips navy" id="rMin"></div>
+        <div class="fuse">
+          <b class="t" id="fuseT"></b>
+          <div class="row"><span style="color:#17397E">能力层</span><span id="fuseDim"></span></div>
+          <div class="row"><span style="color:#8A6519">恩赐层</span><span class="locked-line" onclick="goApp('gifts')">🔒 恩赐辨识仅在 App 内进行，完成后确认你的正式角色 ›</span></div>
+          <div class="row"><span style="color:#137A4F">服事层</span><span class="locked-line" onclick="goApp('service')">🔒 服事记录与证据层 · App 内解锁 ›</span></div>
+          <div class="concl" id="fuseC"></div>
+        </div>
 
-      <div class="stage" id="stageChip"></div>
-      <div class="dims" id="dims"></div>
-      <div class="advice"><b id="adviceT"></b><p id="advice"></p></div>
+        <p class="sec-t" style="color:#137A4F">✦ 当前优势</p>
+        <div class="chips green" id="rStr"></div>
 
-      <button class="gold-btn" style="width:100%" onclick="restart()">重新测一次</button>
-      <p class="disclaimer" style="margin-top:12px" id="disc1"></p>
+        <div class="lock">
+          <div class="blur">
+            <p class="sec-t" style="color:#B42318">✦ 当前成长风险</p>
+            <div id="rRiskL"></div>
+            <p class="sec-t" style="color:#22345E;margin-top:8px">✦ 推荐探索的侍奉</p>
+            <div class="chips navy" id="rMinL"></div>
+          </div>
+          <div class="veil"><div class="lk">🔒</div><b>3 项成长风险提醒 · 6 个推荐侍奉方向</b><span>这部分需要结合恩赐辨识才准确，请在 App 中完成正式诊断后查看</span><button class="gold-btn" onclick="goApp('risk')">打开 App 继续查看</button></div>
+        </div>
+
+        <div class="stage" id="stageChip"></div>
+        <div class="dims" id="dims"></div>
+        <div class="lock">
+          <div class="blur"><div class="dims" id="dimsLocked" style="margin:0"></div></div>
+          <div class="veil"><div class="lk">🔒</div><b>完整九维画像（其余 6 个维度）</b><span>App 内的 AI 诊断会根据你的回答自动追问，画像更精准</span><button class="gold-btn" onclick="goApp('dims')">在 App 查看完整画像</button></div>
+        </div>
+
+        <div class="advice"><b id="adviceT"></b><p id="advice"></p><button class="link-btn" onclick="goApp('path')">查看 App 为你生成的三阶段装备路径 ›</button></div>
+
+        <button class="ghost-btn" onclick="restart()">重新测一次</button>
+        <p class="disclaimer" style="margin-top:12px" id="disc1"></p>
       </div>
     </div>
     <div class="cta-deep">
-      <b>确认你的成长角色</b>
-      <p>这是根据九维能力的初步判定。在 AMAS App 中完成完整 AI 诊断与恩赐辨识后，系统会以「恩赐 62% + 能力 38% + 服事记录」融合确认你的正式角色，并生成专属装备路径与事奉方向匹配。</p>
-      <button class="gold-btn" style="width:100%" onclick="location.href='/'">打开 AMAS App · 完成正式诊断</button>
+      <b>你的角色已经初步显现——下一步，在 App 里确认它</b>
+      <p>网页版只是一次九维快照。在 AMAS App 中完成 AI 自适应诊断（约 6–8 分钟）与恩赐辨识（约 4 分钟）后，系统会以「恩赐 62% + 能力 38% + 服事记录」融合确认你的正式角色，并为你生成专属装备路径与事奉方向匹配。</p>
+      <button class="gold-btn" style="width:100%" onclick="goApp('bottom')">打开 AMAS App · 完成正式诊断</button>
     </div>
     <div class="brand"><div class="l">A M A S</div><div class="s">ASIAN MISSIONARY ASSOCIATION SEMINARY</div></div>
   </div>
+  <div class="sticky-cta hidden" id="stickyCta"><span>🔒 更多分析与建议在 App 中继续</span><button class="gold-btn" onclick="goApp('sticky')">打开 AMAS App</button></div>
 
-  <!-- ============ 角色详情 ============ -->
+  <!-- ============ 角色详情（核心动机 + 优势可见，其余 App 解锁） ============ -->
   <div id="detail" class="hidden fade">
     <div class="topbar">
       <button class="x" onclick="closeDetail()" aria-label="返回">‹</button>
@@ -275,13 +344,16 @@
       <div class="card dcard"><div class="lab">CORE MOTIVATION · 核心动机</div><div class="core" id="dCore"></div><p class="disclaimer" id="dQ" style="margin-top:6px"></p></div>
       <div class="card dcard">
         <p class="sec-t" style="color:#137A4F">✦ 常见优势</p><div class="chips green" id="dStr"></div>
-        <p class="sec-t" style="color:#B42318">✦ 潜在盲点</p><div id="dRisk"></div>
+        <div class="lock" style="margin-bottom:0">
+          <div class="blur">
+            <p class="sec-t" style="color:#B42318">✦ 潜在盲点</p><div id="dRisk"></div>
+            <p class="sec-t" style="color:#22345E;margin-top:8px">✦ 适合探索的侍奉</p><div class="chips navy" id="dMin"></div>
+            <p class="sec-t" style="color:#8A6519">✦ 推荐装备方向</p><div class="chips navy" id="dEq"></div>
+          </div>
+          <div class="veil"><div class="lk">🔒</div><b>潜在盲点 · 适合的侍奉 · 装备方向</b><span>这个角色的完整说明与个性化建议在 AMAS App 中查看</span><button class="gold-btn" onclick="goApp('detail')">打开 App 了解更多</button></div>
+        </div>
       </div>
-      <div class="card dcard">
-        <p class="sec-t" style="color:#22345E">✦ 适合探索的侍奉</p><div class="chips navy" id="dMin"></div>
-        <p class="sec-t" style="color:#8A6519">✦ 推荐装备方向</p><div class="chips navy" id="dEq"></div>
-      </div>
-      <button class="gold-btn" style="width:100%;margin-top:14px" onclick="closeDetail(); startQuiz()">开始测评，发现我的角色</button>
+      <button class="gold-btn" style="width:100%;margin-top:14px" onclick="closeDetail(); startQuiz()">先做快速测评，看看我是不是这个角色</button>
       <p class="disclaimer" style="margin-top:14px" id="disc2"></p>
       </div>
     </div>
@@ -327,7 +399,10 @@ var QS = [
 ];
 var answers = [], currentPri = null;
 
-function show(id){ ['landing','quiz','result','detail'].forEach(function(x){ document.getElementById(x).classList.toggle('hidden', x!==id); }); window.scrollTo(0,0); }
+function show(id){ ['landing','quiz','result','detail'].forEach(function(x){ document.getElementById(x).classList.toggle('hidden', x!==id); }); document.getElementById('stickyCta').classList.toggle('hidden', id!=='result'); window.scrollTo(0,0); }
+// App 入口：同域部署时指向 App 根路径；上架后可改为应用商店 / 通用链接。
+var APP_URL = '/';
+function goApp(src){ try { localStorage.setItem('amas_discover_src', src || ''); } catch(e){} location.href = APP_URL; }
 function startQuiz(){ answers = []; render(); show('quiz'); }
 function exitQuiz(){ show('landing'); }
 function restart(){ startQuiz(); }
@@ -376,9 +451,10 @@ function finish(){
   var ri = document.getElementById('rImg'); ri.src = img(pri.a.k); ri.alt = pri.a.l;
 
   var three = document.getElementById('three'); three.innerHTML = '';
-  [['初步主角色',pri,true],['初步辅助',sec,false],['第三倾向',third,false]].forEach(function(x){
+  [['初步主角色',pri,true],['初步辅助',sec,false],['第三倾向',third,false]].forEach(function(x, i){
     var d = document.createElement('div'); if (x[2]) d.className = 'gold';
-    d.innerHTML = '<div class="tag">'+x[0]+'</div><div class="nm">'+x[1].a.l+'</div><div class="sc">'+x[1].score+'</div><div class="gp">'+GROUPS[x[1].a.g].cn+'</div>';
+    var sc = i === 2 ? '<span style="font-size:11px;color:#8A6519">🔒 App</span>' : x[1].score;
+    d.innerHTML = '<div class="tag">'+x[0]+'</div><div class="nm">'+x[1].a.l+'</div><div class="sc">'+sc+'</div><div class="gp">'+GROUPS[x[1].a.g].cn+'</div>';
     d.onclick = function(){ openDetail(x[1].a.k); };
     three.appendChild(d);
   });
@@ -387,24 +463,34 @@ function finish(){
   var top = sorted.slice(0,2), weak = sorted[sorted.length-1];
   document.getElementById('fuseT').textContent = '✦ 融合分析 · 为什么是「' + pri.a.l + '」';
   document.getElementById('fuseDim').innerHTML = '九维快照中「<b>'+DIM[top[0].k]+'</b>」（'+top[0].v+'）、「<b>'+DIM[top[1].k]+'</b>」（'+top[1].v+'）领先，「'+DIM[weak.k]+'」（'+weak.v+'）偏弱';
-  document.getElementById('fuseC').innerHTML = '综合以上，与你当前最吻合的角色是「<b>'+combined+'</b>」——'+pri.a.core+'。';
+  document.getElementById('fuseC').innerHTML = '综合以上，与你当前最吻合的角色是「<b>'+combined+'</b>」——'+pri.a.core+'。<br/><span style="color:#8A6519">完成 App 内恩赐辨识后，这个结论会被三层证据正式确认或修正。</span>';
 
-  fill('rStr', pri.a.s.concat([sec.a.s[0]]));
-  document.getElementById('rRisk').innerHTML = pri.a.r.slice(0,2).concat([sec.a.r[0]]).map(function(r){ return '<p class="risk">· '+r+'</p>'; }).join('');
-  var mins = []; pri.a.m.concat(sec.a.m).forEach(function(m){ if (mins.indexOf(m)<0) mins.push(m); }); fill('rMin', mins.slice(0,6));
+  // 优势：只展示前 2 项，其余引导进 App
+  var rs = document.getElementById('rStr');
+  rs.innerHTML = pri.a.s.slice(0,2).map(function(x){ return '<span>'+x+'</span>'; }).join('') +
+    '<span class="lockchip" onclick="goApp(\'strengths\')">🔒 还有 ' + (pri.a.s.length - 2 + 1) + ' 项优势 · App 解锁</span>';
 
+  // 锁定区（模糊预览）
+  document.getElementById('rRiskL').innerHTML = pri.a.r.slice(0,2).concat([sec.a.r[0]]).map(function(r){ return '<p class="risk">· '+r+'</p>'; }).join('');
+  var mins = []; pri.a.m.concat(sec.a.m).forEach(function(m){ if (mins.indexOf(m)<0) mins.push(m); }); fill('rMinL', mins.slice(0,6));
+
+  // 九维：仅展示领先的 3 维，其余 6 维模糊
   var avg = Math.round(Object.keys(DIM).reduce(function(t,k){return t+dims[k];},0)/9);
   var stage = avg >= 78 ? ['成长型服事者',3] : avg >= 58 ? ['稳定成长者',2] : ['初信扎根者',1];
   document.getElementById('stageChip').textContent = '✦ ' + stage[0] + ' · LEVEL ' + stage[1] + ' · 综合 ' + avg;
-  var dv = document.getElementById('dims'); dv.innerHTML = '';
-  Object.keys(DIM).forEach(function(k){ var row = document.createElement('div'); row.className = 'dimrow'; row.innerHTML = '<span class="n">'+DIM[k]+'</span><div class="track"><i class="'+(k===weak.k?'weak':'')+'" style="width:'+dims[k]+'%"></i></div><span class="v">'+dims[k]+'</span>'; dv.appendChild(row); });
+  var dv = document.getElementById('dims'), dl = document.getElementById('dimsLocked'); dv.innerHTML = ''; dl.innerHTML = '';
+  sorted.forEach(function(x, i){
+    var row = document.createElement('div'); row.className = 'dimrow';
+    row.innerHTML = '<span class="n">'+DIM[x.k]+'</span><div class="track"><i class="'+(x.k===weak.k?'weak':'')+'" style="width:'+x.v+'%"></i></div><span class="v">'+x.v+'</span>';
+    (i < 3 ? dv : dl).appendChild(row);
+  });
   document.getElementById('adviceT').textContent = '当前装备重点：' + DIM[weak.k] + '（' + weak.v + ' 分）';
-  document.getElementById('advice').textContent = '作为「' + pri.a.l + '」，建议优先补强这一维度。推荐装备方向：' + pri.a.e.slice(0,3).join(' · ') + '。';
+  document.getElementById('advice').textContent = '作为「' + pri.a.l + '」，建议优先补强这一维度。App 会按你的画像生成三阶段装备路径，并匹配对应课程与实践任务。';
   show('result');
 }
 function fill(id, arr){ document.getElementById(id).innerHTML = arr.map(function(s){ return '<span>'+s+'</span>'; }).join(''); }
 
-// 角色详情
+// 角色详情（优势可见；盲点/侍奉/装备方向模糊预览，引导进 App）
 var detailFrom = 'landing';
 function openDetail(k){
   var a = ARCH.filter(function(x){return x.k===k;})[0]; if (!a) return;
@@ -420,6 +506,8 @@ function openDetail(k){
   show('detail');
 }
 function closeDetail(){ show(detailFrom); }
+// 预览用：?demo=1 直接以示例答案进入结果页（便于设计核对）
+if (location.search.indexOf('demo=1') >= 0) { answers = QS.map(function(q, i){ return (i % 2) ? 2 : 3; }); finish(); }
 </script>
 </body>
 </html>
