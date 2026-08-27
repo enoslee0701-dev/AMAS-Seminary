@@ -121,6 +121,60 @@
   .dcard { padding: 14px 16px; margin-top: 10px; }
   .dcard .lab { font-size: 10px; font-weight: 800; letter-spacing: 1.5px; color: #C1A76A; margin-bottom: 4px; }
   .dcard .core { font-size: 14px; font-weight: 800; color: #14295A; line-height: 1.7; }
+  .hero-cards { display: none; }
+  .strip::-webkit-scrollbar { display: none; }
+  .strip { scrollbar-width: none; }
+
+  /* ============ 平板 / 桌面自适应 ============ */
+  @media (min-width: 768px) {
+    body { background: #F1EFEA; background-image: radial-gradient(70% 50% at 50% 0%, rgba(201,154,69,.10), rgba(201,154,69,0) 60%); }
+    .wrap { max-width: 1120px; padding: 0 24px 40px; }
+    .topbar { border-radius: 0 0 18px 18px; }
+
+    /* 着陆页：英雄区横排 + 右侧角色卡扇形展示 */
+    #landing .hero { margin-top: 28px; border-radius: 28px; padding: 64px 64px 56px; display: grid; grid-template-columns: 1.15fr 1fr; align-items: center; gap: 40px; }
+    #landing h1 { font-size: 42px; }
+    #landing .hero p { font-size: 15px; max-width: 520px; }
+    .hero-cards { display: block; position: relative; height: 340px; z-index: 1; }
+    .hero-cards img { position: absolute; width: 190px; border-radius: 16px; box-shadow: 0 22px 44px rgba(0,0,0,.35); border: 1px solid rgba(232,201,140,.35); }
+    .hero-cards img:nth-child(1) { left: 6%; top: 50px; transform: rotate(-9deg); }
+    .hero-cards img:nth-child(2) { left: 32%; top: 10px; z-index: 2; }
+    .hero-cards img:nth-child(3) { left: 58%; top: 50px; transform: rotate(9deg); }
+    .strip { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; overflow: visible; padding: 32px 8px 8px; }
+    .strip img { width: 100%; transition: transform .2s ease, box-shadow .2s ease; }
+    .strip img:hover { transform: translateY(-6px); box-shadow: 0 16px 30px rgba(16,24,40,.16); }
+    .groups span { font-size: 11.5px; padding: 5px 14px; }
+    .note { max-width: 720px; margin: 0 auto; }
+
+    /* 答题：居中窄卡 */
+    #quiz { min-height: auto; }
+    .qbody { max-width: 640px; width: 100%; margin: 0 auto; padding-top: 40px; }
+    .qtext { font-size: 18px; }
+    .opt { font-size: 14.5px; padding: 15px 16px; }
+    .opt:hover { background: #EEF3FF; }
+
+    /* 结果页：双栏 */
+    #result { padding: 28px 0 30px; display: grid; grid-template-columns: 400px 1fr; grid-template-areas: "head head" "body body" "cta cta" "brand brand"; gap: 0 0; }
+    #result .rhead { grid-area: head; border-radius: 22px 22px 0 0; padding: 26px 28px 22px; }
+    #result .rhead h2 { font-size: 32px; }
+    #result .rbody { grid-area: body; display: grid; grid-template-columns: 380px 1fr; gap: 28px; padding: 24px 28px 26px; border-radius: 0 0 22px 22px; }
+    #result .rr { min-width: 0; }
+    #result .cta-deep { grid-area: cta; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 24px; padding: 26px 30px; }
+    #result .cta-deep p { margin-bottom: 0; }
+    #result .cta-deep .gold-btn { width: auto !important; padding: 0 28px; }
+    #result .brand { grid-area: brand; }
+    #result > .gold-btn { display: none; }
+
+    /* 详情页：双栏 */
+    #detail .body { display: grid; grid-template-columns: 420px 1fr; gap: 28px; padding: 28px 0 0; align-items: start; }
+    #detail .dr .dcard:first-child { margin-top: 0; }
+  }
+  @media (min-width: 768px) and (max-width: 1023px) {
+    .strip { grid-template-columns: repeat(4, 1fr); }
+    #landing .hero { grid-template-columns: 1fr; padding: 48px 40px; }
+    .hero-cards { display: none; }
+    #result .rbody, #detail .body { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>
@@ -134,6 +188,11 @@
         <h1>4 分钟，发现你的<br/>基督徒成长角色</h1>
         <p>不是考试，没有对错。10 道题做一次九维快照，看看你在十二大成长角色中最接近哪一个，并获得专属装备建议。</p>
         <button class="gold-btn" onclick="startQuiz()">开始快速测评 →</button>
+      </div>
+      <div class="hero-cards" aria-hidden="true">
+        <img src="/images/archetypes/arch_shepherd.jpg" alt="" />
+        <img src="/images/archetypes/arch_teacher.jpg" alt="" />
+        <img src="/images/archetypes/arch_leader.jpg" alt="" />
       </div>
     </div>
     <div class="strip" id="strip"></div>
@@ -169,8 +228,11 @@
       <p class="decl" id="rDecl"></p>
     </div>
     <div class="rbody">
-      <img class="rimg" id="rImg" alt="" onclick="openDetail(currentPri)" />
-      <div class="three" id="three"></div>
+      <div class="rl">
+        <img class="rimg" id="rImg" alt="" onclick="openDetail(currentPri)" />
+        <div class="three" id="three"></div>
+      </div>
+      <div class="rr">
       <div class="fuse">
         <b class="t" id="fuseT"></b>
         <div class="row"><span style="color:#8A6519">恩赐层</span><span style="color:#B45309">待完成恩赐辨识（当前仅按九维能力初判，App 内可完成）</span></div>
@@ -190,6 +252,7 @@
 
       <button class="gold-btn" style="width:100%" onclick="restart()">重新测一次</button>
       <p class="disclaimer" style="margin-top:12px" id="disc1"></p>
+      </div>
     </div>
     <div class="cta-deep">
       <b>确认你的成长角色</b>
@@ -207,7 +270,8 @@
       <span class="groups" style="padding:0"><span id="dGroup"></span></span>
     </div>
     <div class="body">
-      <img class="rimg" id="dImg" alt="" />
+      <div class="dl"><img class="rimg" id="dImg" alt="" /></div>
+      <div class="dr">
       <div class="card dcard"><div class="lab">CORE MOTIVATION · 核心动机</div><div class="core" id="dCore"></div><p class="disclaimer" id="dQ" style="margin-top:6px"></p></div>
       <div class="card dcard">
         <p class="sec-t" style="color:#137A4F">✦ 常见优势</p><div class="chips green" id="dStr"></div>
@@ -219,6 +283,7 @@
       </div>
       <button class="gold-btn" style="width:100%;margin-top:14px" onclick="closeDetail(); startQuiz()">开始测评，发现我的角色</button>
       <p class="disclaimer" style="margin-top:14px" id="disc2"></p>
+      </div>
     </div>
   </div>
 
