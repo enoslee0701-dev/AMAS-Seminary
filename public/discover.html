@@ -128,6 +128,17 @@
   .dcard { padding: 14px 16px; margin-top: 10px; }
   .dcard .lab { font-size: 10px; font-weight: 800; letter-spacing: 1.5px; color: #C1A76A; margin-bottom: 4px; }
   .dcard .core { font-size: 14px; font-weight: 800; color: #14295A; line-height: 1.7; }
+  .dswitch { margin-top: 12px; padding: 12px 12px 10px; border-radius: 16px; background: #fff; border: 1px solid var(--line); }
+  .dnav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 9px; }
+  .dnav span { font-size: 11px; font-weight: 800; color: #667085; }
+  .dnav button { border: 1px solid #E2E5EB; background: #F8FAFF; color: var(--navy); font-size: 11px; font-weight: 800; border-radius: 999px; padding: 5px 11px; cursor: pointer; }
+  .dnav button:active { transform: scale(.97); }
+  .dgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .dgrid button { border: 1px solid #ECEEF2; border-radius: 10px; padding: 0 0 3px; background: #fff; overflow: hidden; cursor: pointer; text-align: center; }
+  .dgrid button img { width: 100%; display: block; }
+  .dgrid button span { display: block; font-size: 10px; font-weight: 800; color: #475467; padding-top: 3px; }
+  .dgrid button.on { border: 1.5px solid rgba(201,154,69,.7); background: #FBF6EA; }
+  .dgrid button.on span { color: #8A6519; }
   .hero-cards { display: none; }
 
   /* ---- 营销锁定区 ---- */
@@ -208,6 +219,8 @@
     /* 详情页：双栏 */
     #detail .body { display: grid; grid-template-columns: 420px 1fr; gap: 28px; padding: 28px 0 0; align-items: start; }
     #detail .dr .dcard:first-child { margin-top: 0; }
+    .dgrid { grid-template-columns: repeat(6, 1fr); }
+    .dnav span, .dnav button, .dgrid button span { font-size: 12px; }
   }
   /* 桌面：整体放大字号，避免手机尺寸的小字平铺在大屏上 */
   @media (min-width: 1024px) {
@@ -375,7 +388,17 @@
       <span class="groups" style="padding:0"><span id="dGroup"></span></span>
     </div>
     <div class="body">
-      <div class="dl"><img class="rimg" id="dImg" alt="" /></div>
+      <div class="dl">
+        <img class="rimg" id="dImg" alt="" />
+        <div class="dswitch">
+          <div class="dnav">
+            <button onclick="stepDetail(-1)">‹ 上一个</button>
+            <span>切换查看其他角色</span>
+            <button onclick="stepDetail(1)">下一个 ›</button>
+          </div>
+          <div class="dgrid" id="dGrid"></div>
+        </div>
+      </div>
       <div class="dr">
       <div class="card dcard"><div class="lab">CORE MOTIVATION · 核心动机</div><div class="core" id="dCore"></div><p class="disclaimer" id="dQ" style="margin-top:6px"></p></div>
       <div class="card dcard">
@@ -553,11 +576,32 @@ function openDetail(k){
   document.getElementById('dQ').textContent = GROUPS[a.g].q;
   fill('dStr', a.s); document.getElementById('dRisk').innerHTML = a.r.map(function(r){ return '<p class="risk">· '+r+'</p>'; }).join('');
   fill('dMin', a.m); fill('dEq', a.e);
-  show('detail');
+  currentDetail = k;
+  renderDetailGrid();
+  if (document.getElementById('detail').classList.contains('hidden')) show('detail'); else window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+var currentDetail = null;
+function renderDetailGrid(){
+  var g = document.getElementById('dGrid');
+  if (!g.childElementCount) {
+    ARCH.forEach(function(a){
+      var b = document.createElement('button'); b.setAttribute('data-k', a.k);
+      b.innerHTML = '<img src="' + img(a.k) + '" alt="' + a.l + '" loading="lazy" /><span>' + a.l + '</span>';
+      b.onclick = function(){ openDetail(a.k); };
+      g.appendChild(b);
+    });
+  }
+  Array.prototype.forEach.call(g.children, function(b){ b.className = b.getAttribute('data-k') === currentDetail ? 'on' : ''; });
+}
+function stepDetail(dir){
+  var i = ARCH.map(function(a){ return a.k; }).indexOf(currentDetail);
+  openDetail(ARCH[(i + dir + ARCH.length) % ARCH.length].k);
 }
 function closeDetail(){ show(detailFrom); }
 // 预览用：?demo=1 直接以示例答案进入结果页（便于设计核对）
 if (location.search.indexOf('demo=1') >= 0) { answers = QS.map(function(q, i){ return (i % 2) ? 2 : 3; }); finish(); }
+var roleParam = location.search.match(/[?&]role=([a-z]+)/);
+if (roleParam) openDetail(roleParam[1]);
 </script>
 </body>
 </html>
