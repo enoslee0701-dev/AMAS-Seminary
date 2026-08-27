@@ -140,7 +140,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
     { icon: PlayCircle, title: '课程试听', sub: '体验精选课程', view: ViewState.COURSE_TRIAL },
     {
       icon: Sparkles, title: '定制化神学',
-      sub: growthRole ? `你的角色：${growthRole.combined}` : 'AI 为你建立专属装备路径',
+      sub: growthRole ? `你的倾向：${growthRole.combined}` : '6 分钟发现你的事奉倾向',
       view: ViewState.CUSTOM_THEOLOGY,
     },
   ];

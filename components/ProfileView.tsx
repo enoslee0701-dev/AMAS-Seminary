@@ -618,7 +618,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ favoriteCourseIds = [], onLog
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center space-x-2">
               <div className="w-1 h-4 bg-blue-900 rounded-full"></div>
-              <h3 className="font-bold text-slate-800 text-sm">我的成长角色</h3>
+              <h3 className="font-bold text-slate-800 text-sm">我的事奉倾向</h3>
             </div>
             <button onClick={() => go(ViewState.CUSTOM_THEOLOGY)} className="text-[11px] font-bold text-blue-900 flex items-center active:opacity-60">
               {growthRole ? '查看档案' : '开始诊断'}<ChevronRight size={12} />
@@ -643,20 +643,20 @@ const ProfileView: React.FC<ProfileViewProps> = ({ favoriteCourseIds = [], onLog
                       border: `1px solid ${growthRole.prelim ? '#FCD34D' : 'rgba(201,154,69,.4)'}`,
                     }}
                   >
-                    {growthRole.prelim ? '初步判定' : '已确认'}
+                    {growthRole.prelim ? '快速版 · 初步' : '标准版'}
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">{growthRole.primary.core}</p>
                 <p className="text-[10px] text-slate-400 mt-1">
-                  主角色 {growthRole.primary.label} {growthRole.primaryScore} · 辅助 {growthRole.secondary.label}
-                  {growthRole.prelim && ' · 完成恩赐辨识后确认'}
+                  主要倾向 {growthRole.primary.label} {growthRole.primaryScore} · 次要 {growthRole.secondary.label}
+                  {growthRole.prelim && ' · 完成标准版后更新'}
                 </p>
               </div>
             </button>
           ) : (
             <button onClick={() => go(ViewState.CUSTOM_THEOLOGY)} className="w-full text-left flex items-center gap-3 active:opacity-70">
               <div className="w-10 h-10 rounded-xl bg-blue-900 text-amber-200 flex items-center justify-center shrink-0"><Sparkles size={18} /></div>
-              <p className="text-[11px] text-slate-400 leading-relaxed">完成定制化神学的 AI 诊断（约 6–8 分钟），即可发现你在十二大成长角色中的位置。</p>
+              <p className="text-[11px] text-slate-400 leading-relaxed">完成快速事奉画像（30 题 · 约 6 分钟），看看你在 12 项事奉倾向中的组合。</p>
             </button>
           )}
         </div>

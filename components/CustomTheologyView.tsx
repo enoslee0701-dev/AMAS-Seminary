@@ -9,14 +9,18 @@ import { STOCK_PHOTOS } from '../services/stockPhotos';
 import { fetchServerGrowth, scheduleGrowthPush } from '../services/growthSyncService';
 import { submitCooperation } from '../services/cooperationService';
 import {
-  ARCHETYPES_BASE, ARCH_GROUPS, ARCH_DISCLAIMER, archImg, rankArchetypes,
+  ARCHETYPES_BASE, ARCH_GROUPS, ARCH_DISCLAIMER, archImg, archetypeByKey,
   type ArchKey, type ArchGroup, type ArchetypeBase,
 } from '../services/growthArchetypes';
+import ChristianProfileView, { ResultPage } from './ChristianProfileView';
+import { readChristianProfile } from '../services/christianProfile/store';
+import type { ChristianProfile } from '../services/christianProfile/scoring';
+import type { AssessmentLevel } from '../services/christianProfile/items';
 
 /**
  * 定制化神学 — 基督徒成长档案系统（完整版）。
  *
- * 闭环：ASSESS（九维阶梯诊断 + 恩赐辨识）→ PROFILE（成长画像/证据等级）
+ * 闭环：ASSESS（九维阶梯评估 + 恩赐辨识）→ PROFILE（成长画像/证据等级）
  * → RECOMMEND（装备路径/事奉匹配）→ LEARN（课程完成反哺画像分数）
  * → SERVE（服事记录填充证据层 + 事奉申请）→ REASSESS。
  *
@@ -36,7 +40,7 @@ type DimKey =
 interface DimMeta {
   key: DimKey;
   label: string;
-  /** 按分数段的诊断语：<45 / 45-64 / 65-79 / >=80 */
+  /** 按分数段的评估语：<45 / 45-64 / 65-79 / >=80 */
   bands: [string, string, string, string];
   training: string[];
   practice: string;
@@ -243,7 +247,7 @@ const SCENARIOS: Scenario[] = [
 ];
 
 // ============================================================
-// 诊断题库（背景 + 核心五维阶梯 + 单题四维）
+// 评估题库（背景 + 核心五维阶梯 + 单题四维）
 // ============================================================
 
 interface QOption { text: string; score?: number; tier?: number; focus?: DimKey; years?: number; scenario?: string }
@@ -679,7 +683,7 @@ interface GiftsResult {
   completedAt: string;
 }
 
-interface ServiceEntry { gift: GiftKey; role: string; note: string; at: string }
+interface ServiceEntry { gift: string; role: string; note: string; at: string }
 interface Application { role: string; at: string }
 
 interface MinistryRole { name: string; weights: Partial<Record<GiftKey, number>>; desc: string }
@@ -718,9 +722,21 @@ const ARCHETYPES: ArchMeta[] = ARCHETYPES_BASE.map(a => ({ ...a, icon: ARCH_ICON
 
 interface ArchRow { a: ArchMeta; score: number; svc: number }
 
-function computeArchetypes(g: GiftsResult | null, dimScore: (k: DimKey) => number, service: ServiceEntry[]): ArchRow[] {
-  return rankArchetypes(g ? g.scores : null, dimScore, service.map(e => e.gift))
-    .map(r => ({ a: ARCHETYPES.find(x => x.key === r.key)!, score: r.score, svc: r.svc }));
+/** 12 项倾向排序：只来自 Christian Profile 的确定性评分；服事记录仅作证据计数。 */
+function archRowsFromProfile(cp: ChristianProfile, service: ServiceEntry[]): ArchRow[] {
+  return ARCHETYPES
+    .map(a => ({ a, score: cp.ministryOrientation[a.key].normalizedScore, svc: service.filter(e => e.gift === a.key).length }))
+    .sort((x, y) => y.score - x.score);
+}
+
+/** “建议尝试的侍奉”：来自 Top 3 倾向的常见侍奉。 */
+function ministryMatchesFromProfile(cp: ChristianProfile): { name: string; desc: string; pct: number }[] {
+  const out: { name: string; desc: string; pct: number }[] = [];
+  for (const t of cp.topOrientations) {
+    const a = archetypeByKey(t.key);
+    for (const m of a.ministries.slice(0, 2)) if (!out.some(o => o.name === m)) out.push({ name: m, desc: `来自「${a.label}」倾向`, pct: t.score });
+  }
+  return out.slice(0, 4);
 }
 
 const combinedRoleName = (rows: ArchRow[]) => rows[1].a.mod + rows[0].a.label;
@@ -748,13 +764,17 @@ interface CTState {
   gifts?: GiftsResult;
   service?: ServiceEntry[];
   applications?: Application[];
-  /** 角色演变历史（Profile V1 → V2 …），主+辅组合变化时追加。 */
+  /** 倾向组合演变历史，组合变化时追加。 */
   roleHistory?: { combined: string; at: string }[];
+  /** 新版 Christian Profile（由 services/christianProfile 写入，此处仅透传保存） */
+  christianProfile?: ChristianProfile;
+  profileHistory?: unknown[];
+  legacy?: boolean;
 }
 
 const STORAGE_KEY = 'amas_ct_state_v2';
 const loadCT = (): CTState | null => {
-  try { const raw = localStorage.getItem(STORAGE_KEY); const s = raw ? JSON.parse(raw) : null; return s && s.v === 2 ? s : null; } catch { return null; }
+  try { const raw = localStorage.getItem(STORAGE_KEY); const s = raw ? JSON.parse(raw) : null; return s && s.v === 2 && s.scores ? s : null; } catch { return null; }
 };
 const saveCT = (s: CTState) => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); } catch {} };
 
@@ -1027,9 +1047,12 @@ interface DiagSnapshot {
 
 const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, user }) => {
   const [ct, setCt] = useState<CTState | null>(() => loadCT());
-  const [mode, setMode] = useState<'home' | 'quiz' | 'gifts' | 'serve'>('home');
+  const [mode, setMode] = useState<'home' | 'quiz' | 'serve' | 'cp' | 'cpResult'>('home');
+  const [cpLevel, setCpLevel] = useState<AssessmentLevel>('quick');
+  const [cp, setCp] = useState<ChristianProfile | null>(() => readChristianProfile());
+  const openCp = (level: AssessmentLevel) => { setCpLevel(level); setMode('cp'); };
 
-  // ---- 九维诊断状态 ----
+  // ---- 九维评估状态 ----
   const [current, setCurrent] = useState<Question | null>(null);
   const [asked, setAsked] = useState(0);
   const history = useRef<DiagSnapshot[]>([]);
@@ -1108,6 +1131,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
       scores: full, levels: S.levels, completedAt: new Date().toISOString(),
       gifts: prev?.gifts, service: prev?.service, applications: prev?.applications,
       roleHistory: prev?.roleHistory,
+      christianProfile: prev?.christianProfile, profileHistory: prev?.profileHistory, legacy: prev?.legacy,
     };
     saveCT(state); setCt(state); scheduleGrowthPush(state);
     history.current = [];
@@ -1166,62 +1190,13 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
     setAsked(snap.asked);
   };
 
-  // ---- 恩赐辨识状态 ----
-  const [giftIdx, setGiftIdx] = useState(0);
-  const giftAcc = useRef<{ scores: Partial<Record<GiftKey, { t: number; w: number }>>; b: number[] }>({ scores: {}, b: [] });
-  const giftHistory = useRef<{ idx: number; acc: string }[]>([]);
-
-  const startGifts = () => {
-    giftAcc.current = { scores: {}, b: [] };
-    giftHistory.current = [];
-    setGiftIdx(0);
-    setMode('gifts');
-  };
-
-  const answerGift = (optIdx: number) => {
-    const q = GIFT_QUESTIONS[giftIdx];
-    const opt = q.options[optIdx];
-    giftHistory.current.push({ idx: giftIdx, acc: JSON.stringify(giftAcc.current) });
-    const A = giftAcc.current;
-    if (opt.g) for (const [k, v] of Object.entries(opt.g)) {
-      const cur = A.scores[k as GiftKey] ?? { t: 0, w: 0 };
-      A.scores[k as GiftKey] = { t: cur.t + (v as number), w: cur.w + 1 };
-    }
-    if (opt.b !== undefined) A.b.push(opt.b);
-
-    if (giftIdx + 1 < GIFT_QUESTIONS.length) {
-      setGiftIdx(giftIdx + 1);
-    } else {
-      const scores = {} as Record<GiftKey, number>;
-      for (const gm of GIFTS) {
-        const acc = A.scores[gm.key];
-        scores[gm.key] = acc ? Math.round(acc.t / acc.w) : 45;
-      }
-      const behavior = A.b.length ? Math.round(A.b.reduce((a, b) => a + b, 0) / A.b.length) : 0;
-      if (!ct) { setMode('home'); return; }
-      const next: CTState = { ...ct, gifts: { scores, behavior, completedAt: new Date().toISOString() } };
-      saveCT(next); setCt(next); scheduleGrowthPush(next);
-      setMode('home');
-    }
-  };
-
-  const undoGift = () => {
-    const snap = giftHistory.current.pop();
-    if (!snap) return;
-    giftAcc.current = JSON.parse(snap.acc);
-    setGiftIdx(snap.idx);
-  };
-
   // ---- 服事记录（Phase 6 证据层） ----
-  const [serveGift, setServeGift] = useState<GiftKey>('serving');
+  const [serveGift, setServeGift] = useState<string>('servant');
   const [serveRole, setServeRole] = useState('');
   const [serveNote, setServeNote] = useState('');
 
   const openServe = () => {
-    if (ct?.gifts) {
-      const top = GIFTS.map(m => ({ k: m.key, s: ct.gifts!.scores[m.key] })).sort((a, b) => b.s - a.s)[0];
-      setServeGift(top.k);
-    }
+    setServeGift(cp ? cp.topOrientations[0].key : 'servant');
     setServeRole(''); setServeNote('');
     setMode('serve');
   };
@@ -1257,9 +1232,9 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
     }
   };
 
-  // ---- 撤销诊断 / 时间 ----
+  // ---- 撤销评估 / 时间 ----
   const clearDiagnosis = () => {
-    if (!window.confirm('确定撤销本次诊断吗？成长画像与装备路径将被清除，页面恢复到初始状态。')) return;
+    if (!window.confirm('确定撤销本次评估吗？成长画像与装备路径将被清除，页面恢复到初始状态。')) return;
     try { localStorage.removeItem(STORAGE_KEY); } catch {}
     setCt(null);
   };
@@ -1276,8 +1251,8 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
       if (cancelled || !server || server.v !== 2) return;
       setCt(local => {
         if (!local) { saveCT(server); return server; }
-        const lt = Date.parse(local.gifts?.completedAt ?? local.completedAt);
-        const stt = Date.parse(server.gifts?.completedAt ?? server.completedAt);
+        const lt = Date.parse(local.christianProfile?.completedAt ?? local.gifts?.completedAt ?? local.completedAt);
+        const stt = Date.parse(server.christianProfile?.completedAt ?? server.gifts?.completedAt ?? server.completedAt);
         if (stt > lt) { saveCT(server); return server; }
         return local;
       });
@@ -1285,19 +1260,17 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
     return () => { cancelled = true; };
   }, []);
 
-  // ---- 成长角色版本历史：主+辅组合发生变化时追加一条 ----
+  // ---- 倾向组合演变历史：Christian Profile 的 Top 组合变化时追加一条 ----
   const [showAllRoles, setShowAllRoles] = useState(false);
   const [roleDetail, setRoleDetail] = useState<ArchKey | null>(null);
   useEffect(() => {
-    if (!ct?.gifts) return;
-    const { boost } = learningBoost(courses);
-    const rows = computeArchetypes(ct.gifts, k => Math.min(100, ct.scores[k] + boost[k]), ct.service ?? []);
-    const combined = combinedRoleName(rows);
+    if (!cp || !ct) return;
+    const combined = cp.multiBlend ? '多元事奉组合' : cp.combinedLabel;
     const hist = ct.roleHistory ?? [];
     if (hist.length && hist[hist.length - 1].combined === combined) return;
-    const next: CTState = { ...ct, roleHistory: [...hist, { combined, at: new Date().toISOString() }] };
+    const next: CTState = { ...ct, roleHistory: [...hist, { combined, at: cp.completedAt }] };
     saveCT(next); setCt(next); scheduleGrowthPush(next);
-  }, [ct, courses]);
+  }, [cp, ct]);
 
   // ---- 画像派生（含学习反哺） ----
   const derive = (s: CTState) => {
@@ -1358,7 +1331,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
   if (mode === 'quiz' && current) {
     return (
       <QuizShell
-        title="AI 装备诊断"
+        title="信仰基础与装备画像"
         cur={asked}
         total={estTotal}
         question={current.text}
@@ -1385,7 +1358,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
               <ShieldCheck size={16} strokeWidth={1.9} />
             </div>
             <p style={{ margin: 0, fontSize: 11, lineHeight: 1.8, color: '#7A6A45', fontWeight: 500 }}>
-              诊断与建议在 <b style={{ color: '#5C4A1E' }}>AMAS 神学框架</b>内进行，以圣经为最高权威，以学院官方教学为准；涉及争议性神学问题时，将以课程与导师引导为主。诊断结果仅作为装备参考，不构成对个人信仰状态的评判。
+              本评估依据 <b style={{ color: '#5C4A1E' }}>AMAS 神学与门训框架</b>设计，帮助你认识当前的信仰基础、成长状态与装备需要。结果用于成长与装备参考，不作为个人价值、属灵程度或教会任职资格的判断。
             </p>
           </div>
         }
@@ -1393,24 +1366,28 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
     );
   }
 
-  if (mode === 'gifts') {
-    const q = GIFT_QUESTIONS[giftIdx];
+  if (mode === 'cp') {
     return (
-      <QuizShell
-        title="恩赐辨识"
-        cur={giftIdx}
-        total={GIFT_QUESTIONS.length}
-        question={q.text}
-        options={q.options}
-        onPick={answerGift}
-        onUndo={undoGift}
-        canUndo={giftHistory.current.length > 0}
-        onExit={() => setMode('home')}
-        hint={giftIdx === 0 ? '恩赐没有高低之分 · 请按你真实的反应选择，而不是“应该”的答案' : undefined}
+      <ChristianProfileView
+        level={cpLevel}
+        courses={courses}
+        onCourseClick={onCourseClick}
+        onExit={() => { setCp(readChristianProfile()); setCt(loadCT()); setMode('home'); }}
+        onCompleted={p => { setCp(p); setCt(loadCT()); }}
       />
     );
   }
-
+  if (mode === 'cpResult' && cp) {
+    return (
+      <ResultPage
+        p={cp}
+        courses={courses}
+        onCourseClick={onCourseClick}
+        onExit={() => setMode('home')}
+        onRestart={() => openCp(cp.level)}
+      />
+    );
+  }
   // ================= 服事记录 =================
 
   if (mode === 'serve') {
@@ -1424,9 +1401,9 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
         </div>
         <div className="flex-1 overflow-y-auto px-4 py-5">
           <div style={{ ...ctCard, padding: '18px 16px' }}>
-            <p style={{ margin: '0 0 6px', fontSize: 12, fontWeight: 800, color: '#22345E' }}>这次服事主要操练了哪项恩赐？</p>
+            <p style={{ margin: '0 0 6px', fontSize: 12, fontWeight: 800, color: '#22345E' }}>这次服事主要属于哪一项事奉倾向？</p>
             <div className="flex flex-wrap" style={{ gap: 7, marginBottom: 16 }}>
-              {GIFTS.map(g => (
+              {ARCHETYPES.map(g => (
                 <button
                   key={g.key}
                   onClick={() => setServeGift(g.key)}
@@ -1468,7 +1445,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
               保存服事记录
             </button>
             <p style={{ margin: '10px 0 0', fontSize: 10.5, color: '#98A2B3', lineHeight: '16px' }}>
-              服事记录会填充恩赐的「实际服事」证据层，并解锁档案的服事验证模块。导师/同工的正式评价功能将在教会后台开通后加入。
+              服事记录会成为 Christian Profile 的实践证据（Evidence），并解锁档案的服事验证模块。导师/同工的正式反馈功能将在教会后台开通后加入。
             </p>
           </div>
         </div>
@@ -1483,10 +1460,9 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
     const grp = ARCH_GROUPS.find(x => x.key === a.group)!;
     let myScore: number | null = null;
     let myRank = 0;
-    const detailPrelim = !!ct && !ct.gifts;
-    if (ct) {
-      const { boost } = learningBoost(courses);
-      const rows = computeArchetypes(ct.gifts ?? null, k => Math.min(100, ct.scores[k] + boost[k]), ct.service ?? []);
+    const detailPrelim = !!cp && cp.level === 'quick';
+    if (cp) {
+      const rows = archRowsFromProfile(cp, ct?.service ?? []);
       myRank = rows.findIndex(r => r.a.key === a.key) + 1;
       myScore = rows[myRank - 1].score;
     }
@@ -1497,7 +1473,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
           <button onClick={() => setRoleDetail(null)} aria-label="返回" className="p-1 -ml-2 rounded-full hover:bg-slate-100 transition">
             <ChevronLeft size={24} className="text-slate-900" />
           </button>
-          <p className="ml-2" style={{ margin: 0, fontSize: 15, fontWeight: 800, color: '#1F2A37' }}>{num} {a.label} · 角色详情</p>
+          <p className="ml-2" style={{ margin: 0, fontSize: 15, fontWeight: 800, color: '#1F2A37' }}>{num} {a.label} · 倾向说明</p>
           <span className="ml-auto" style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '1px', color: '#8A6519', background: '#FBF6EA', border: '1px solid rgba(201,154,69,.28)', borderRadius: 999, padding: '3px 9px' }}>
             {grp.en} · {grp.cn}
           </span>
@@ -1513,10 +1489,10 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
             <div className="flex items-center" style={{ gap: 10, marginTop: 12, padding: '11px 14px', background: 'linear-gradient(160deg, #0B2450 0%, #071A3C 100%)', borderRadius: 14, border: '1px solid rgba(232,201,140,.22)' }}>
               <Sparkles size={15} color="#F2D493" className="shrink-0" />
               <p style={{ margin: 0, fontSize: 12, color: 'rgba(233,238,248,.92)', lineHeight: 1.7 }}>
-                你在此角色的当前得分 <b style={{ color: '#F2D493', fontSize: 14 }}>{myScore}</b>，
-                位列你 12 个角色中的第 <b style={{ color: '#F2D493' }}>{myRank}</b> 位
-                {myRank === 1 ? '——这是你的主角色。' : myRank === 2 ? '——这是你的辅助角色。' : '。'}
-                {detailPrelim && '（初步判定，完成恩赐辨识后确认）'}
+                你在这一维度的当前指数 <b style={{ color: '#F2D493', fontSize: 14 }}>{myScore}</b>，
+                在你 12 项倾向中排第 <b style={{ color: '#F2D493' }}>{myRank}</b> 位
+                {myRank === 1 ? '——这是你目前最明显的倾向。' : myRank === 2 ? '——这是你的次要倾向。' : '。'}
+                {detailPrelim && '（快速版初步画像，完成标准 Christian Profile 后更新）'}
               </p>
             </div>
           )}
@@ -1555,13 +1531,13 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
             </div>
           </div>
 
-          {(!ct || !ct.gifts) && (
+          {!cp && (
             <button
-              onClick={() => { setRoleDetail(null); if (!ct) startQuiz(); else startGifts(); }}
+              onClick={() => { setRoleDetail(null); openCp('quick'); }}
               className="w-full active:scale-[0.98] transition"
               style={{ ...goldBtn, justifyContent: 'center', marginTop: 14 }}
             >
-              {!ct ? '开始 AI 诊断，发现我的成长角色' : '完成恩赐辨识，解锁我的成长角色'}
+              完成快速事奉画像（约 6 分钟），看看这一维度在你身上的表现
               <ChevronRight size={15} strokeWidth={2.6} />
             </button>
           )}
@@ -1642,13 +1618,79 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
               认识你，才能装备你
             </h1>
             <p style={{ margin: '0 0 14px', maxWidth: 232, fontSize: 12, lineHeight: 1.75, color: 'rgba(233,238,248,.9)', fontWeight: 500 }}>
-              AI 透过对话诊断你的装备程度，为你生成专属成长路径。
+              认识你的信仰基础、成长状态、事奉倾向与下一步装备方向。
             </p>
             <button onClick={startQuiz} className="active:scale-95 transition-transform" style={{ ...goldBtn, height: 38, fontSize: 12.5 }}>
-              {ct ? '重新进行 AI 诊断' : '开始 AI 诊断（约 6–8 分钟）'}
+              {ct ? '重新进行信仰基础评估' : '信仰基础与装备画像（约 6–8 分钟）'}
               <ChevronRight size={14} strokeWidth={2.6} />
             </button>
           </div>
+        </section>
+
+        {/* ===== Christian Profile：12 项事奉倾向（由确定性评分引擎驱动） ===== */}
+        <section style={{ marginTop: 22 }}>
+          <SectionEyebrow title="我的 Christian Profile" en="Christian Profile" />
+          {cp ? (() => {
+            const rows = archRowsFromProfile(cp, ct?.service ?? []);
+            const pri = rows[0];
+            return (
+              <div style={{ ...ctCard, overflow: 'hidden' }}>
+                <div style={{ padding: '16px 16px 14px', color: '#FFF', background: 'radial-gradient(90% 120% at 12% 0%, rgba(240,205,135,.16) 0%, rgba(240,205,135,0) 42%), linear-gradient(160deg, #0B2450 0%, #071A3C 100%)' }}>
+                  <div className="flex items-center" style={{ gap: 8, marginBottom: 6 }}>
+                    <p style={{ margin: 0, fontSize: 9.5, fontWeight: 800, letterSpacing: '2px', color: 'rgba(232,201,140,.9)' }}>MINISTRY ORIENTATION</p>
+                    <span style={{ fontSize: 9, fontWeight: 800, color: '#F2D493', border: '1px solid rgba(242,212,147,.5)', borderRadius: 999, padding: '2px 8px' }}>{cp.level === 'quick' ? '快速版 · 初步' : '标准版'}</span>
+                  </div>
+                  <h3 style={{ margin: '0 0 6px', fontSize: 22, fontWeight: 900, letterSpacing: '1px', background: 'linear-gradient(180deg, #F7E3B4 10%, #E4BC6E 90%)', WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                    {cp.multiBlend ? '多元事奉组合' : cp.combinedLabel}
+                  </h3>
+                  <p style={{ margin: 0, fontSize: 12, lineHeight: 1.8, color: 'rgba(233,238,248,.9)' }}>
+                    {cp.multiBlend ? '你的前三项倾向非常接近，目前呈现多元化的事奉组合。' : `你目前呈现较明显的「${pri.a.label}」倾向：${pri.a.core}。`}
+                  </p>
+                </div>
+                <div style={{ padding: '12px 16px 14px' }}>
+                  <div className="grid grid-cols-3" style={{ gap: 8 }}>
+                    {rows.slice(0, 3).map((r, i) => (
+                      <div key={r.a.key} onClick={() => setRoleDetail(r.a.key)} style={{ cursor: 'pointer', textAlign: 'center', borderRadius: 13, padding: 6, background: i === 0 ? '#FBF6EA' : '#F8FAFC', border: i === 0 ? '1.2px solid rgba(201,154,69,.45)' : '1px solid #EDF0F4' }}>
+                        <img src={archImg(r.a.key)} alt={r.a.label} loading="lazy" style={{ width: '100%', borderRadius: 9, display: 'block' }} />
+                        <p style={{ margin: '5px 0 0', fontSize: 9, fontWeight: 800, letterSpacing: '1px', color: i === 0 ? '#C99A45' : '#98A2B3' }}>{['PRIMARY', 'SECONDARY', 'SUPPORTING'][i]}</p>
+                        <p style={{ margin: 0, fontSize: 12.5, fontWeight: 900, color: '#1F2A37' }}>{r.a.label}</p>
+                        <p style={{ margin: 0, fontSize: 15, fontWeight: 900, color: i === 0 ? '#C99A45' : '#04285F' }}>{r.score}</p>
+                      </div>
+                    ))}
+                  </div>
+                  {cp.orientationReadiness && (
+                    <p style={{ margin: '10px 0 0', fontSize: 11.5, color: '#14295A', lineHeight: 1.7, padding: '9px 11px', background: '#F6F8FD', border: '1px solid #E2E8F4', borderRadius: 11 }}>
+                      {cp.orientationReadiness.text}
+                    </p>
+                  )}
+                  <div className="flex" style={{ gap: 8, marginTop: 12 }}>
+                    <button onClick={() => setMode('cpResult')} className="flex-1 active:scale-[0.98] transition" style={{ ...goldBtn, height: 40, fontSize: 12.5, justifyContent: 'center' }}>查看完整结果</button>
+                    <button onClick={() => openCp(cp.level === 'quick' ? 'standard' : 'standard')} className="flex-1 active:scale-[0.98] transition" style={{ height: 40, borderRadius: 999, border: '1px solid rgba(4,40,95,.3)', background: '#F8FAFF', color: '#04285F', fontSize: 12.5, fontWeight: 800 }}>
+                      {cp.level === 'quick' ? '完成标准版（84 题）' : '重新评估'}
+                    </button>
+                  </div>
+                  <p style={{ margin: '10px 0 0', fontSize: 10, color: '#98A2B3', lineHeight: '16px' }}>{ARCH_DISCLAIMER}</p>
+                </div>
+              </div>
+            );
+          })() : (
+            <div style={{ ...ctCard, padding: '16px 16px 14px' }}>
+              <div className="flex items-center" style={{ gap: 8, marginBottom: 4 }}>
+                <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '1.5px', color: '#C99A45' }}>DEVELOPMENT EDITION</span>
+              </div>
+              <p style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 900, color: '#14295A' }}>发现你的 12 项事奉倾向</p>
+              <p style={{ margin: '0 0 12px', fontSize: 11.5, lineHeight: 1.7, color: '#667085' }}>
+                四层分开测量：信仰基础 · 门徒生命 · 事奉倾向 · 事奉准备度。结果是发展性参考，不是身份标签。
+              </p>
+              <button onClick={() => openCp('quick')} className="w-full active:scale-[0.98] transition" style={{ ...goldBtn, width: '100%', justifyContent: 'center', height: 42 }}>
+                快速事奉画像 · 30 题 · 约 6 分钟 <ChevronRight size={14} strokeWidth={2.6} />
+              </button>
+              <button onClick={() => openCp('standard')} className="w-full active:scale-[0.98] transition" style={{ width: '100%', marginTop: 8, height: 42, borderRadius: 999, border: '1px solid rgba(4,40,95,.3)', background: '#F8FAFF', color: '#04285F', fontSize: 13, fontWeight: 800 }}>
+                标准 Christian Profile · 84 题 · 约 15–20 分钟
+              </button>
+              <p style={{ margin: '10px 0 0', fontSize: 10, color: '#98A2B3', textAlign: 'center' }}>每题自动保存 · 可随时退出继续 · 不显示题号压力，按 6 个阶段进行</p>
+            </div>
+          )}
         </section>
 
         {ct && portrait && (
@@ -1660,19 +1702,19 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                 {(() => {
                   const hasLearn = portrait.learnedCount > 0;
                   const hasServe = (ct.service?.length ?? 0) > 0;
-                  const pct = 15 + 35 + (ct.gifts ? 20 : 0) + (hasLearn ? 15 : 0) + (hasServe ? 15 : 0);
+                  const pct = 15 + 35 + (cp ? 20 : 0) + (hasLearn ? 15 : 0) + (hasServe ? 15 : 0);
                   const rows: { t: string; done?: boolean; sub?: string; action?: () => void; actionText?: string }[] = [
                     { t: '背景与处境', done: true },
-                    { t: '神学九维画像', done: true },
-                    ct.gifts
-                      ? { t: '恩赐辨识', done: true }
-                      : { t: '恩赐辨识', action: startGifts, actionText: '开始（约 4 分钟）' },
+                    { t: '信仰基础与装备画像（九维）', done: true },
+                    cp
+                      ? { t: 'Christian Profile（事奉倾向）', done: true, sub: cp.level === 'quick' ? '快速版 · 可升级为标准版' : '标准版' }
+                      : { t: 'Christian Profile（事奉倾向）', action: () => openCp('quick'), actionText: '开始（约 6 分钟）' },
                     hasLearn
                       ? { t: '学习佐证', done: true, sub: `已计入 ${portrait.learnedCount} 门完成课程` }
                       : { t: '学习佐证', sub: '完成任一门装备路径课程后自动计入' },
                     hasServe
                       ? { t: '服事验证', done: true, sub: `${ct.service!.length} 条服事记录` }
-                      : { t: '服事验证', action: ct.gifts ? openServe : undefined, actionText: '记录服事', sub: ct.gifts ? undefined : '先完成恩赐辨识' },
+                      : { t: '服事验证', action: cp ? openServe : undefined, actionText: '记录服事', sub: cp ? undefined : '先完成 Christian Profile' },
                   ];
                   return (
                     <>
@@ -1722,17 +1764,17 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                     <Sparkles size={9} /> {portrait.stage.name} · LEVEL {portrait.stage.level} · 综合 {portrait.avg}
                   </span>
                   <div className="flex items-center">
-                    <button onClick={startQuiz} aria-label="重新诊断" title="重新诊断" className="p-2 rounded-full text-slate-300 hover:text-slate-500 transition">
+                    <button onClick={startQuiz} aria-label="重新评估" title="重新评估" className="p-2 rounded-full text-slate-300 hover:text-slate-500 transition">
                       <RefreshCw size={14} />
                     </button>
-                    <button onClick={clearDiagnosis} aria-label="撤销诊断" title="撤销诊断" className="p-2 rounded-full text-slate-300 hover:text-rose-500 transition">
+                    <button onClick={clearDiagnosis} aria-label="撤销评估" title="撤销评估" className="p-2 rounded-full text-slate-300 hover:text-rose-500 transition">
                       <Trash2 size={14} />
                     </button>
                   </div>
                 </div>
                 <p style={{ margin: '8px 0 2px', fontSize: 11.5, color: '#667085' }}>{portrait.stage.desc}</p>
                 <p style={{ margin: '0 0 4px', fontSize: 10, color: '#B6BDC9' }}>
-                  诊断于 {fmtTime(ct.completedAt)} · 可随时重新诊断或撤销
+                  评估于 {fmtTime(ct.completedAt)} · 可随时重新评估或撤销
                   {portrait.learnedCount > 0 && ` · 已计入 ${portrait.learnedCount} 门完成课程的学习佐证（分数右侧 ↑）`}
                 </p>
                 <div className="flex justify-center" style={{ margin: '2px 0 6px' }}>
@@ -1763,294 +1805,6 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                 </div>
               </div>
             </section>
-
-            {/* ===== 成长角色：测评与 12 角色的最终融合分析 ===== */}
-            {(() => {
-              const g = ct.gifts ?? null;
-              const rows = computeArchetypes(g, k => portrait.entries.find(e => e.meta.key === k)!.score, ct.service ?? []);
-              const [pri, sec, third] = rows;
-              const combined = combinedRoleName(rows);
-              const prelim = !g;
-              const groupCn = (gk: ArchGroup) => ARCH_GROUPS.find(x => x.key === gk)!.cn;
-              const equipDim = (Object.keys(pri.a.dims) as DimKey[])
-                .map(k => portrait.entries.find(e => e.meta.key === k)!)
-                .sort((a, b) => a.score - b.score)[0];
-              const topGifts = g ? GIFTS.map(m => ({ m, s: g.scores[m.key] })).sort((a, b) => b.s - a.s).slice(0, 2) : [];
-              const topDims = [...portrait.entries].sort((a, b) => b.score - a.score).slice(0, 2);
-              const weakDim = [...portrait.entries].sort((a, b) => a.score - b.score)[0];
-              const svcCount = ct.service?.length ?? 0;
-              const evid = [
-                { t: '自我评估（恩赐测评）', ok: !!g },
-                { t: '行为佐证（情境题）', ok: !!g && g.behavior > 0 },
-                { t: '神学能力（九维诊断）', ok: true },
-                { t: '课程表现（完成课程）', ok: portrait.learnedCount > 0 },
-                { t: '实际服事（服事记录）', ok: pri.svc >= 1 },
-                { t: '导师/同工反馈', ok: false, note: '规划中' },
-              ];
-              const okCount = evid.filter(x => x.ok).length;
-              const conf = prelim ? '初步' : okCount >= 5 ? '高' : okCount >= 4 ? '较高' : okCount >= 3 ? '中等' : '初步';
-              const hist = ct.roleHistory ?? [];
-              return (
-                <section style={{ marginTop: 26 }}>
-                  <SectionEyebrow title="我的成长角色" en="Growth Archetype" />
-                  <div style={{ ...ctCard, overflow: 'hidden' }}>
-                    {/* 角色头部 */}
-                    <div
-                      style={{
-                        padding: '18px 16px 16px', color: '#FFF',
-                        background:
-                          'radial-gradient(90% 120% at 12% 0%, rgba(240,205,135,.16) 0%, rgba(240,205,135,0) 42%), linear-gradient(160deg, #0B2450 0%, #071A3C 100%)',
-                      }}
-                    >
-                      <div className="flex items-center" style={{ gap: 8, marginBottom: 6 }}>
-                        <p style={{ margin: 0, fontSize: 9.5, fontWeight: 800, letterSpacing: '2px', color: 'rgba(232,201,140,.9)' }}>
-                          CHRISTIAN GROWTH ARCHETYPE
-                        </p>
-                        {prelim && (
-                          <span style={{ fontSize: 9, fontWeight: 800, color: '#F2D493', border: '1px solid rgba(242,212,147,.5)', borderRadius: 999, padding: '2px 8px' }}>
-                            初步判定
-                          </span>
-                        )}
-                      </div>
-                      <h3
-                        style={{
-                          margin: '0 0 3px', fontSize: 23, fontWeight: 900, letterSpacing: '1px',
-                          background: 'linear-gradient(180deg, #F7E3B4 10%, #E4BC6E 90%)',
-                          WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent',
-                        }}
-                      >
-                        {combined}
-                      </h3>
-                      <p style={{ margin: '0 0 10px', fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 11, fontWeight: 700, letterSpacing: '2px', color: 'rgba(233,238,248,.6)', textTransform: 'uppercase' }}>
-                        The {pri.a.en} – {sec.a.en}
-                      </p>
-                      <p style={{ margin: 0, fontSize: 12, lineHeight: 1.8, color: 'rgba(233,238,248,.9)' }}>
-                        你倾向于{pri.a.core}；同时也乐于{sec.a.core}。
-                      </p>
-                    </div>
-
-                    <div style={{ padding: '14px 16px 13px' }}>
-                      {/* 初判提示 + 确认 CTA */}
-                      {prelim && (
-                        <div style={{ marginBottom: 13, padding: '11px 13px', background: '#FFFBEB', border: '1px solid #FCD34D', borderRadius: 13 }}>
-                          <p style={{ margin: '0 0 8px', fontSize: 11.5, color: '#78350F', lineHeight: 1.7 }}>
-                            这是根据你的<b>九维能力画像</b>做出的初步角色判定。完成恩赐辨识后，系统会把「恩赐倾向 62% + 能力画像 38%」融合计算，正式确认你的成长角色。
-                          </p>
-                          <button onClick={startGifts} className="active:scale-[0.98] transition" style={{ ...goldBtn, height: 38, fontSize: 12.5, width: '100%', justifyContent: 'center' }}>
-                            完成恩赐辨识，确认我的成长角色（约 4 分钟）
-                            <ChevronRight size={14} strokeWidth={2.6} />
-                          </button>
-                        </div>
-                      )}
-
-                      {/* 角色 IP 卡 */}
-                      {prelim ? (
-                        <div className="relative active:scale-[0.99] transition-transform" style={{ cursor: 'pointer', marginBottom: 13 }} onClick={() => setRoleDetail(pri.a.key)}>
-                          <img
-                            src={archImg(pri.a.key)}
-                            alt={pri.a.label}
-                            loading="lazy"
-                            style={{ width: '100%', borderRadius: 14, border: '1.5px solid rgba(201,154,69,.55)', boxShadow: '0 4px 12px rgba(16,24,40,.08)' }}
-                          />
-                          <span className="absolute" style={{ top: 8, left: 8, fontSize: 9.5, fontWeight: 800, color: '#8A6519', background: 'rgba(251,246,234,.95)', border: '1px solid rgba(201,154,69,.5)', borderRadius: 999, padding: '2px 9px' }}>
-                            初步主角色 · 点击看详情
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="grid grid-cols-2" style={{ gap: 8, marginBottom: 13 }}>
-                          {[pri, sec].map((r, i) => (
-                            <div key={r.a.key} className="relative active:scale-[0.98] transition-transform" style={{ cursor: 'pointer' }} onClick={() => setRoleDetail(r.a.key)}>
-                              <img
-                                src={archImg(r.a.key)}
-                                alt={r.a.label}
-                                loading="lazy"
-                                style={{
-                                  width: '100%', borderRadius: 13,
-                                  border: i === 0 ? '1.5px solid rgba(201,154,69,.55)' : '1px solid rgba(20,40,90,0.10)',
-                                  boxShadow: '0 4px 12px rgba(16,24,40,.08)',
-                                }}
-                              />
-                              <span
-                                className="absolute"
-                                style={{
-                                  top: 7, left: 7, fontSize: 9, fontWeight: 800, letterSpacing: '0.5px',
-                                  color: i === 0 ? '#8A6519' : '#33456F',
-                                  background: i === 0 ? 'rgba(251,246,234,.95)' : 'rgba(255,255,255,.92)',
-                                  border: i === 0 ? '1px solid rgba(201,154,69,.5)' : '1px solid rgba(20,40,90,.14)',
-                                  borderRadius: 999, padding: '2px 8px',
-                                }}
-                              >
-                                {i === 0 ? '主角色' : '辅助角色'}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* 主 / 辅 / 第三 */}
-                      <div className="grid grid-cols-3" style={{ gap: 8, marginBottom: 13 }}>
-                        {[
-                          { tag: prelim ? '初步主角色' : '主角色', r: pri, gold: true },
-                          { tag: prelim ? '初步辅助' : '辅助角色', r: sec, gold: false },
-                          { tag: '第三倾向', r: third, gold: false },
-                        ].map(({ tag, r, gold }) => (
-                          <div
-                            key={r.a.key}
-                            onClick={() => setRoleDetail(r.a.key)}
-                            style={{
-                              textAlign: 'center', borderRadius: 13, padding: '10px 6px 9px', cursor: 'pointer',
-                              background: gold ? '#FBF6EA' : '#F8FAFC',
-                              border: gold ? '1.2px solid rgba(201,154,69,.45)' : '1px solid #EDF0F4',
-                            }}
-                          >
-                            <p style={{ margin: '0 0 3px', fontSize: 9, fontWeight: 800, letterSpacing: '1px', color: gold ? '#C99A45' : '#98A2B3' }}>{tag}</p>
-                            <div className="flex items-center justify-center" style={{ gap: 4, color: gold ? '#8A6519' : '#22345E' }}>
-                              {r.a.icon}
-                              <span style={{ fontSize: 13, fontWeight: 900, color: '#1F2A37' }}>{r.a.label}</span>
-                            </div>
-                            <p style={{ margin: '3px 0 0', fontSize: 15, fontWeight: 900, color: gold ? '#C99A45' : '#04285F' }}>{r.score}</p>
-                            <p style={{ margin: '1px 0 0', fontSize: 9, fontWeight: 700, color: '#B6BDC9' }}>{groupCn(r.a.group)}</p>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* 融合分析：为什么是这个角色 */}
-                      <div style={{ marginBottom: 13, padding: '12px 13px', background: '#F6F8FD', border: '1px solid #E2E8F4', borderRadius: 13 }}>
-                        <p style={{ margin: '0 0 7px', fontSize: 11.5, fontWeight: 900, color: '#14295A' }}>✦ 融合分析 · 为什么是「{pri.a.label}」</p>
-                        <div className="grid" style={{ gridTemplateColumns: '52px 1fr', rowGap: 6 }}>
-                          <span style={{ fontSize: 10.5, fontWeight: 800, color: '#8A6519' }}>恩赐层</span>
-                          <span style={{ fontSize: 11.5, color: '#475467', lineHeight: 1.65 }}>
-                            {g
-                              ? <>你的「<b>{topGifts[0].m.label}</b>」（{topGifts[0].s}）与「<b>{topGifts[1].m.label}</b>」（{topGifts[1].s}）最为突出</>
-                              : <span style={{ color: '#B45309' }}>待完成恩赐辨识（当前仅按能力画像初判）</span>}
-                          </span>
-                          <span style={{ fontSize: 10.5, fontWeight: 800, color: '#17397E' }}>能力层</span>
-                          <span style={{ fontSize: 11.5, color: '#475467', lineHeight: 1.65 }}>
-                            九维画像中「<b>{topDims[0].meta.label}</b>」（{topDims[0].score}）、「<b>{topDims[1].meta.label}</b>」（{topDims[1].score}）领先，「{weakDim.meta.label}」（{weakDim.score}）偏弱
-                          </span>
-                          <span style={{ fontSize: 10.5, fontWeight: 800, color: '#137A4F' }}>服事层</span>
-                          <span style={{ fontSize: 11.5, color: '#475467', lineHeight: 1.65 }}>
-                            {svcCount > 0 ? <>已有 <b>{svcCount}</b> 条服事记录印证（其中 {pri.svc} 条与主角色相关）</> : '待验证 · 记录实际服事可提升角色确认度'}
-                          </span>
-                        </div>
-                        <p style={{ margin: '9px 0 0', paddingTop: 8, borderTop: '1px dashed #DDE4F0', fontSize: 11.5, color: '#14295A', lineHeight: 1.7 }}>
-                          综合以上，与你当前最吻合的角色是「<b>{combined}</b>」——{pri.a.core}。
-                        </p>
-                      </div>
-
-                      {/* 优势 / 风险 */}
-                      <p style={{ margin: '0 0 5px', fontSize: 11, fontWeight: 800, color: '#137A4F' }}>✦ 当前优势</p>
-                      <div className="flex flex-wrap" style={{ gap: 6, marginBottom: 11 }}>
-                        {[...pri.a.strengths, sec.a.strengths[0]].map(s => (
-                          <span key={s} style={{ fontSize: 11, fontWeight: 700, color: '#0F5138', background: '#EDFAF3', border: '1px solid #C7EDDA', borderRadius: 999, padding: '3px 10px' }}>{s}</span>
-                        ))}
-                      </div>
-                      <p style={{ margin: '0 0 5px', fontSize: 11, fontWeight: 800, color: '#B42318' }}>✦ 当前成长风险</p>
-                      {[...pri.a.risks.slice(0, 2), sec.a.risks[0]].map(r => (
-                        <p key={r} style={{ margin: '0 0 3px', fontSize: 12, color: '#475467', lineHeight: '18px' }}>· {r}</p>
-                      ))}
-
-                      {/* 推荐侍奉 */}
-                      <p style={{ margin: '11px 0 5px', fontSize: 11, fontWeight: 800, color: '#22345E' }}>✦ 推荐探索的侍奉</p>
-                      <div className="flex flex-wrap" style={{ gap: 6, marginBottom: 12 }}>
-                        {[...new Set([...pri.a.ministries, ...sec.a.ministries])].slice(0, 6).map(m => (
-                          <span key={m} style={{ fontSize: 11, fontWeight: 700, color: '#04285F', background: '#F8FAFF', border: '1px solid rgba(4,40,95,.22)', borderRadius: 999, padding: '3px 10px' }}>{m}</span>
-                        ))}
-                      </div>
-
-                      {/* 装备重点 */}
-                      <div className="flex items-center" style={{ gap: 10, padding: '10px 12px', background: '#FBF6EA', border: '1px solid rgba(201,154,69,.25)', borderRadius: 12, marginBottom: 12 }}>
-                        <Target size={15} color="#A9812F" className="shrink-0" />
-                        <div className="flex-1">
-                          <p style={{ margin: 0, fontSize: 11, fontWeight: 800, color: '#5C4A1E' }}>当前装备重点：{equipDim.meta.label}（{equipDim.score} 分）</p>
-                          <p style={{ margin: '1px 0 0', fontSize: 10, color: '#7A6A45' }}>建议方向：{pri.a.equip.slice(0, 3).join(' · ')}</p>
-                        </div>
-                        {equipDim.meta.courseIds.map(id => courseById(id)).filter(Boolean).slice(0, 1).map(c => (
-                          <button
-                            key={c!.id}
-                            onClick={() => onCourseClick(c!.id)}
-                            className="shrink-0 active:scale-95 transition"
-                            style={{ fontSize: 10.5, fontWeight: 800, color: '#04285F', border: '1px solid rgba(4,40,95,.3)', borderRadius: 999, padding: '4px 10px', background: '#FFF' }}
-                          >
-                            去学习
-                          </button>
-                        ))}
-                      </div>
-
-                      {/* 确认度 */}
-                      <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
-                        <span style={{ fontSize: 11.5, fontWeight: 800, color: '#22345E' }}>角色确认度</span>
-                        <span style={{ fontSize: 11.5, fontWeight: 900, color: okCount >= 4 ? '#137A4F' : '#C99A45' }}>{conf}（{okCount}/6 项证据）</span>
-                      </div>
-                      <div className="grid grid-cols-2" style={{ gap: '3px 10px', marginBottom: 11 }}>
-                        {evid.map(e => (
-                          <span key={e.t} style={{ fontSize: 10.5, color: e.ok ? '#137A4F' : '#B6BDC9', fontWeight: 600 }}>
-                            {e.ok ? '✓' : '✗'} {e.t}{e.note ? `（${e.note}）` : ''}
-                          </span>
-                        ))}
-                      </div>
-
-                      {/* 角色演变 */}
-                      {!prelim && hist.length > 1 && (
-                        <p style={{ margin: '0 0 10px', fontSize: 10.5, color: '#98A2B3', lineHeight: '17px' }}>
-                          角色演变：{hist.slice(-3).map((h, i) => `V${Math.max(1, hist.length - Math.min(3, hist.length)) + i} ${h.combined}`).join(' → ')}
-                          　—— 角色会随生命阶段与服事演变，这是成长的记号而非测评失误。
-                        </p>
-                      )}
-
-                      {/* 全部 12 角色 */}
-                      <button
-                        onClick={() => setShowAllRoles(v => !v)}
-                        className="w-full flex items-center justify-center active:scale-[0.99] transition"
-                        style={{ gap: 5, fontSize: 11.5, fontWeight: 800, color: '#667085', border: '1px dashed #DDE1E8', borderRadius: 11, padding: '8px 0', background: '#FAFBFC' }}
-                      >
-                        查看全部 12 个成长角色
-                        <ChevronDown size={13} style={{ transform: showAllRoles ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }} />
-                      </button>
-                      {showAllRoles && (
-                        <div style={{ marginTop: 10 }}>
-                          {ARCH_GROUPS.map(grp => (
-                            <div key={grp.key} style={{ marginBottom: 9 }}>
-                              <p style={{ margin: '0 0 5px', fontSize: 10.5, fontWeight: 800, color: '#8A6519' }}>{grp.en} · {grp.cn}</p>
-                              <div className="grid grid-cols-3" style={{ gap: 7 }}>
-                                {rows.filter(r => r.a.group === grp.key).map(r => (
-                                  <div key={r.a.key} className="relative active:scale-[0.97] transition-transform" style={{ cursor: 'pointer' }} onClick={() => setRoleDetail(r.a.key)}>
-                                    <img
-                                      src={archImg(r.a.key)}
-                                      alt={r.a.label}
-                                      loading="lazy"
-                                      style={{
-                                        width: '100%', borderRadius: 10,
-                                        border: r.a.key === pri.a.key ? '1.5px solid rgba(201,154,69,.6)' : '1px solid #ECEEF2',
-                                      }}
-                                    />
-                                    <span
-                                      className="absolute"
-                                      style={{
-                                        right: 4, bottom: 4, fontSize: 9.5, fontWeight: 900,
-                                        color: r.a.key === pri.a.key ? '#8A6519' : '#33456F',
-                                        background: 'rgba(255,255,255,.94)', borderRadius: 999, padding: '1px 7px',
-                                        border: '1px solid rgba(20,40,90,.12)',
-                                      }}
-                                    >
-                                      {r.score}
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      <p style={{ margin: '11px 0 0', fontSize: 10, color: '#98A2B3', lineHeight: '16px' }}>
-                        {ARCH_DISCLAIMER}
-                      </p>
-                    </div>
-                  </div>
-                </section>
-              );
-            })()}
 
             {/* ===== 风险提示 ===== */}
             {portrait.risks.length > 0 && (
@@ -2100,59 +1854,13 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
               </section>
             )}
 
-            {/* ===== 恩赐辨识 ===== */}
-            {ct.gifts && (() => {
-              const g = ct.gifts!;
-              const top = GIFTS.map(m => ({ m, s: g.scores[m.key] })).sort((a, b) => b.s - a.s).slice(0, 3);
-              const serveCount = (k: GiftKey) => (ct.service ?? []).filter(e => e.gift === k).length;
-              return (
-                <section style={{ marginTop: 26 }}>
-                  <SectionEyebrow title="恩赐辨识" en="Spiritual Gifts" />
-                  <div style={{ ...ctCard, padding: '16px 16px 13px' }}>
-                    {top.map(({ m, s }, i) => (
-                      <div key={m.key} style={{ paddingBottom: 11, marginBottom: 11, borderBottom: i < 2 ? '1px solid #F3F1EA' : 'none' }}>
-                        <div className="flex items-center justify-between">
-                          <span style={{ fontSize: 14.5, fontWeight: 900, color: '#1F2A37' }}>{m.label}</span>
-                          <span style={{ fontSize: 13, fontWeight: 900, color: '#04285F' }}>{s}</span>
-                        </div>
-                        <p style={{ margin: '2px 0 7px', fontSize: 11, color: '#98A2B3' }}>{m.desc}</p>
-                        <div className="grid" style={{ gridTemplateColumns: '58px 1fr', rowGap: 3 }}>
-                          <span style={{ fontSize: 10.5, color: '#667085' }}>自我评估</span><Dots level={Math.round(s / 20)} />
-                          <span style={{ fontSize: 10.5, color: '#667085' }}>行为佐证</span><Dots level={Math.round(g.behavior / 25)} total={4} />
-                          <span style={{ fontSize: 10.5, color: '#667085' }}>实际服事</span>
-                          {serveCount(m.key) > 0
-                            ? <Dots level={Math.min(4, serveCount(m.key))} total={4} />
-                            : <span style={{ fontSize: 10, color: '#B6BDC9', fontWeight: 700 }}>待验证</span>}
-                          <span style={{ fontSize: 10.5, color: '#667085' }}>他人评价</span><span style={{ fontSize: 10, color: '#B6BDC9', fontWeight: 700 }}>待验证（导师后台·规划中）</span>
-                        </div>
-                      </div>
-                    ))}
-                    <button
-                      onClick={openServe}
-                      className="w-full active:scale-[0.98] transition"
-                      style={{
-                        marginBottom: 10, fontSize: 12.5, fontWeight: 800, color: '#04285F',
-                        border: '1.5px dashed rgba(4,40,95,0.35)', borderRadius: 12,
-                        padding: '9px 0', background: '#F8FAFF',
-                      }}
-                    >
-                      ＋ 记录一次实际服事（填充证据层）
-                    </button>
-                    <p style={{ margin: 0, fontSize: 10.5, color: '#7A6A45', lineHeight: '16px', background: '#FBF6EA', border: '1px solid rgba(201,154,69,0.25)', borderRadius: 10, padding: '8px 10px' }}>
-                      测评结果是「辨识线索」而非定论。恩赐的确认需要结合圣经、实际服事、教会群体与导师的印证——建议从下方匹配的事奉开始尝试。
-                    </p>
-                  </div>
-                </section>
-              );
-            })()}
-
             {/* ===== 事奉方向匹配 + 申请 ===== */}
-            {ct.gifts && (() => {
-              const matches = giftMatches(ct.gifts!).slice(0, 4);
+            {cp && (() => {
+              const matches = ministryMatchesFromProfile(cp);
               const applied = (name: string) => ct.applications?.some(a => a.role === name);
               return (
                 <section style={{ marginTop: 26 }}>
-                  <SectionEyebrow title="适合我的事奉方向" en="Ministry Match" />
+                  <SectionEyebrow title="建议尝试的侍奉" en="Ministries To Try" />
                   <div style={{ ...ctCard, padding: '14px 16px 12px' }}>
                     {matches.map((r, i) => (
                       <div key={r.name} className="flex items-center" style={{ gap: 10, padding: '10px 0', borderTop: i > 0 ? '1px solid #F3F1EA' : 'none' }}>
@@ -2182,7 +1890,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                       </div>
                     ))}
                     <p style={{ margin: '10px 0 0', fontSize: 10, color: '#98A2B3', lineHeight: '15px' }}>
-                      匹配度基于恩赐辨识计算，仅供参考；申请提交后由教务与教会同工确认安排。
+                      “建议尝试”而非“你应该做”——百分数为对应倾向的指数；申请提交后由教务与教会同工确认安排。
                     </p>
                   </div>
                 </section>
@@ -2200,7 +1908,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                         className="shrink-0"
                         style={{ fontSize: 10, fontWeight: 800, color: '#C99A45', background: '#FBF6EA', border: '1px solid rgba(201,154,69,0.28)', borderRadius: 999, padding: '2px 8px' }}
                       >
-                        {GIFT_LABEL[e.gift]}
+                        {ARCHETYPES.find(x => x.key === e.gift)?.label ?? GIFT_LABEL[e.gift as GiftKey] ?? e.gift}
                       </span>
                       <div className="flex-1 min-w-0">
                         <p className="truncate" style={{ margin: 0, fontSize: 12.5, fontWeight: 700, color: '#1F2A37' }}>{e.role}</p>
@@ -2295,7 +2003,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                   </React.Fragment>
                 ))}
                 <p style={{ margin: '12px 0 0', fontSize: 10.5, color: '#98A2B3', lineHeight: '16px' }}>
-                  完成课程后画像分数会自动计入学习佐证（↑）；完成一个阶段的实践任务后，建议重新诊断以更新画像。
+                  完成课程后画像分数会自动计入学习佐证（↑）；完成一个阶段的实践任务后，建议重新评估以更新画像。
                 </p>
               </div>
             </section>
@@ -2306,7 +2014,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
           <>
             {/* ===== 十二大成长角色总览（点击查看角色详情） ===== */}
             <section style={{ marginTop: 26 }}>
-              <SectionEyebrow title="十二大成长角色" en="Growth Archetypes" />
+              <SectionEyebrow title="12 项事奉倾向" en="Ministry Orientation" />
               <div
                 className="flex overflow-x-auto"
                 style={{ gap: 10, margin: '0 -16px', padding: '2px 16px 8px', scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch' }}
@@ -2343,7 +2051,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                 ))}
               </div>
               <p style={{ margin: '10px 2px 0', fontSize: 10, color: '#98A2B3', lineHeight: 1.7, textAlign: 'center' }}>
-                完成 AI 诊断与恩赐辨识后，将为你生成「主角色 × 辅助角色」的专属成长角色。角色用于帮助理解成长倾向，不等同于最终呼召判断。
+                每个人都有全部 12 项倾向，只是强弱组合不同。完成 Christian Profile 后，你会看到 Top 3 与全部 12 项的指数。倾向是发展性参考，不是固定类型。
               </p>
             </section>
 
@@ -2406,9 +2114,9 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
               </div>
             </section>
 
-            {/* ===== 诊断流程 ===== */}
+            {/* ===== 评估流程 ===== */}
             <section style={{ marginTop: 26 }}>
-              <SectionEyebrow title="诊断流程" en="How It Works" />
+              <SectionEyebrow title="评估流程" en="How It Works" />
               <div className="relative overflow-hidden" style={{ ...ctCard, padding: '20px 12px 16px' }}>
                 <span
                   style={{
@@ -2489,7 +2197,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                   className="flex items-center"
                   style={{ gap: 6, margin: '13px 0 0', paddingTop: 11, borderTop: '1px dashed #ECE7DA', fontSize: 10, color: '#98A2B3', fontWeight: 500 }}
                 >
-                  <TrendingUp size={11} /> 此为示例数据，实际结果将基于你的诊断情况生成。
+                  <TrendingUp size={11} /> 此为示例数据，实际结果将基于你的评估情况生成。
                 </p>
               </div>
             </section>
@@ -2510,7 +2218,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                 <div>
                   <p style={{ margin: '0 0 6px', fontSize: 14.5, fontWeight: 900, color: '#14295A' }}>为什么不是普通答题？</p>
                   <p style={{ margin: 0, fontSize: 11.5, lineHeight: 1.8, color: '#6B7488', fontWeight: 500 }}>
-                    这不是一次机械考试，而是一场 AI 自适应诊断。系统会根据你的回答动态追问，并结合后续学习持续更新你的成长画像。
+                    这不是一次机械考试，而是一场 AI 自适应评估。系统会根据你的回答动态追问，并结合后续学习持续更新你的成长画像。
                   </p>
                 </div>
               </div>
@@ -2540,7 +2248,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                 </div>
               </div>
               <button onClick={startQuiz} className="active:scale-[0.98] transition-transform" style={{ ...goldBtn, marginTop: 15, width: '100%', justifyContent: 'center' }}>
-                开始 AI 诊断（约 6–8 分钟）
+                开始 AI 评估（约 6–8 分钟）
                 <ChevronRight size={15} strokeWidth={2.6} />
               </button>
             </section>
