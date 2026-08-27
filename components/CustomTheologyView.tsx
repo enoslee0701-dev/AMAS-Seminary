@@ -1553,6 +1553,40 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
   // ================= 主页 =================
 
   const portrait = ct ? derive(ct) : null;
+
+  // 12 项事奉倾向画廊：嵌在 Christian Profile 卡内（同一板块，不分割）
+  const orientationGallery = (
+    <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px dashed #EEEAE0' }}>
+      <div className="flex items-baseline" style={{ gap: 8, marginBottom: 4 }}>
+        <span style={{ fontSize: 12.5, fontWeight: 900, color: '#172A57' }}>探索 12 项事奉倾向</span>
+        <span style={{ marginLeft: 'auto', fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 9.5, fontWeight: 700, letterSpacing: '2px', color: '#B9C0CF', textTransform: 'uppercase' }}>Ministry Orientation</span>
+      </div>
+      <p style={{ margin: '0 0 8px', fontSize: 10.5, color: '#98A2B3', lineHeight: 1.65 }}>每个人都有全部 12 项倾向，只是强弱组合不同。点击卡片了解每一项。</p>
+      <div
+        className="flex overflow-x-auto"
+        style={{ gap: 8, margin: '0 -16px', padding: '2px 16px 6px', scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch' }}
+      >
+        {ARCHETYPES.map(a => (
+          <button
+            key={a.key}
+            onClick={() => setRoleDetail(a.key)}
+            className="shrink-0 active:scale-[0.98] transition-transform"
+            style={{ padding: 0, border: 'none', background: 'none', scrollSnapAlign: 'start', cursor: 'pointer' }}
+            aria-label={`查看${a.label}说明`}
+          >
+            <img src={archImg(a.key)} alt={`${a.label} ${a.en}`} loading="lazy" style={{ width: 132, borderRadius: 12, display: 'block', border: '1px solid rgba(20,40,90,0.10)', boxShadow: '0 3px 10px rgba(16,24,40,.08)' }} />
+          </button>
+        ))}
+      </div>
+      <div className="flex flex-wrap" style={{ gap: 5, marginTop: 6 }}>
+        {ARCH_GROUPS.map(g => (
+          <span key={g.key} style={{ fontSize: 9.5, fontWeight: 800, color: '#8A6519', background: '#FBF6EA', border: '1px solid rgba(201,154,69,.28)', borderRadius: 999, padding: '2px 8px' }}>
+            {g.cn} · {ARCHETYPES.filter(a => a.group === g.key).map(a => a.label).join(' / ')}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
   const radarVals = portrait ? [
     portrait.entries.find(e => e.meta.key === 'bible')!.score,
     Math.round((portrait.entries.find(e => e.meta.key === 'theology')!.score + portrait.entries.find(e => e.meta.key === 'gospel')!.score) / 2),
@@ -1685,6 +1719,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                     </button>
                   </div>
                   <p style={{ margin: '10px 0 0', fontSize: 10, color: '#98A2B3', lineHeight: '16px' }}>{ARCH_DISCLAIMER}</p>
+                  {orientationGallery}
                 </div>
               </div>
             );
@@ -1704,6 +1739,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                 标准 Christian Profile · 84 题 · 约 15–20 分钟
               </button>
               <p style={{ margin: '10px 0 0', fontSize: 10, color: '#98A2B3', textAlign: 'center' }}>每题自动保存 · 可随时退出继续 · 不显示题号压力，按 6 个阶段进行</p>
+              {orientationGallery}
             </div>
           )}
         </section>
@@ -2027,49 +2063,6 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
 
         {!ct && (
           <>
-            {/* ===== 十二大成长角色总览（点击查看角色详情） ===== */}
-            <section style={{ marginTop: 26 }}>
-              <SectionEyebrow title="12 项事奉倾向" en="Ministry Orientation" />
-              <div
-                className="flex overflow-x-auto"
-                style={{ gap: 10, margin: '0 -16px', padding: '2px 16px 8px', scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch' }}
-              >
-                {ARCHETYPES.map(a => (
-                  <button
-                    key={a.key}
-                    onClick={() => setRoleDetail(a.key)}
-                    className="shrink-0 active:scale-[0.98] transition-transform"
-                    style={{ padding: 0, border: 'none', background: 'none', scrollSnapAlign: 'start', cursor: 'pointer' }}
-                    aria-label={`查看${a.label}详情`}
-                  >
-                    <img
-                      src={archImg(a.key)}
-                      alt={`${a.label} ${a.en}`}
-                      loading="lazy"
-                      style={{
-                        width: 178, borderRadius: 15, display: 'block',
-                        border: '1px solid rgba(20,40,90,0.10)',
-                        boxShadow: '0 4px 12px rgba(16,24,40,.08)',
-                      }}
-                    />
-                    <span className="flex items-center justify-center" style={{ gap: 3, fontSize: 10, fontWeight: 800, color: '#98A2B3', marginTop: 5 }}>
-                      查看详情 <ChevronRight size={11} />
-                    </span>
-                  </button>
-                ))}
-              </div>
-              <div className="flex flex-wrap justify-center" style={{ gap: 6, marginTop: 6 }}>
-                {ARCH_GROUPS.map(g => (
-                  <span key={g.key} style={{ fontSize: 10, fontWeight: 800, color: '#8A6519', background: '#FBF6EA', border: '1px solid rgba(201,154,69,.28)', borderRadius: 999, padding: '3px 10px' }}>
-                    {g.en} {g.cn} · {ARCHETYPES.filter(a => a.group === g.key).map(a => a.label).join(' / ')}
-                  </span>
-                ))}
-              </div>
-              <p style={{ margin: '10px 2px 0', fontSize: 10, color: '#98A2B3', lineHeight: 1.7, textAlign: 'center' }}>
-                每个人都有全部 12 项倾向，只是强弱组合不同。完成 Christian Profile 后，你会看到 Top 3 与全部 12 项的指数。倾向是发展性参考，不是固定类型。
-              </p>
-            </section>
-
             {/* ===== 四个层面 ===== */}
             <section style={{ marginTop: 26 }}>
               <SectionEyebrow title="AI 将从这 4 个层面认识你" en="Four Levels" />
