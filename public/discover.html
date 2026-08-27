@@ -75,8 +75,15 @@
   .rhead .decl { font-size: 12px; line-height: 1.8; color: rgba(233,238,248,.9); }
   .rbody { background: #fff; border: 1px solid var(--line); border-top: none; border-radius: 0 0 18px 18px; padding: 14px 16px 16px; }
   .rimg { width: 100%; border-radius: 14px; border: 1.5px solid rgba(201,154,69,.55); box-shadow: 0 4px 12px rgba(16,24,40,.08); display: block; margin-bottom: 12px; }
+  .rsel { padding: 11px 13px; margin: -4px 0 12px; border-radius: 13px; background: #FBF6EA; border: 1px solid rgba(201,154,69,.3); }
+  .rsel .tag { font-size: 9.5px; font-weight: 800; letter-spacing: 1px; color: #C99A45; }
+  .rsel b { display: block; font-size: 15px; color: #14295A; margin: 2px 0 3px; }
+  .rsel b small { font-family: Georgia, serif; font-size: 10.5px; letter-spacing: 1px; color: #A98230; font-weight: 700; }
+  .rsel p { font-size: 12px; color: #5C4A1E; line-height: 1.7; }
+  .rsel p.hint { font-size: 10.5px; color: #98A2B3; margin-top: 4px; }
   .three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 13px; }
-  .three div { text-align: center; border-radius: 13px; padding: 10px 6px 9px; background: #F8FAFC; border: 1px solid #EDF0F4; }
+  .three div { text-align: center; border-radius: 13px; padding: 10px 6px 9px; background: #F8FAFC; border: 1px solid #EDF0F4; cursor: pointer; transition: transform .15s ease; }
+  .three div:active { transform: scale(.97); }
   .three div.gold { background: #FBF6EA; border: 1.2px solid rgba(201,154,69,.45); }
   .three .tag { font-size: 9px; font-weight: 800; letter-spacing: 1px; color: #98A2B3; margin-bottom: 3px; }
   .three .gold .tag { color: var(--gold); }
@@ -301,7 +308,8 @@
     </div>
     <div class="rbody">
       <div class="rl">
-        <img class="rimg" id="rImg" alt="" onclick="openDetail(currentPri)" />
+        <img class="rimg" id="rImg" alt="" />
+        <div class="rsel" id="rSel"></div>
         <div class="three" id="three"></div>
         <div class="unlock-card">
           <b>在 AMAS App 里，你还能解锁</b>
@@ -478,14 +486,28 @@ function finish(){
   document.getElementById('rDecl').textContent = '你倾向于' + pri.a.core + '；同时也乐于' + sec.a.core + '。';
   var ri = document.getElementById('rImg'); ri.src = img(pri.a.k); ri.alt = pri.a.l;
 
+  // 主/辅/第三：点击在本页切换左侧卡图与说明（不跳转）
   var three = document.getElementById('three'); three.innerHTML = '';
-  [['初步主角色',pri,true],['初步辅助',sec,false],['第三倾向',third,false]].forEach(function(x, i){
-    var d = document.createElement('div'); if (x[2]) d.className = 'gold';
+  var slots = [['初步主角色',pri],['初步辅助',sec],['第三倾向',third]];
+  var cells = slots.map(function(x, i){
+    var d = document.createElement('div');
     var sc = i === 2 ? '<span style="font-size:11px;color:#8A6519">🔒 App</span>' : x[1].score;
     d.innerHTML = '<div class="tag">'+x[0]+'</div><div class="nm">'+x[1].a.l+'</div><div class="sc">'+sc+'</div><div class="gp">'+GROUPS[x[1].a.g].cn+'</div>';
-    d.onclick = function(){ openDetail(x[1].a.k); };
+    d.onclick = function(){ selectSlot(i); };
     three.appendChild(d);
+    return d;
   });
+  function selectSlot(i){
+    var a = slots[i][1].a;
+    cells.forEach(function(c, j){ c.className = j === i ? 'gold' : ''; });
+    var im = document.getElementById('rImg'); im.src = img(a.k); im.alt = a.l;
+    document.getElementById('rSel').innerHTML =
+      '<span class="tag">' + slots[i][0] + ' · ' + GROUPS[a.g].cn + '</span>' +
+      '<b>' + a.l + ' <small>' + a.en + '</small></b>' +
+      '<p>' + a.core + '。</p>' +
+      (i === 0 ? '' : '<p class="hint">这是你的' + (i === 1 ? '辅助倾向' : '第三倾向') + '，最终角色以主角色为准；App 内完成恩赐辨识后会重新排序确认。</p>');
+  }
+  selectSlot(0);
 
   var sorted = Object.keys(DIM).map(function(k){ return {k:k, v:dims[k]}; }).sort(function(a,b){ return b.v - a.v; });
   var top = sorted.slice(0,2), weak = sorted[sorted.length-1];
