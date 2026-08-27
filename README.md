@@ -1,9 +1,19 @@
 # AMAS · 亚洲宣教神学院
 
-<!-- TODO: replace <owner>/<repo> below with the actual GitHub owner/repo slug once the project is pushed to GitHub -->
-[![CI](https://github.com/<owner>/<repo>/actions/workflows/ci.yml/badge.svg)](https://github.com/<owner>/<repo>/actions/workflows/ci.yml)
+[![CI](https://github.com/enoslee0701-dev/AMAS-Seminary/actions/workflows/ci.yml/badge.svg)](https://github.com/enoslee0701-dev/AMAS-Seminary/actions/workflows/ci.yml)
 
 亚洲宣教神学院 (Asian Missionary Association Seminary) 的移动应用。React + Vite + Capacitor 打包成 iOS / Android 原生壳，配合一个轻量 Node.js 后端提供实时语音、AI 牧师和密码校验。
+
+---
+
+## 关联项目
+
+| 项目 | 仓库 | 说明 |
+|---|---|---|
+| **AMAS 官网**（对外门户） | [enoslee0701-dev/amas-website](https://github.com/enoslee0701-dev/amas-website) · [线上](https://enoslee0701-dev.github.io/amas-website/) | 招生、课程、学费与支持、奉献同工、资源下载；其 [discover.html](https://enoslee0701-dev.github.io/amas-website/discover.html) 是本 App 定制化神学的「Discover」入口层 |
+| **AMAS App**（本仓库） | enoslee0701-dev/AMAS-Seminary | 持续装备与成长：完整九维诊断、成长档案、课程、校友圈、语音房 |
+
+分工：**网站负责发现与招生，App 负责持续装备与成长。**
 
 ---
 
