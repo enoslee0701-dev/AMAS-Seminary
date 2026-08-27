@@ -10,10 +10,12 @@
 
 | 项目 | 仓库 | 说明 |
 |---|---|---|
-| **AMAS 官网**（对外门户） | [enoslee0701-dev/amas-website](https://github.com/enoslee0701-dev/amas-website) · [线上](https://enoslee0701-dev.github.io/amas-website/) | 招生、课程、学费与支持、奉献同工、资源下载；其 [discover.html](https://enoslee0701-dev.github.io/amas-website/discover.html) 是本 App 定制化神学的「Discover」入口层 |
+| **AMAS 官网**（对外门户） | [enoslee0701-dev/amas-website](https://github.com/enoslee0701-dev/amas-website) · [线上](https://enoslee0701-dev.github.io/amas-website/) | 招生、课程、学费与支持、奉献同工、资源下载；其 [discover.html](https://enoslee0701-dev.github.io/amas-website/discover.html) 是本 App 定制化神学的「Discover」入口层，且为该页面的 **Source of Truth** |
 | **AMAS App**（本仓库） | enoslee0701-dev/AMAS-Seminary | 持续装备与成长：完整九维诊断、成长档案、课程、校友圈、语音房 |
 
 分工：**网站负责发现与招生，App 负责持续装备与成长。**
+
+> **约定**：本仓库 `public/discover.html` 仅为 **集成副本**，权威版本在 `amas-website/discover.html`；请勿在副本上独立修改，改动先在官网仓库完成再同步过来，避免双向漂移。App 接收官网跳转时可读取 `source` / `assessment` / `profile` / `stage` / `score` / `dims` 等查询参数作为成长画像的起点。
 
 ---
 
