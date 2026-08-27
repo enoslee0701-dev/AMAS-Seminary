@@ -142,7 +142,7 @@
   .unlock-card li::before { content: "✦"; position: absolute; left: 0; color: var(--gold); }
   .sticky-cta { position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; display: flex; align-items: center; justify-content: space-between; gap: 12px; max-width: 430px; margin: 0 auto; padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); background: rgba(7,26,60,.96); backdrop-filter: blur(10px); color: #F2D493; font-size: 12px; font-weight: 800; border-top: 1px solid rgba(232,201,140,.25); }
   .sticky-cta .gold-btn { height: 36px; font-size: 12px; padding: 0 16px; }
-  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 16px 18px 0; }
+  .compare { display: grid; grid-template-columns: 1fr; gap: 10px; padding: 16px 18px 0; }
   .compare .col { padding: 14px 13px; border-radius: 16px; background: #fff; border: 1px solid var(--line); }
   .compare .col.app { background: linear-gradient(160deg, #0B2450, #071A3C); color: #fff; border: 1px solid rgba(232,201,140,.3); }
   .compare .h { font-size: 12.5px; font-weight: 900; margin-bottom: 8px; }
@@ -202,7 +202,35 @@
     #detail .body { display: grid; grid-template-columns: 420px 1fr; gap: 28px; padding: 28px 0 0; align-items: start; }
     #detail .dr .dcard:first-child { margin-top: 0; }
   }
+  /* 桌面：整体放大字号，避免手机尺寸的小字平铺在大屏上 */
+  @media (min-width: 1024px) {
+    .compare { grid-template-columns: 1fr 1.35fr; gap: 22px; max-width: 980px; margin-top: 18px; }
+    .compare .col { padding: 28px 30px; border-radius: 22px; }
+    .compare .h { font-size: 21px; margin-bottom: 14px; }
+    .compare li { font-size: 15px; line-height: 2.05; }
+    .compare .gold-btn { height: 48px; font-size: 15.5px; margin-top: 18px; }
+    .groups span { font-size: 13px; padding: 7px 16px; }
+    .note, .disclaimer { font-size: 12.5px; line-height: 1.8; }
+    .note { padding-top: 22px; }
+    .topbar { padding: 16px 22px; } .topbar .t { font-size: 17px; } .count { font-size: 13px; }
+    .notice p { font-size: 12.5px; } .chip { font-size: 11.5px; }
+    .qtext { font-size: 21px; } .opt { font-size: 15.5px; padding: 16px 18px; } .undo { font-size: 14px; }
+    .rhead h2 { font-size: 36px; } .rhead .en { font-size: 13px; } .rhead .decl { font-size: 15px; } .rhead .pre { font-size: 11px; }
+    .three .tag, .three .gp { font-size: 11px; } .three .nm { font-size: 16px; } .three .sc { font-size: 21px; }
+    .fuse { padding: 16px 18px; } .fuse b.t { font-size: 15px; } .fuse .row { font-size: 13.5px; grid-template-columns: 58px 1fr; } .fuse .row span:first-child { font-size: 12.5px; } .fuse .concl { font-size: 14px; }
+    .sec-t { font-size: 14px; } .chips span { font-size: 13px; padding: 5px 13px; } .risk { font-size: 13.5px; line-height: 22px; }
+    .lock .veil b { font-size: 15.5px; } .lock .veil span { font-size: 12.5px; } .lock .veil .gold-btn { height: 40px; font-size: 13.5px; }
+    .stage { font-size: 12px; padding: 6px 14px; }
+    .dimrow { grid-template-columns: 80px 1fr 38px; margin-bottom: 10px; } .dimrow .n, .dimrow .v { font-size: 13.5px; } .dimrow .track { height: 9px; }
+    .advice { padding: 16px 18px; } .advice b { font-size: 14.5px; } .advice p { font-size: 13.5px; } .link-btn { font-size: 13px; }
+    .unlock-card { padding: 20px 22px; } .unlock-card b { font-size: 16px; margin-bottom: 10px; } .unlock-card li { font-size: 13.5px; line-height: 1.9; }
+    .ghost-btn { font-size: 14px; height: 46px; }
+    .cta-deep b { font-size: 20px; } .cta-deep p { font-size: 14px; }
+    .dcard { padding: 20px 22px; } .dcard .lab { font-size: 11px; } .dcard .core { font-size: 19px; }
+    .sticky-cta { padding: 14px 24px; } .sticky-cta .gold-btn { height: 40px; font-size: 13.5px; }
+  }
   @media (min-width: 768px) and (max-width: 1023px) {
+    .compare { grid-template-columns: 1fr 1fr; }
     .strip { grid-template-columns: repeat(4, 1fr); }
     #landing .hero { grid-template-columns: 1fr; padding: 48px 40px; }
     .hero-cards { display: none; }
