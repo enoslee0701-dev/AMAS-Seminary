@@ -350,7 +350,7 @@ var QS = [
  {a:'disciple',t:'过去一年，你是否曾陪伴或帮助另一个人在信仰上成长？',o:[['没有',25],['偶尔聊过一两次',50],['有一段时间的持续陪伴',75],['持续陪伴，并有明确的目标与方法',95]]},
  {a:'disciple',t:'关于“门徒训练”，你更接近哪种理解？',o:[['不太清楚它具体指什么',30],['知道概念，但觉得是传道人的事',50],['明白每个信徒都应参与，愿意被带领',75],['正在被带领，也在带领别人',95]]}
 ];
-var answers = [];
+var answers = [], lastResult = null;
 
 function show(id){ ['landing','quiz','result','detail'].forEach(function(x){ document.getElementById(x).classList.toggle('hidden', x!==id); }); document.getElementById('stickyCta').classList.toggle('hidden', id!=='result'); window.scrollTo(0,0); }
 var APP_URL = '/';   // 同域部署时指向 App 根路径；上架后改为应用商店 / 通用链接
@@ -396,6 +396,7 @@ function finish(){
   keys.forEach(function(k){ var arr = acc[k] || [50]; rows.push({ k:k, v: Math.round(arr.reduce(function(a,b){return a+b;},0)/arr.length) }); });
   var weakest = rows.slice().sort(function(a,b){ return a.v - b.v; })[0];
   var strongest = rows.slice().sort(function(a,b){ return b.v - a.v; })[0];
+  lastResult = { assessment: 'quick-faith-v1', areas: rows.map(function(r){ return r.k + ':' + r.v; }).join(',') };
   document.getElementById('rDecl').textContent = '目前「' + AREAS[strongest.k] + '」呈现相对稳定，「' + AREAS[weakest.k] + '」是最值得先投入的地方。这是基于 10 道题的初步探索，用来帮助你决定下一步，不用于定义你的事奉类型。';
   var sv = document.getElementById('stats'); sv.innerHTML = '';
   rows.forEach(function(r){ var d = document.createElement('div'); d.className = 'statrow'; d.innerHTML = '<span class="n">'+AREAS[r.k]+'</span><div class="track"><i style="width:'+r.v+'%"></i></div><span class="lv">'+LEVEL(r.v)+'</span>'; sv.appendChild(d); });
