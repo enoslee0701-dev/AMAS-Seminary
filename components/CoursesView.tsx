@@ -9,11 +9,13 @@ import { canUploadCourses } from '../services/permissions';
 
 // Locally bundled photos (public/images/stock) — full fidelity, offline-safe.
 const CATEGORY_FALLBACK: Record<string, string> = {
-  [TheologyCategory.BIBLICAL]:     STOCK_PHOTOS.bibleLight,
-  [TheologyCategory.SYSTEMATIC]:   STOCK_PHOTOS.books,
-  [TheologyCategory.HISTORICAL]:   STOCK_PHOTOS.libraryBooks,
+  [TheologyCategory.NT]:           STOCK_PHOTOS.bibleLight,
+  [TheologyCategory.OT]:           STOCK_PHOTOS.mountain,
+  [TheologyCategory.BIBLE_BASICS]: STOCK_PHOTOS.bibleOpen,
+  [TheologyCategory.THEOLOGY]:     STOCK_PHOTOS.books,
   [TheologyCategory.PRACTICAL]:    STOCK_PHOTOS.practical,
-  [TheologyCategory.MISSIOLOGICAL]:STOCK_PHOTOS.missionGlobe,
+  [TheologyCategory.HISTORY]:      STOCK_PHOTOS.libraryBooks,
+  [TheologyCategory.LANGUAGE]:     STOCK_PHOTOS.missionGlobe,
 };
 const TRACK_BACHELOR = STOCK_PHOTOS.bibleLight;
 const TRACK_MASTER = STOCK_PHOTOS.graduation;
@@ -137,7 +139,7 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
   const [newCourseForm, setNewCourseForm] = useState({
     title: '',
     instructor: '',
-    category: TheologyCategory.BIBLICAL,
+    category: TheologyCategory.NT,
     // Fixed: AcademicLevel property updated from BACHELOR to BTH
     level: AcademicLevel.BTH, // Default level
     description: '',
@@ -151,7 +153,7 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
   const [editForm, setEditForm] = useState({
     title: '',
     instructor: '',
-    category: TheologyCategory.BIBLICAL,
+    category: TheologyCategory.NT,
     // Fixed: AcademicLevel property updated from BACHELOR to BTH
     level: AcademicLevel.BTH, // Default level
     thumbnail: '',
@@ -165,15 +167,16 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
   // Permission Check: Only admin, dean, or teacher can upload/edit
   const canUpload = canUploadCourses(userRole);
 
-  // Prioritize Missiology
+  // 官方目录 7 大类（services/catalog.ts）
   const categories = [
-    '全部', 
-    TheologyCategory.MISSIOLOGICAL, 
-    TheologyCategory.BIBLICAL, 
-    TheologyCategory.SYSTEMATIC, 
-    TheologyCategory.PRACTICAL, 
-    TheologyCategory.HISTORICAL,
-    '其他'
+    '全部',
+    TheologyCategory.NT,
+    TheologyCategory.OT,
+    TheologyCategory.BIBLE_BASICS,
+    TheologyCategory.THEOLOGY,
+    TheologyCategory.PRACTICAL,
+    TheologyCategory.HISTORY,
+    TheologyCategory.LANGUAGE,
   ];
 
   // Programs Configuration for Landing Page
@@ -294,7 +297,7 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
     // bloat localStorage with base64. Falls back to the inline data URI if
     // IDB isn't available.
     let thumbnailImageId: string | undefined;
-    let thumbnail = courseThumbnail(newCourseForm.title || 'new-course', TheologyCategory.BIBLICAL);
+    let thumbnail = courseThumbnail(newCourseForm.title || 'new-course', TheologyCategory.NT);
     if (newCourseForm.thumbnailPreview) {
       if (newCourseForm.thumbnailPreview.startsWith('data:image/')) {
         const id = await putImageDataURI(newCourseForm.thumbnailPreview);
@@ -308,7 +311,7 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
         id: `new-${Date.now()}`,
         title: newCourseForm.title,
         instructor: newCourseForm.instructor,
-        category: TheologyCategory.BIBLICAL,
+        category: TheologyCategory.NT,
         // Fixed: AcademicLevel property updated from BACHELOR to BTH
         level: AcademicLevel.BTH,
         thumbnail,
@@ -324,7 +327,7 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
     setNewCourseForm({
         title: '',
         instructor: '',
-        category: TheologyCategory.BIBLICAL,
+        category: TheologyCategory.NT,
         // Fixed: AcademicLevel property updated from BACHELOR to BTH
         level: AcademicLevel.BTH,
         description: '',
@@ -426,11 +429,11 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
     };
     const targetLevel = roleToLevel[wizardRole] || AcademicLevel.BTH;
     const interestMap: Record<string, TheologyCategory> = {
-      '宣教': TheologyCategory.MISSIOLOGICAL,
-      '圣经': TheologyCategory.BIBLICAL,
-      '系统神学': TheologyCategory.SYSTEMATIC,
+      '圣经': TheologyCategory.NT,
+      '神学': TheologyCategory.THEOLOGY,
       '实践': TheologyCategory.PRACTICAL,
-      '历史': TheologyCategory.HISTORICAL,
+      '历史': TheologyCategory.HISTORY,
+      '语言': TheologyCategory.LANGUAGE,
     };
     const targetCategory = interestMap[wizardInterest];
     const sameLevel = courses.filter(c => c.level === targetLevel);
@@ -490,7 +493,7 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
               <div className="animate-fade-in">
                 <p className="text-[13px] font-bold text-slate-700 mb-3">最感兴趣的方向？</p>
                 <div className="grid grid-cols-2 gap-2">
-                  {['宣教', '圣经', '系统神学', '实践', '历史'].map(i => (
+                  {['圣经', '神学', '实践', '历史', '语言'].map(i => (
                     <button
                       key={i}
                       onClick={() => { setWizardInterest(i); setWizardStep(3); }}
@@ -810,19 +813,19 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
           unlocked: { tagBg: '#E8DAF7', tagText: '#5A2EA0', btnBorder: '#8A55D9', btnText: '#5A2EA0' },
         };
 
-        const thumbFor = (c: Course) => c.thumbnail || CATEGORY_FALLBACK[c.category] || CATEGORY_FALLBACK[TheologyCategory.BIBLICAL];
+        const thumbFor = (c: Course) => c.thumbnail || CATEGORY_FALLBACK[c.category] || CATEGORY_FALLBACK[TheologyCategory.NT];
         const tintFor = (c: Course): string => {
           switch (c.category) {
-            case TheologyCategory.BIBLICAL:    return 'linear-gradient(135deg,#1B3A6B 0%,#23508F 100%)';
-            case TheologyCategory.SYSTEMATIC:  return 'linear-gradient(135deg,#0F5132 0%,#137A4F 100%)';
-            case TheologyCategory.HISTORICAL:  return 'linear-gradient(135deg,#7A4A0F 0%,#9A6B1D 100%)';
+            case TheologyCategory.NT:    return 'linear-gradient(135deg,#1B3A6B 0%,#23508F 100%)';
+            case TheologyCategory.THEOLOGY:  return 'linear-gradient(135deg,#0F5132 0%,#137A4F 100%)';
+            case TheologyCategory.HISTORY:  return 'linear-gradient(135deg,#7A4A0F 0%,#9A6B1D 100%)';
             case TheologyCategory.PRACTICAL:   return 'linear-gradient(135deg,#3F1E70 0%,#5A2EA0 100%)';
-            case TheologyCategory.MISSIOLOGICAL: return 'linear-gradient(135deg,#7A1E4A 0%,#A02E5A 100%)';
+            case TheologyCategory.THEOLOGY: return 'linear-gradient(135deg,#7A1E4A 0%,#A02E5A 100%)';
             default: return 'linear-gradient(135deg,#04285F 0%,#0A3878 100%)';
           }
         };
 
-        const mainCategories = [TheologyCategory.MISSIOLOGICAL, TheologyCategory.BIBLICAL, TheologyCategory.SYSTEMATIC, TheologyCategory.PRACTICAL, TheologyCategory.HISTORICAL];
+        const mainCategories = [TheologyCategory.NT, TheologyCategory.OT, TheologyCategory.BIBLE_BASICS, TheologyCategory.THEOLOGY, TheologyCategory.PRACTICAL, TheologyCategory.HISTORY, TheologyCategory.LANGUAGE];
         const matchesCategory = (c: Course) => {
           if (activeCategory === '全部') return true;
           if (activeCategory === '其他') return !mainCategories.includes(c.category);
@@ -1392,7 +1395,7 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
                               <span className="truncate">{course.instructor}</span>
                               <span className="text-slate-300">·</span>
                               <span className="flex items-center flex-shrink-0">
-                                <BookOpen size={11} className="mr-1" /> {course.totalLessons} 课时
+                                <BookOpen size={11} className="mr-1" /> {course.totalLessons > 0 ? `${course.totalLessons} 课时` : '讲义筹备中'}
                               </span>
                             </div>
 

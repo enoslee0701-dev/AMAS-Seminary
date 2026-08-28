@@ -2,6 +2,7 @@
 import { Course, TheologyCategory, Post, UserProfile, NewsItem, AcademicLevel } from './types';
 import { initialAvatar } from './services/imageFallback';
 import { STOCK_PHOTOS } from './services/stockPhotos';
+import { OFFICIAL_CATALOG } from './services/catalog';
 
 export const APP_NAME = "AMAS";
 // Updated to Deep Blue / Academic Navy Palette
@@ -61,134 +62,27 @@ export const MOCK_NEWS: NewsItem[] = [
   },
 ];
 
-export const MOCK_COURSES: Course[] = [
-  {
-    id: 'c_1cor',
-    title: '哥林多前书',
-    instructor: 'Enos',
-    category: TheologyCategory.BIBLICAL,
-    // Fixed: Property updated from BACHELOR to BTH
-    level: AcademicLevel.BTH,
-    thumbnail: STOCK_PHOTOS.books,
-    progress: 0,
-    totalLessons: 10,
-    completedLessons: 0,
-  },
-  {
-    id: 'c_john',
-    title: '约翰福音',
-    instructor: 'Dr. Kim Joy',
-    category: TheologyCategory.BIBLICAL,
-    // Fixed: Property updated from MASTER to MDIV
-    level: AcademicLevel.MDIV,
-    thumbnail: STOCK_PHOTOS.bibleLight,
-    progress: 0,
-    totalLessons: 24,
-    completedLessons: 0,
-  },
-  {
-    id: 'c_matthew',
-    title: '马太福音',
-    instructor: 'Dr. Kim Joy',
-    category: TheologyCategory.BIBLICAL,
-    // Fixed: Property updated from MASTER to MDIV
-    level: AcademicLevel.MDIV,
-    thumbnail: STOCK_PHOTOS.mountain,
-    progress: 0,
-    totalLessons: 26,
-    completedLessons: 0,
-  },
-  {
-    id: 'c_acts',
-    title: '使徒行传',
-    instructor: 'Dr. Kim Joy',
-    category: TheologyCategory.BIBLICAL,
-    // Fixed: Property updated from BACHELOR to BTH
-    level: AcademicLevel.BTH,
-    thumbnail: STOCK_PHOTOS.bibleMap,
-    progress: 0,
-    totalLessons: 29,
-    completedLessons: 0,
-  },
-  {
-    id: 'c_hebrews',
-    title: '希伯来书',
-    instructor: 'Dr. Kim Joy',
-    category: TheologyCategory.BIBLICAL,
-    // Fixed: Property updated from DOCTOR to DMIN
-    level: AcademicLevel.DMIN,
-    thumbnail: STOCK_PHOTOS.libraryBooks,
-    progress: 0,
-    totalLessons: 15,
-    completedLessons: 0,
-  },
-  {
-    id: 'c_ephesians',
-    title: '以弗所书',
-    instructor: 'Dr. Kim Joy',
-    category: TheologyCategory.BIBLICAL,
-    // Fixed: Property updated from MASTER to MDIV
-    level: AcademicLevel.MDIV,
-    thumbnail: STOCK_PHOTOS.worship,
-    progress: 0,
-    totalLessons: 7,
-    completedLessons: 0,
-  },
-  {
-    id: 'c_revelation',
-    title: '启示录',
-    instructor: 'Dr. Kim Joy',
-    category: TheologyCategory.BIBLICAL,
-    // Fixed: Property updated from DOCTOR to DMIN
-    level: AcademicLevel.DMIN,
-    thumbnail: STOCK_PHOTOS.dramaticSky,
-    progress: 0,
-    totalLessons: 23,
-    completedLessons: 0,
-  },
-  // ===== 信徒装备 / Lay Track (no formal degree level) =====
-  {
-    id: 'c_basics',
-    title: '基督徒生活基础',
-    instructor: '李恩慈牧师',
-    category: TheologyCategory.PRACTICAL,
-    // no level => 信徒装备 bucket
-    thumbnail: STOCK_PHOTOS.christianLife,
-    progress: 0,
-    totalLessons: 8,
-    completedLessons: 0,
-  },
-  {
-    id: 'c_bible_intro',
-    title: '认识圣经：旧约新约导论',
-    instructor: '王恩光教授',
-    category: TheologyCategory.BIBLICAL,
-    thumbnail: STOCK_PHOTOS.bibleOpen,
-    progress: 0,
-    totalLessons: 12,
-    completedLessons: 0,
-  },
-  {
-    id: 'c_disciple',
-    title: '门徒训练：跟随主的脚踪',
-    instructor: '陈恩典牧师',
-    category: TheologyCategory.PRACTICAL,
-    thumbnail: STOCK_PHOTOS.discipleship,
-    progress: 0,
-    totalLessons: 10,
-    completedLessons: 0,
-  },
-  {
-    id: 'c_prayer',
-    title: '祷告与灵修生活',
-    instructor: '林恩光师母',
-    category: TheologyCategory.PRACTICAL,
-    thumbnail: STOCK_PHOTOS.prayer,
-    progress: 0,
-    totalLessons: 6,
-    completedLessons: 0,
-  }
-];
+// 离线/首装课程目录：由官方目录（services/catalog.ts，67 门）生成；联网后以后端课程库为准。
+const CATEGORY_THUMBS: Record<TheologyCategory, string[]> = {
+  [TheologyCategory.NT]: [STOCK_PHOTOS.bibleLight, STOCK_PHOTOS.books, STOCK_PHOTOS.bibleOpen, STOCK_PHOTOS.bibleMap],
+  [TheologyCategory.OT]: [STOCK_PHOTOS.mountain, STOCK_PHOTOS.dramaticSky],
+  [TheologyCategory.BIBLE_BASICS]: [STOCK_PHOTOS.bibleOpen, STOCK_PHOTOS.libraryBooks],
+  [TheologyCategory.THEOLOGY]: [STOCK_PHOTOS.libraryBooks, STOCK_PHOTOS.books],
+  [TheologyCategory.PRACTICAL]: [STOCK_PHOTOS.christianLife, STOCK_PHOTOS.discipleship, STOCK_PHOTOS.prayer, STOCK_PHOTOS.worship],
+  [TheologyCategory.HISTORY]: [STOCK_PHOTOS.bibleMap, STOCK_PHOTOS.mountain],
+  [TheologyCategory.LANGUAGE]: [STOCK_PHOTOS.books, STOCK_PHOTOS.libraryBooks],
+};
+export const MOCK_COURSES: Course[] = OFFICIAL_CATALOG.map((c, i) => ({
+  id: c.id,
+  title: c.title,
+  instructor: c.instructor ?? 'AMAS 教务组',
+  category: c.category,
+  level: c.level,
+  thumbnail: CATEGORY_THUMBS[c.category][i % CATEGORY_THUMBS[c.category].length],
+  progress: 0,
+  totalLessons: c.totalLessons ?? 0,
+  completedLessons: 0,
+}));
 
 export const MOCK_POSTS: Post[] = [
   {

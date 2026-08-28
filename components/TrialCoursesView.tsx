@@ -13,7 +13,7 @@ interface TrialCoursesViewProps {
  * 从首页快捷入口进入；点课程卡直达课程详情开始试听。
  */
 const TrialCoursesView: React.FC<TrialCoursesViewProps> = ({ courses, onBack, onCourseClick }) => {
-  const trialCourses = courses.filter(c => !c.level || c.level === AcademicLevel.BTH);
+  const trialCourses = courses.filter(c => c.totalLessons > 0 && (!c.level || c.level === AcademicLevel.BTH));
 
   return (
     <div className="min-h-screen bg-slate-50 pb-24 animate-fade-in relative">

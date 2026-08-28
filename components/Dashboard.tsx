@@ -7,6 +7,7 @@ import {
 import { ViewState, NewsItem, Course } from '../types';
 import { STOCK_PHOTOS } from '../services/stockPhotos';
 import { readGrowthRole, archImg } from '../services/growthArchetypes';
+import { CATALOG_TOTAL } from '../services/catalog';
 import type { ProgramTier } from './College/programData';
 
 const AIServiceChat = React.lazy(() => import('./AIServiceChat'));
@@ -150,7 +151,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
   }, []);
 
   const stats = [
-    { icon: BookOpen, value: '120+', label: '课程', tone: 'navy' as const },
+    { icon: BookOpen, value: String(CATALOG_TOTAL), label: '课程', tone: 'navy' as const },
     { icon: Church, value: '200+', label: '教会', tone: 'gold' as const },
     { icon: GraduationCap, value: '3000+', label: '学员', tone: 'navy' as const },
     { icon: Handshake, value: '20+', label: '分院', tone: 'gold' as const },
@@ -182,8 +183,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
   ];
 
   const featured = [
-    { id: 'f1', title: '新约导论', instructor: '张路加 教授', cover: FEATURED_1, badge: '圣经神学' },
-    { id: 'f2', title: '系统神学 I', instructor: '陈永信 教授', cover: FEATURED_2, badge: '系统神学' },
+    { id: 'f1', title: '新约导论', instructor: '张路加 教授', cover: FEATURED_1, badge: '新约书卷' },
+    { id: 'f2', title: '系统神学 I', instructor: '陈永信 教授', cover: FEATURED_2, badge: '神学与思想' },
   ];
 
   return (
@@ -725,15 +726,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
                 }}
               >
                 {p.cn}
-              </span>
-              <span
-                style={{
-                  fontFamily: '-apple-system, "SF Pro Text", sans-serif',
-                  fontSize: 10, fontWeight: 600, color: p.tone,
-                  lineHeight: '14px', marginTop: 4,
-                }}
-              >
-                {tierCounts?.[p.tier] ? `${tierCounts[p.tier]} 门课程` : ''}
               </span>
             </button>
           ))}

@@ -241,15 +241,15 @@ export function scoreAssessment(level: AssessmentLevel, answers: Answer[], compl
 // 推荐引擎（规则式，deterministic；措辞为“建议尝试”）
 // ------------------------------------------------------------
 const COURSES_BY_ORIENTATION: Record<OrientationKey, string[]> = {
-  teacher: ['c_dr_marking', 'c_lay_systematic', 'c_bible_intro'],
-  explorer: ['c_dr_marking', 'c_greek', 'c_lay_systematic'],
-  equipper: ['c_disciple', 'c_smallgroup', 'c_newbeliever'],
+  teacher: ['c_dr_marking', 'c_homiletics', 'c_lay_systematic'],
+  explorer: ['c_dr_marking', 'c_greek', 'c_bible_geography'],
+  equipper: ['c_disciple', 'c_sunday_school', 'c_newbeliever'],
   shepherd: ['c_counseling', 'c_disciple', 'c_smallgroup'],
   encourager: ['c_counseling', 'c_assurance', 'c_disciple'],
-  mercy: ['c_counseling', 'c_healing', 'c_basics'],
-  intercessor: ['c_prayer', 'c_warfare', 'c_worship_order'],
+  mercy: ['c_counseling', 'c_healing_inner', 'c_basics'],
+  intercessor: ['c_prayer', 'c_warfare', 'c_worship_studies'],
   evangelist: ['c_evangelism', 'c_romans', 'c_newbeliever'],
-  missionary: ['c_contextual', 'c_evangelism', 'c_church_ops'],
+  missionary: ['c_contextual', 'c_islam', 'c_comparative_religion'],
   leader: ['c_church_ops', 'c_smallgroup', 'c_lay_systematic'],
   builder: ['c_church_ops', 'c_worship_order', 'c_smallgroup'],
   servant: ['c_church_ops', 'c_basics', 'c_worship_order'],

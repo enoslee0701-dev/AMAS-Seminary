@@ -17,11 +17,13 @@ export enum ViewState {
 }
 
 export enum TheologyCategory {
-  SYSTEMATIC = '系统神学',
-  BIBLICAL = '圣经神学',
-  HISTORICAL = '历史神学',
-  PRACTICAL = '实践神学',
-  MISSIOLOGICAL = '宣教神学'
+  NT = '新约书卷',
+  OT = '旧约书卷',
+  BIBLE_BASICS = '圣经基础与研经',
+  THEOLOGY = '神学与思想',
+  PRACTICAL = '实践神学与牧养',
+  HISTORY = '历史与文化',
+  LANGUAGE = '语言与工具'
 }
 
 export enum AcademicLevel {
