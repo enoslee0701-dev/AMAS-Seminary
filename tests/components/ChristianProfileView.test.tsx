@@ -51,7 +51,7 @@ describe('deterministic scoring', () => {
 describe('ChristianProfileView renders', () => {
   it('intro (quick) renders without throwing', () => {
     const html = renderToStaticMarkup(<ChristianProfileView level="quick" courses={[]} onCourseClick={() => {}} onExit={() => {}} />);
-    expect(html).toContain('快速事奉画像');
+    expect(html).toContain('事奉倾向画像 · 精简版');
   });
   it('result page renders all sections', () => {
     const p = scoreAssessment('standard', answersFor('standard'));

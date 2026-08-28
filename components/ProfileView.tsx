@@ -643,20 +643,20 @@ const ProfileView: React.FC<ProfileViewProps> = ({ favoriteCourseIds = [], onLog
                       border: `1px solid ${growthRole.prelim ? '#FCD34D' : 'rgba(201,154,69,.4)'}`,
                     }}
                   >
-                    {growthRole.prelim ? '快速版 · 初步' : '标准版'}
+                    {growthRole.prelim ? '精简版' : '完整版'}
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">{growthRole.primary.core}</p>
                 <p className="text-[10px] text-slate-400 mt-1">
                   主要倾向 {growthRole.primary.label} {growthRole.primaryScore} · 次要 {growthRole.secondary.label}
-                  {growthRole.prelim && ' · 完成标准版后更新'}
+                  {growthRole.prelim && ' · 完成完整版后更新'}
                 </p>
               </div>
             </button>
           ) : (
             <button onClick={() => go(ViewState.CUSTOM_THEOLOGY)} className="w-full text-left flex items-center gap-3 active:opacity-70">
               <div className="w-10 h-10 rounded-xl bg-blue-900 text-amber-200 flex items-center justify-center shrink-0"><Sparkles size={18} /></div>
-              <p className="text-[11px] text-slate-400 leading-relaxed">完成快速事奉画像（30 题 · 约 6 分钟），看看你在 12 项事奉倾向中的组合。</p>
+              <p className="text-[11px] text-slate-400 leading-relaxed">完成事奉倾向画像（精简版 · 30 题），看看你在 12 项事奉倾向中的组合。</p>
             </button>
           )}
         </div>

@@ -1340,7 +1340,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
         onUndo={undo}
         canUndo={history.current.length > 0}
         onExit={() => setMode('home')}
-        hint={asked === 0 ? '约 6–8 分钟 · 按真实情况选择即可 · 答得好会自动追问更深的问题' : undefined}
+        hint={asked === 0 ? '按真实情况选择即可 · 答得好会自动追问更深的问题' : undefined}
         notice={
           <div
             className="flex items-start"
@@ -1492,7 +1492,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                 你在这一维度的当前指数 <b style={{ color: '#F2D493', fontSize: 14 }}>{myScore}</b>，
                 在你 12 项倾向中排第 <b style={{ color: '#F2D493' }}>{myRank}</b> 位
                 {myRank === 1 ? '——这是你目前最明显的倾向。' : myRank === 2 ? '——这是你的次要倾向。' : '。'}
-                {detailPrelim && '（快速版初步画像，完成标准 Christian Profile 后更新）'}
+                {detailPrelim && '（精简版画像，完成完整版 Christian Profile 后更新）'}
               </p>
             </div>
           )}
@@ -1537,7 +1537,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
               className="w-full active:scale-[0.98] transition"
               style={{ ...goldBtn, justifyContent: 'center', marginTop: 14 }}
             >
-              完成快速事奉画像（约 6 分钟），看看这一维度在你身上的表现
+              完成事奉倾向画像（精简版），看看这一维度在你身上的表现
               <ChevronRight size={15} strokeWidth={2.6} />
             </button>
           )}
@@ -1655,7 +1655,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
               认识你的信仰基础、成长状态、事奉倾向与下一步装备方向。
             </p>
             <button onClick={startQuiz} className="active:scale-95 transition-transform" style={{ ...goldBtn, height: 38, fontSize: 12.5 }}>
-              {ct ? '重新进行信仰基础评估' : '信仰基础与装备画像（约 6–8 分钟）'}
+              {ct ? '重新进行信仰基础评估' : '信仰基础与装备画像'}
               <ChevronRight size={14} strokeWidth={2.6} />
             </button>
           </div>
@@ -1672,7 +1672,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                 <div style={{ padding: '16px 16px 14px', color: '#FFF', background: 'radial-gradient(90% 120% at 12% 0%, rgba(240,205,135,.16) 0%, rgba(240,205,135,0) 42%), linear-gradient(160deg, #0B2450 0%, #071A3C 100%)' }}>
                   <div className="flex items-center" style={{ gap: 8, marginBottom: 6 }}>
                     <p style={{ margin: 0, fontSize: 9.5, fontWeight: 800, letterSpacing: '2px', color: 'rgba(232,201,140,.9)' }}>MINISTRY ORIENTATION</p>
-                    <span style={{ fontSize: 9, fontWeight: 800, color: '#F2D493', border: '1px solid rgba(242,212,147,.5)', borderRadius: 999, padding: '2px 8px' }}>{cp.level === 'quick' ? '快速版 · 初步' : '标准版'}</span>
+                    <span style={{ fontSize: 9, fontWeight: 800, color: '#F2D493', border: '1px solid rgba(242,212,147,.5)', borderRadius: 999, padding: '2px 8px' }}>{cp.level === 'quick' ? '精简版' : '完整版'}</span>
                     <div className="flex items-center" style={{ marginLeft: 'auto' }}>
                       <button onClick={() => openCp(cp.level)} aria-label="重新评估" title="重新评估" className="p-1.5 rounded-full active:scale-90 transition" style={{ color: 'rgba(242,212,147,.8)' }}>
                         <RefreshCw size={14} />
@@ -1715,7 +1715,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                   <div className="flex" style={{ gap: 8, marginTop: 12 }}>
                     <button onClick={() => setMode('cpResult')} className="flex-1 active:scale-[0.98] transition" style={{ ...goldBtn, height: 40, fontSize: 12.5, justifyContent: 'center' }}>查看完整结果</button>
                     <button onClick={() => openCp(cp.level === 'quick' ? 'standard' : 'standard')} className="flex-1 active:scale-[0.98] transition" style={{ height: 40, borderRadius: 999, border: '1px solid rgba(4,40,95,.3)', background: '#F8FAFF', color: '#04285F', fontSize: 12.5, fontWeight: 800 }}>
-                      {cp.level === 'quick' ? '完成标准版（84 题）' : '重新评估'}
+                      {cp.level === 'quick' ? '完成完整版（84 题）' : '重新评估'}
                     </button>
                   </div>
                   <p style={{ margin: '10px 0 0', fontSize: 10, color: '#98A2B3', lineHeight: '16px' }}>{ARCH_DISCLAIMER}</p>
@@ -1733,10 +1733,10 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                 四层分开测量：信仰基础 · 门徒生命 · 事奉倾向 · 事奉准备度。结果是发展性参考，不是身份标签。
               </p>
               <button onClick={() => openCp('quick')} className="w-full active:scale-[0.98] transition" style={{ ...goldBtn, width: '100%', justifyContent: 'center', height: 42 }}>
-                快速事奉画像 · 30 题 · 约 6 分钟 <ChevronRight size={14} strokeWidth={2.6} />
+                事奉倾向画像 · 精简版 · 30 题 <ChevronRight size={14} strokeWidth={2.6} />
               </button>
               <button onClick={() => openCp('standard')} className="w-full active:scale-[0.98] transition" style={{ width: '100%', marginTop: 8, height: 42, borderRadius: 999, border: '1px solid rgba(4,40,95,.3)', background: '#F8FAFF', color: '#04285F', fontSize: 13, fontWeight: 800 }}>
-                标准 Christian Profile · 84 题 · 约 15–20 分钟
+                Christian Profile · 完整版 · 84 题
               </button>
               <p style={{ margin: '10px 0 0', fontSize: 10, color: '#98A2B3', textAlign: 'center' }}>每题自动保存 · 可随时退出继续 · 不显示题号压力，按 6 个阶段进行</p>
               {orientationGallery}
@@ -1758,8 +1758,8 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                     { t: '背景与处境', done: true },
                     { t: '信仰基础与装备画像（九维）', done: true },
                     cp
-                      ? { t: 'Christian Profile（事奉倾向）', done: true, sub: cp.level === 'quick' ? '快速版 · 可升级为标准版' : '标准版' }
-                      : { t: 'Christian Profile（事奉倾向）', action: () => openCp('quick'), actionText: '开始（约 6 分钟）' },
+                      ? { t: 'Christian Profile（事奉倾向）', done: true, sub: cp.level === 'quick' ? '精简版 · 可升级为完整版' : '完整版' }
+                      : { t: 'Christian Profile（事奉倾向）', action: () => openCp('quick'), actionText: '开始' },
                     hasLearn
                       ? { t: '学习佐证', done: true, sub: `已计入 ${portrait.learnedCount} 门完成课程` }
                       : { t: '学习佐证', sub: '完成任一门装备路径课程后自动计入' },
@@ -2252,11 +2252,11 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                 </div>
                 <div>
                   <p style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 900, color: '#F2D493', letterSpacing: '0.3px' }}>准备开始你的专属装备旅程？</p>
-                  <p style={{ margin: 0, fontSize: 11.5, color: 'rgba(233,238,248,.82)', lineHeight: 1.6, fontWeight: 500 }}>花 6–8 分钟，开启更有方向的成长与事奉。</p>
+                  <p style={{ margin: 0, fontSize: 11.5, color: 'rgba(233,238,248,.82)', lineHeight: 1.6, fontWeight: 500 }}>开启更有方向的成长与事奉。</p>
                 </div>
               </div>
               <button onClick={startQuiz} className="active:scale-[0.98] transition-transform" style={{ ...goldBtn, marginTop: 15, width: '100%', justifyContent: 'center' }}>
-                开始 AI 评估（约 6–8 分钟）
+                开始信仰基础评估
                 <ChevronRight size={15} strokeWidth={2.6} />
               </button>
             </section>

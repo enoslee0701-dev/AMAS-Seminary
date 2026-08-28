@@ -37,9 +37,9 @@ const Eyebrow: React.FC<{ title: string; en: string }> = ({ title, en }) => (
   </div>
 );
 const EVIDENCE_LABEL: Record<EvidenceStrength, string> = { high: '证据充分', moderate: '证据中等', limited: '证据有限' };
-const LEVEL_META: Record<AssessmentLevel, { name: string; time: string; count: string }> = {
-  quick: { name: '快速事奉画像', time: '约 6 分钟', count: '30 题' },
-  standard: { name: '标准 Christian Profile', time: '约 15–20 分钟', count: '84 题 · 6 个阶段' },
+const LEVEL_META: Record<AssessmentLevel, { name: string; count: string }> = {
+  quick: { name: '事奉倾向画像 · 精简版', count: '30 题' },
+  standard: { name: 'Christian Profile · 完整版', count: '84 题 · 6 个阶段' },
 };
 
 interface Props {
@@ -113,10 +113,10 @@ const ChristianProfileView: React.FC<Props> = ({ level, courses, onCourseClick, 
         <div style={{ ...card, padding: '18px 16px' }}>
           <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '1.5px', color: '#C99A45' }}>AMAS CHRISTIAN PROFILE · DEVELOPMENT EDITION</span>
           <h2 style={{ margin: '6px 0 6px', fontSize: 20, fontWeight: 900, color: '#14295A' }}>{m.name}</h2>
-          <p style={{ margin: '0 0 12px', fontSize: 12, color: '#667085' }}>{m.count} · {m.time} · 每题自动保存，可随时退出继续</p>
+          <p style={{ margin: '0 0 12px', fontSize: 12, color: '#667085' }}>{m.count} · 每题自动保存，可随时退出继续</p>
           <div style={{ borderTop: '1px solid #F1EFE8', paddingTop: 12 }}>
             {[
-              ['这是什么', level === 'standard' ? '一份分四层的成长与事奉画像：信仰基础、门徒生命、12 项事奉倾向、事奉准备度，四层分别计算，不合成总分。' : '对 12 项事奉倾向的快速画像（初步版），用于发现方向；不包含信仰基础、门徒生命与准备度。'],
+              ['这是什么', level === 'standard' ? '一份分四层的成长与事奉画像：信仰基础、门徒生命、12 项事奉倾向、事奉准备度，四层分别计算，不合成总分。' : '对 12 项事奉倾向的精简版画像，用于发现方向；不包含信仰基础、门徒生命与准备度，完整版会补齐。'],
               ['为什么测', '帮助你认识当前呈现的倾向与装备需要，并连接到课程、实践与导师反馈。'],
               ['结果如何使用', '结果是发展性参考，会随学习与服事更新；用于“建议尝试”，不是身份标签。'],
               ['不是用来做什么', '不衡量属灵价值，不判定教会职分或呼召，不替代圣经、祷告、教会群体与牧者的长期辨识。'],
@@ -155,7 +155,7 @@ const ChristianProfileView: React.FC<Props> = ({ level, courses, onCourseClick, 
           <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '1px', color: '#C99A45' }}>第 {stageIdx + 1} 阶段 · 共 {stages.length} 阶段</span>
           <h2 style={{ margin: '6px 0 8px', fontSize: 21, fontWeight: 900, color: '#14295A' }}>{s.title}</h2>
           <p style={{ margin: '0 0 16px', fontSize: 12.5, lineHeight: 1.8, color: '#667085' }}>{s.intro}</p>
-          <p style={{ margin: '0 0 14px', fontSize: 11, color: '#98A2B3' }}>{s.items.length} 题 · 约 {Math.max(1, Math.round((s.items.length * SECONDS_PER_ITEM) / 60))} 分钟</p>
+          <p style={{ margin: '0 0 14px', fontSize: 11, color: '#98A2B3' }}>{s.items.length} 题</p>
           <button onClick={startStage} className="w-full active:scale-[0.98] transition" style={{ ...gold, width: '100%' }}>开始这一阶段<ChevronRight size={15} /></button>
         </div>
       </Shell>
@@ -213,7 +213,7 @@ const Shell: React.FC<{ title: string; onExit: () => void; progress?: { step: nu
       <div className="flex items-center">
         <button onClick={onExit} aria-label="退出" className="p-1 -ml-2 rounded-full hover:bg-slate-100 transition"><X size={22} className="text-slate-500" /></button>
         <p className="ml-2 flex-1" style={{ margin: 0, fontSize: 15, fontWeight: 800, color: '#1F2A37' }}>{title}</p>
-        {progress && <span style={{ fontSize: 11, fontWeight: 700, color: '#98A2B3' }}>大约还需 {progress.remainingMin} 分钟</span>}
+        {progress && <span style={{ fontSize: 11, fontWeight: 700, color: '#98A2B3' }}>第 {progress.step} / {progress.total} 阶段</span>}
       </div>
       {progress && (
         <div style={{ marginTop: 8 }}>
@@ -274,7 +274,7 @@ export const ResultPage: React.FC<{ p: ChristianProfile; courses: Course[]; onCo
         {/* SECTION 1 */}
         <div style={{ padding: '18px 16px', color: '#FFF', borderRadius: 18, background: 'radial-gradient(90% 120% at 12% 0%, rgba(240,205,135,.16) 0%, rgba(240,205,135,0) 42%), linear-gradient(160deg, #0B2450 0%, #071A3C 100%)' }}>
           <p style={{ margin: '0 0 6px', fontSize: 9.5, fontWeight: 800, letterSpacing: '2px', color: 'rgba(232,201,140,.9)' }}>
-            {p.level === 'quick' ? '快速事奉画像 · 初步' : 'AMAS CHRISTIAN PROFILE'}
+            {p.level === 'quick' ? '事奉倾向画像 · 精简版' : 'AMAS CHRISTIAN PROFILE · 完整版'}
           </p>
           <h2 style={{ margin: '0 0 4px', fontSize: 22, fontWeight: 900, letterSpacing: '1px', background: 'linear-gradient(180deg, #F7E3B4 10%, #E4BC6E 90%)', WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
             {p.multiBlend ? '多元事奉组合' : p.combinedLabel}
@@ -284,7 +284,7 @@ export const ResultPage: React.FC<{ p: ChristianProfile; courses: Course[]; onCo
           </p>
           <p style={{ margin: 0, fontSize: 12, lineHeight: 1.8, color: 'rgba(233,238,248,.92)' }}>{summary}</p>
           <p style={{ margin: '8px 0 0', fontSize: 10, color: 'rgba(233,238,248,.55)' }}>
-            {p.level === 'quick' ? '这是初步画像，完成标准版后会加入信仰基础、门徒生命与准备度。' : '这是一个发展性画像，而不是固定身份标签。'}
+            {p.level === 'quick' ? '这是精简版画像，完成完整版后会加入信仰基础、门徒生命与准备度。' : '这是一个发展性画像，而不是固定身份标签。'}
             {' '}结果证据强度：{EVIDENCE_LABEL[p.evidenceStrength]}
           </p>
         </div>
