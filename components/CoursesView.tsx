@@ -102,11 +102,11 @@ interface CoursesViewProps {
   onOpenPocketTheology?: () => void;
   /** Logged-in user's role; gates the upload/management UI. */
   userRole?: string;
-  /** Bump to auto-open the path-recommendation wizard (deep link from home). */
-  wizardRequest?: number;
+  /** 打开「定制化神学」页面（课程页顶部引导卡）。 */
+  onOpenCustomTheology?: () => void;
 }
 
-const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdateCourse, favoriteCourseIds = [], onToggleFavorite, onCourseClick, onOpenPocketTheology, userRole, wizardRequest }) => {
+const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdateCourse, favoriteCourseIds = [], onToggleFavorite, onCourseClick, onOpenPocketTheology, userRole, onOpenCustomTheology }) => {
   // View Mode: 'selection' (landing) or 'list' (course list)
   const [viewMode, setViewMode] = useState<'selection' | 'list'>('selection');
   
@@ -117,19 +117,6 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
   const [myCoursesOnly, setMyCoursesOnly] = useState<boolean>(false);
   const [sortBy, setSortBy] = useState<string>('default');
 
-  // Path Recommendation Wizard State
-  const [showPathWizard, setShowPathWizard] = useState(false);
-  // Deep link from the home quick entry (定制化神学): each bump opens the wizard fresh.
-  useEffect(() => {
-    if (wizardRequest && wizardRequest > 0) {
-      setWizardStep(1); setWizardRole(''); setWizardInterest('');
-      setShowPathWizard(true);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wizardRequest]);
-  const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
-  const [wizardRole, setWizardRole] = useState<string>('');
-  const [wizardInterest, setWizardInterest] = useState<string>('');
 
   // Enrollment Modal State
   const [enrollPrompt, setEnrollPrompt] = useState<Course | null>(null);
@@ -419,30 +406,6 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
     setEditingCourse(null);
   };
 
-  const wizardRecommendation = (() => {
-    if (!wizardRole) return null;
-    const roleToLevel: Record<string, AcademicLevel> = {
-      '信徒': AcademicLevel.BTH,
-      '神学生': AcademicLevel.BTH,
-      '牧者': AcademicLevel.MDIV,
-      '研究者': AcademicLevel.MPTH,
-    };
-    const targetLevel = roleToLevel[wizardRole] || AcademicLevel.BTH;
-    const interestMap: Record<string, TheologyCategory> = {
-      '圣经': TheologyCategory.NT,
-      '神学': TheologyCategory.THEOLOGY,
-      '实践': TheologyCategory.PRACTICAL,
-      '历史': TheologyCategory.HISTORY,
-      '语言': TheologyCategory.LANGUAGE,
-    };
-    const targetCategory = interestMap[wizardInterest];
-    const sameLevel = courses.filter(c => c.level === targetLevel);
-    const matchInterest = sameLevel.filter(c => c.category === targetCategory);
-    const recommended = [...matchInterest, ...sameLevel.filter(c => !matchInterest.includes(c))].slice(0, 3);
-    const trackLabel = targetLevel === AcademicLevel.BTH ? '学士课程' : targetLevel === AcademicLevel.MDIV ? '硕士课程 · M.Div' : targetLevel === AcademicLevel.MPTH ? '硕士课程 · M.Pth' : '博士课程';
-    const trackValue = targetLevel === AcademicLevel.BTH ? '学士' : (targetLevel === AcademicLevel.MDIV || targetLevel === AcademicLevel.MPTH) ? '硕士' : '博士';
-    return { trackLabel, trackValue, recommended };
-  })();
 
   const handleEnrollConfirm = () => {
     if (!enrollPrompt) return;
@@ -452,94 +415,6 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
 
   return (
     <div className="pb-24 min-h-screen bg-slate-50 relative">
-      {/* Path Recommendation Wizard */}
-      {showPathWizard && (
-        <div className="fixed inset-0 z-[80] bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 animate-fade-in max-w-md mx-auto" onClick={() => setShowPathWizard(false)}>
-          <div className="bg-white w-full rounded-3xl p-6 shadow-2xl animate-scale-in" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center" style={{ gap: 10 }}>
-                <div className="w-9 h-9 rounded-full bg-[#04285F] flex items-center justify-center">
-                  <Sparkles size={16} color="#E8C98C" />
-                </div>
-                <h3 className="text-[17px] font-bold text-slate-900">定制神学路径</h3>
-              </div>
-              <button onClick={() => setShowPathWizard(false)}><X size={20} className="text-slate-400" /></button>
-            </div>
-            <div className="flex items-center mb-5" style={{ gap: 6 }}>
-              {[1, 2, 3].map(s => (
-                <div key={s} className="flex-1 h-1 rounded-full" style={{ background: wizardStep >= (s as 1 | 2 | 3) ? '#04285F' : '#E5E7EB' }} />
-              ))}
-            </div>
-            {wizardStep === 1 && (
-              <div className="animate-fade-in">
-                <p className="text-[13px] font-bold text-slate-700 mb-3">你目前的身份是？</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {['信徒', '神学生', '牧者', '研究者'].map(r => (
-                    <button
-                      key={r}
-                      onClick={() => { setWizardRole(r); setWizardStep(2); }}
-                      className="py-3 rounded-xl text-[13px] font-semibold border transition active:scale-95"
-                      style={{
-                        background: wizardRole === r ? '#04285F' : '#FFFFFF',
-                        color: wizardRole === r ? '#FFFFFF' : '#1F2937',
-                        borderColor: wizardRole === r ? '#04285F' : '#E5E7EB',
-                      }}
-                    >{r}</button>
-                  ))}
-                </div>
-              </div>
-            )}
-            {wizardStep === 2 && (
-              <div className="animate-fade-in">
-                <p className="text-[13px] font-bold text-slate-700 mb-3">最感兴趣的方向？</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {['圣经', '神学', '实践', '历史', '语言'].map(i => (
-                    <button
-                      key={i}
-                      onClick={() => { setWizardInterest(i); setWizardStep(3); }}
-                      className="py-3 rounded-xl text-[13px] font-semibold border transition active:scale-95"
-                      style={{
-                        background: wizardInterest === i ? '#04285F' : '#FFFFFF',
-                        color: wizardInterest === i ? '#FFFFFF' : '#1F2937',
-                        borderColor: wizardInterest === i ? '#04285F' : '#E5E7EB',
-                      }}
-                    >{i}</button>
-                  ))}
-                </div>
-                <button onClick={() => setWizardStep(1)} className="mt-4 text-[12px] text-slate-500 font-semibold">← 上一步</button>
-              </div>
-            )}
-            {wizardStep === 3 && wizardRecommendation && (
-              <div className="animate-fade-in">
-                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">为你推荐的路径</p>
-                <h4 className="text-[18px] font-extrabold text-[#04285F] mb-1">{wizardRecommendation.trackLabel}</h4>
-                <p className="text-[12px] text-slate-500 mb-4">基于「{wizardRole}」与「{wizardInterest}」方向</p>
-                <p className="text-[12px] font-bold text-slate-700 mb-2">推荐课程</p>
-                <div className="space-y-2 mb-4">
-                  {wizardRecommendation.recommended.length === 0 ? (
-                    <p className="text-[12px] text-slate-400">暂无匹配课程，可浏览整个轨道。</p>
-                  ) : wizardRecommendation.recommended.map(c => (
-                    <div key={c.id} onClick={() => { setShowPathWizard(false); onCourseClick?.(c.id); }} className="bg-slate-50 rounded-xl p-3 flex items-center cursor-pointer active:scale-[0.99]" style={{ gap: 10 }}>
-                      <div className="w-10 h-10 rounded-lg bg-[#04285F] flex items-center justify-center flex-shrink-0">
-                        <BookOpen size={16} color="#E8C98C" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[13px] font-bold text-slate-900 truncate">{c.title}</p>
-                        <p className="text-[10px] text-slate-500 truncate">{c.instructor} · {c.category}</p>
-                      </div>
-                      <ChevronRight size={14} className="text-slate-400" />
-                    </div>
-                  ))}
-                </div>
-                <div className="flex" style={{ gap: 8 }}>
-                  <button onClick={() => setWizardStep(2)} className="flex-1 py-3 rounded-xl bg-slate-100 text-slate-600 font-bold text-[13px]">上一步</button>
-                  <button onClick={() => { setActiveLevel(wizardRecommendation.trackValue); setShowPathWizard(false); }} className="flex-1 py-3 rounded-xl bg-[#04285F] text-white font-bold text-[13px]">查看完整轨道</button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Enroll Confirmation Modal */}
       {enrollPrompt && (
@@ -998,17 +873,17 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
                 />
                 <div className="relative z-10 px-5 pt-5 pb-5">
                   <h2 className="text-white font-extrabold tracking-tight" style={{ fontSize: 20, lineHeight: '26px' }}>
-                    你的神学成长路径
+                    定制化神学
                   </h2>
                   <p className="text-white/75 mt-2" style={{ fontSize: 12, lineHeight: '18px', maxWidth: '60%' }}>
-                    根据你的兴趣与学习进度，量身推荐合适的课程组合，循序渐进地建立装备。
+                    认识你的信仰基础、成长状态与 12 项事奉倾向，为你生成专属装备路径。
                   </p>
                   <button
-                    onClick={() => { setWizardStep(1); setWizardRole(''); setWizardInterest(''); setShowPathWizard(true); }}
+                    onClick={() => onOpenCustomTheology?.()}
                     className="mt-4 inline-flex items-center bg-[#E8C98C] text-[#04285F] rounded-full font-bold active:scale-95 transition"
                     style={{ height: 32, paddingLeft: 14, paddingRight: 12, fontSize: 12, gap: 4 }}
                   >
-                    开始定制路径推荐
+                    进入定制化神学
                     <ChevronRight size={14} strokeWidth={2.6} />
                   </button>
                 </div>

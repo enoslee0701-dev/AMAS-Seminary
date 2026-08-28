@@ -153,12 +153,6 @@ const App: React.FC = () => {
     setCurrentView(ViewState.COLLEGE_OVERVIEW);
   };
   const [communityTab, setCommunityTab] = useState<'rooms' | 'feed' | 'directory' | 'prayer'>('rooms');
-  // Bumped by the home 定制化神学 entry: routes to COURSES and pops the path wizard.
-  const [coursesWizardRequest, setCoursesWizardRequest] = useState(0);
-  const openPathWizard = () => {
-    setCoursesWizardRequest(n => n + 1);
-    setCurrentView(ViewState.COURSES);
-  };
   const [favoriteCourseIds, setFavoriteCourseIds] = useState<string[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
 
@@ -641,7 +635,6 @@ const App: React.FC = () => {
                         setNewsItems={setNewsItems}
                         courses={allCourses}
                         onCourseClick={handleCourseClick}
-                        onOpenPathWizard={openPathWizard}
                         tierCounts={{
                           '证书': allCourses.filter(c => !c.level).length,
                           '学士': allCourses.filter(c => c.level === AcademicLevel.BTH).length,
@@ -659,7 +652,7 @@ const App: React.FC = () => {
                         onToggleFavorite={handleToggleFavorite}
                         onCourseClick={handleCourseClick}
                         onOpenPocketTheology={() => setCurrentView(ViewState.POCKET_THEOLOGY)}
-                        wizardRequest={coursesWizardRequest}
+                        onOpenCustomTheology={() => setCurrentView(ViewState.CUSTOM_THEOLOGY)}
                         userRole={currentUser?.role}
                       />
                     )}

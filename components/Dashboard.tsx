@@ -60,8 +60,6 @@ interface DashboardProps {
   /** Full course catalog + click handler for the global search overlay. */
   courses?: Course[];
   onCourseClick?: (courseId: string) => void;
-  /** Open the course path-recommendation wizard (定制化神学 quick entry). */
-  onOpenPathWizard?: () => void;
   /** Live course count per degree tier, shown on the 课程路径 cards. */
   tierCounts?: Partial<Record<ProgramTier, number>>;
 }
@@ -110,7 +108,7 @@ const heroSlides: HeroSlide[] = [
   },
 ];
 
-const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, onOpenCoursePath, newsItems, tierCounts, courses = [], onCourseClick, onOpenPathWizard }) => {
+const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, onOpenCoursePath, newsItems, tierCounts, courses = [], onCourseClick }) => {
   // AI customer-service overlay (opened from the floating 咨询 button).
   const [showAIChat, setShowAIChat] = useState(false);
   // Global app search overlay (opened from the navbar search button).
