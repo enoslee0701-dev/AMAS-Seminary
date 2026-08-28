@@ -28,7 +28,448 @@ const setStatusBar = async (textColor: 'light' | 'dark') => {
 
 /** 首页统一的板块标题：左 17px 粗体标题，右 13px 灰色动作链接。所有板块必须使用它。 */
 const SectionHeader: React.FC<{ title: string; action?: string; onAction?: () => void }> = ({ title, action, onAction }) => (
-  <SectionHeader title="快捷入口" action="全部服务" onAction={() => onViewChange(ViewState.COLLEGE_OVERVIEW)} />
+  <div className="flex items-center justify-between" style={{ marginBottom: 10, paddingLeft: 4, paddingRight: 4 }}>
+    <h3
+      style={{
+        fontFamily: '"PingFang SC", -apple-system, "Helvetica Neue", sans-serif',
+        fontSize: 17, fontWeight: 700, lineHeight: '24px', color: '#1F2A37', margin: 0,
+      }}
+    >
+      {title}
+    </h3>
+    {action && (
+      <button
+        onClick={onAction}
+        className="flex items-center hover:text-blue-700 transition-colors active:scale-95"
+        style={{ fontFamily: '"PingFang SC", -apple-system, sans-serif', fontSize: 13, fontWeight: 400, color: '#98A2B3' }}
+      >
+        {action} <ChevronRight size={14} strokeWidth={2} />
+      </button>
+    )}
+  </div>
+);
+
+interface DashboardProps {
+  onViewChange: (view: ViewState) => void;
+  onOpenCollegeItem?: (item: string) => void;
+  /** Open the 课程路径 page; pass a tier to deep-link to that tier's detail. */
+  onOpenCoursePath?: (tier?: ProgramTier) => void;
+  newsItems: NewsItem[];
+  setNewsItems: (items: NewsItem[]) => void;
+  /** Full course catalog + click handler for the global search overlay. */
+  courses?: Course[];
+  onCourseClick?: (courseId: string) => void;
+  /** Open the course path-recommendation wizard (定制化神学 quick entry). */
+  onOpenPathWizard?: () => void;
+  /** Live course count per degree tier, shown on the 课程路径 cards. */
+  tierCounts?: Partial<Record<ProgramTier, number>>;
+}
+
+// Local stock-image data URIs — work offline and don't hit the Unsplash /
+// picsum CDNs (often slow or blocked in mainland China).
+const FEATURED_1 = STOCK_PHOTOS.bibleLight;
+const FEATURED_2 = STOCK_PHOTOS.books;
+
+type HeroSlide =
+  | { type: 'image'; src: string; alt: string }
+  | { type: 'card'; bg: string; overline: string; title: string; sub: string; cta: string; action: 'admissions' | 'courses' | 'live' };
+
+const heroSlides: HeroSlide[] = [
+  {
+    type: 'image',
+    src: '/hero-header.png',
+    alt: 'AMAS 亚洲宣教神学院',
+  },
+  {
+    type: 'card',
+    bg: STOCK_PHOTOS.lectureHall,
+    overline: '2026 SPRING ADMISSIONS',
+    title: '2026 春季招生',
+    sub: '装备生命，回应主的呼召',
+    cta: '查看招生简章',
+    action: 'admissions',
+  },
+  {
+    type: 'card',
+    bg: STOCK_PHOTOS.study,
+    overline: 'OPEN LECTURE SERIES',
+    title: '开放公开课',
+    sub: '名师免费试听 · 神学根基系列',
+    cta: '免费试听',
+    action: 'courses',
+  },
+  {
+    type: 'card',
+    bg: STOCK_PHOTOS.worship,
+    overline: 'LIVE & ONLINE',
+    title: '在线直播课堂',
+    sub: '每周三晚 · 牧者专题分享',
+    cta: '预约听课',
+    action: 'live',
+  },
+];
+
+const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, onOpenCoursePath, newsItems, tierCounts, courses = [], onCourseClick, onOpenPathWizard }) => {
+  // AI customer-service overlay (opened from the floating 咨询 button).
+  const [showAIChat, setShowAIChat] = useState(false);
+  // Global app search overlay (opened from the navbar search button).
+  const [showSearch, setShowSearch] = useState(false);
+
+  // Scrolled past hero → show compact sticky navbar.
+  const [scrolled, setScrolled] = useState(false);
+  // Hero carousel — transform-based (no scroll container, no rubber-banding)
+  const [slideIdx, setSlideIdx] = useState(0);
+  const userPausedUntilRef = useRef<number>(0);
+  const touchStartXRef = useRef<number>(0);
+  const touchStartYRef = useRef<number>(0);
+  const touchActiveRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (Date.now() < userPausedUntilRef.current) return;
+      setSlideIdx((i) => (i + 1) % heroSlides.length);
+    }, 4000);
+    return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    // Threshold: roughly past the hero's title block. Hero is ~ 320–380px tall.
+    const threshold = 140;
+    const onScroll = () => setScrolled(window.scrollY > threshold);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  // Status-bar style follows what's currently behind the time/dynamic-island area.
+  // Top of dashboard always shows a dark surface (hero or sticky navbar) → Light text.
+  // When this view unmounts, restore Dark for light-background views.
+  useEffect(() => {
+    setStatusBar('light');
+    return () => { setStatusBar('dark'); };
+  }, []);
+
+  const stats = [
+    { icon: BookOpen, value: '120+', label: '课程', tone: 'navy' as const },
+    { icon: Church, value: '200+', label: '教会', tone: 'gold' as const },
+    { icon: GraduationCap, value: '3000+', label: '学员', tone: 'navy' as const },
+    { icon: Handshake, value: '20+', label: '分院', tone: 'gold' as const },
+  ];
+
+  const growthRole = readGrowthRole();
+  const quickEntries = [
+    { icon: Landmark, title: '了解学校', sub: '学校介绍详情', view: ViewState.COLLEGE_OVERVIEW },
+    { icon: Megaphone, title: '最新公告', sub: '通知与活动', view: ViewState.ALL_ANNOUNCEMENTS },
+    { icon: PlayCircle, title: '课程试听', sub: '体验精选课程', view: ViewState.COURSE_TRIAL },
+    {
+      icon: Sparkles, title: '定制化神学',
+      sub: growthRole ? `你的倾向：${growthRole.combined}` : '发现你的 12 项事奉倾向',
+      view: ViewState.CUSTOM_THEOLOGY,
+    },
+  ];
+
+  const coursePaths: { level: string; tier: ProgramTier; cn: string; tone: string; tint: string }[] = [
+    { level: '证书课程', tier: '证书', cn: '扎实装备', tone: '#C99A45', tint: '#F6EBD3' },
+    { level: '学士课程', tier: '学士', cn: '系统学习', tone: '#04285F', tint: '#DCE4F4' },
+    { level: '硕士课程', tier: '硕士', cn: '深化装备', tone: '#6B4F9B', tint: '#EBE3F3' },
+    { level: '博士课程', tier: '博士', cn: '卓越研究', tone: '#8B2E3F', tint: '#F4DEE2' },
+  ];
+
+  const libraryPicks = [
+    { title: '2026 春季推荐书单', sub: '教务长精选 · 12 册', tag: '书单' },
+    { title: '系统神学课程讲义', sub: '陈永信 教授 · 名师课件', tag: '讲义' },
+    { title: '早期教父著作集', sub: '神学典籍 · 中英对照', tag: '经典' },
+  ];
+
+  const featured = [
+    { id: 'f1', title: '新约导论', instructor: '张路加 教授', cover: FEATURED_1, badge: '圣经神学' },
+    { id: 'f2', title: '系统神学 I', instructor: '陈永信 教授', cover: FEATURED_2, badge: '系统神学' },
+  ];
+
+  return (
+    <div className="pb-24 animate-fade-in" style={{ backgroundColor: '#F7F6F3' }}>
+      {/* === STICKY COMPACT NAVBAR — slides in once user scrolls past the hero === */}
+      <div
+        aria-hidden={!scrolled}
+        style={{
+          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 60,
+          paddingTop: 'env(safe-area-inset-top)',
+          backgroundColor: 'rgba(4, 40, 95, 0.94)',
+          backdropFilter: 'saturate(160%) blur(14px)',
+          WebkitBackdropFilter: 'saturate(160%) blur(14px)',
+          borderBottom: '1px solid rgba(232, 201, 140, 0.20)',
+          boxShadow: scrolled ? '0 6px 16px rgba(4,16,40,0.25)' : 'none',
+          transform: scrolled ? 'translateY(0)' : 'translateY(-100%)',
+          transition: 'transform 0.32s cubic-bezier(0.32, 0.72, 0, 1), box-shadow 0.32s ease',
+          willChange: 'transform',
+        }}
+      >
+        <div className="flex items-center" style={{ height: 52, paddingLeft: 14, paddingRight: 14 }}>
+          <div
+            className="flex items-center justify-center shrink-0"
+            style={{
+              width: 32, height: 32, borderRadius: '50%',
+              backgroundColor: 'rgba(255,255,255,0.06)',
+              boxShadow: '0 0 0 1px rgba(232,201,140,0.28)',
+              padding: 2,
+            }}
+          >
+            <img
+              src="/amas-crest.png"
+              alt=""
+              style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: '50%', backgroundColor: '#FFFFFF' }}
+            />
+          </div>
+          <div className="flex items-baseline" style={{ marginLeft: 10, gap: 6 }}>
+            <span
+              style={{
+                fontFamily: '"Cormorant Garamond", Georgia, serif',
+                fontSize: 17, fontWeight: 700, lineHeight: '20px',
+                color: '#E8C98C', letterSpacing: '0.4px',
+              }}
+            >
+              AMAS
+            </span>
+            <span
+              style={{
+                fontFamily: '"PingFang SC", -apple-system, sans-serif',
+                fontSize: 14, fontWeight: 600, lineHeight: '18px',
+                color: '#E8C98C',
+              }}
+            >
+              亚洲宣教神学院
+            </span>
+          </div>
+          <div style={{ flex: 1 }} />
+          <button
+            aria-label="搜索"
+            onClick={() => setShowSearch(true)}
+            className="flex items-center justify-center active:scale-95 transition"
+            style={{
+              width: 34, height: 34, borderRadius: '50%',
+              backgroundColor: 'rgba(255,255,255,0.08)',
+              border: '1px solid rgba(232,201,140,0.18)',
+              color: '#E8C98C',
+            }}
+          >
+            <Search size={16} strokeWidth={2} />
+          </button>
+        </div>
+      </div>
+
+      {/* Floating search over the hero — hands off to the sticky navbar icon on scroll */}
+      <div className="fixed left-0 right-0 max-w-md mx-auto pointer-events-none" style={{ top: 'calc(var(--safe-top) + 10px)', zIndex: 55 }}>
+        <button
+          aria-label="搜索"
+          onClick={() => setShowSearch(true)}
+          className="absolute flex items-center justify-center active:scale-95"
+          style={{
+            right: 14,
+            width: 36, height: 36, borderRadius: '50%',
+            backgroundColor: 'rgba(4,20,45,0.38)',
+            backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+            border: '1px solid rgba(255,255,255,0.35)',
+            opacity: scrolled ? 0 : 1,
+            pointerEvents: scrolled ? 'none' : 'auto',
+            transition: 'opacity 0.25s ease',
+          }}
+        >
+          <Search size={17} color="#FFFFFF" strokeWidth={2.2} />
+        </button>
+      </div>
+
+      {/* === HEADER CAROUSEL === auto-advances every 4s, swipeable, no vertical drag */}
+      <header
+        className="relative w-full overflow-hidden outline-none"
+        role="region"
+        aria-roledescription="carousel"
+        aria-label={`招生轮播，第 ${slideIdx + 1} / ${heroSlides.length} 页 — 左右方向键切换`}
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+          e.preventDefault();
+          userPausedUntilRef.current = Date.now() + 8000;
+          setSlideIdx((i) =>
+            e.key === 'ArrowRight'
+              ? (i + 1) % heroSlides.length
+              : (i - 1 + heroSlides.length) % heroSlides.length,
+          );
+        }}
+        style={{
+          backgroundColor: '#04285F',
+          borderBottomLeftRadius: '50% 12px',
+          borderBottomRightRadius: '50% 12px',
+          // Taller banner (was 1672/941): shows more of the hero photo and
+          // gives the carousel cards breathing room, per design feedback.
+          aspectRatio: '1672 / 1130',
+          touchAction: 'pan-y',
+        }}
+        onTouchStart={(e) => {
+          touchStartXRef.current = e.touches[0].clientX;
+          touchStartYRef.current = e.touches[0].clientY;
+          touchActiveRef.current = true;
+          userPausedUntilRef.current = Date.now() + 8000;
+        }}
+        onTouchEnd={(e) => {
+          if (!touchActiveRef.current) return;
+          touchActiveRef.current = false;
+          const dx = e.changedTouches[0].clientX - touchStartXRef.current;
+          const dy = e.changedTouches[0].clientY - touchStartYRef.current;
+          if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) {
+            if (dx < 0) setSlideIdx((i) => (i + 1) % heroSlides.length);
+            else setSlideIdx((i) => (i - 1 + heroSlides.length) % heroSlides.length);
+          }
+        }}
+      >
+        <div
+          className="flex w-full h-full"
+          style={{
+            transform: `translateX(-${slideIdx * 100}%)`,
+            transition: 'transform 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
+            willChange: 'transform',
+          }}
+        >
+          {heroSlides.map((s, i) => (
+            <div key={i} className="flex-none w-full h-full relative" style={{ flexBasis: '100%' }}>
+              {s.type === 'image' ? (
+                <img
+                  src={s.src}
+                  alt={s.alt}
+                  className="block w-full h-full select-none pointer-events-none"
+                  draggable={false}
+                  // 25% horizontal focus: the taller banner center-crops both
+                  // sides; biasing left keeps the artwork's own text margin.
+                  style={{ objectFit: 'cover', objectPosition: '25% center' }}
+                />
+              ) : (
+                <>
+                  <img
+                    src={s.bg}
+                    alt=""
+                    className="absolute inset-0 w-full h-full select-none pointer-events-none"
+                    draggable={false}
+                    style={{ objectFit: 'cover' }}
+                  />
+                  <div
+                    className="absolute inset-0 pointer-events-none"
+                    style={{
+                      background:
+                        'linear-gradient(120deg, rgba(4,40,95,0.94) 0%, rgba(4,40,95,0.72) 45%, rgba(4,40,95,0.20) 100%)',
+                    }}
+                  />
+                  <div className="absolute inset-0 flex flex-col justify-center px-6">
+                    <div
+                      className="font-bold tracking-[0.32em]"
+                      style={{ fontSize: 10, color: '#E8C98C', marginBottom: 8 }}
+                    >
+                      {s.overline}
+                    </div>
+                    <div
+                      className="text-white font-extrabold tracking-tight"
+                      style={{ fontSize: 26, lineHeight: '32px' }}
+                    >
+                      {s.title}
+                    </div>
+                    <div
+                      className="text-white/80"
+                      style={{ fontSize: 13, marginTop: 6, marginBottom: 14, maxWidth: '70%' }}
+                    >
+                      {s.sub}
+                    </div>
+                    <button
+                      onClick={() => {
+                        if (s.action === 'admissions') onOpenCollegeItem?.('入学指南');
+                        else if (s.action === 'courses') onViewChange(ViewState.COURSES);
+                        else if (s.action === 'live') onViewChange(ViewState.COMMUNITY);
+                      }}
+                      className="self-start flex items-center font-bold active:scale-95 transition"
+                      style={{
+                        background: '#E8C98C',
+                        color: '#04285F',
+                        fontSize: 12,
+                        padding: '8px 14px',
+                        borderRadius: 999,
+                        gap: 4,
+                      }}
+                    >
+                      {s.cta}
+                      <ChevronRight size={14} strokeWidth={2.6} />
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      </header>
+
+      {/* === StatsBar — below the hero with a slight overlap so the full
+           header photo stays visible (was -36, which crowded the hero on
+           phones) === */}
+      <section className="relative" style={{ paddingLeft: 14, paddingRight: 14, marginTop: -12 }}>
+        <div
+          style={{
+            width: '100%', height: 56,
+            borderRadius: 16,
+            backgroundColor: '#FFFFFF',
+            paddingLeft: 6, paddingRight: 6,
+            boxShadow: '0 18px 36px rgba(16,24,40,0.12), 0 4px 10px rgba(16,24,40,0.05)',
+          }}
+        >
+          <div className="flex items-center h-full">
+            {stats.map((s, i) => {
+              const Icon = s.icon;
+              return (
+                <React.Fragment key={s.label}>
+                  <div className="flex items-center justify-center flex-1">
+                    <div
+                      className="flex items-center justify-center shrink-0"
+                      style={{
+                        width: 29, height: 29, borderRadius: '50%',
+                        backgroundColor: s.tone === 'navy' ? '#04285F' : '#C99A45',
+                      }}
+                    >
+                      <Icon
+                        size={15}
+                        strokeWidth={2}
+                        color={s.tone === 'navy' ? '#E8C98C' : '#FFFFFF'}
+                        fill="transparent"
+                      />
+                    </div>
+                    <div style={{ marginLeft: 6 }}>
+                      <div
+                        style={{
+                          fontFamily: '-apple-system, "SF Pro Display", "Helvetica Neue", sans-serif',
+                          fontSize: 'clamp(11.5px, 3.3vw, 13px)', fontWeight: 600, lineHeight: '16px',
+                          color: '#2B2B2B', letterSpacing: '-0.2px',
+                        }}
+                      >
+                        {s.value}
+                      </div>
+                      <div
+                        style={{
+                          fontFamily: '"PingFang SC", -apple-system, "Helvetica Neue", sans-serif',
+                          fontSize: 'clamp(10px, 2.9vw, 11px)', fontWeight: 500, lineHeight: '14px',
+                          color: '#8C8C8C',
+                        }}
+                      >
+                        {s.label}
+                      </div>
+                    </div>
+                  </div>
+                  {i < stats.length - 1 && (
+                    <div style={{ width: 1, height: 26, backgroundColor: '#F0EDE6', flexShrink: 0 }} />
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* 快捷入口 */}
+      <section className="px-4" style={{ marginTop: 22 }}>
+        <SectionHeader title="快捷入口" action="全部服务" onAction={() => onViewChange(ViewState.COLLEGE_OVERVIEW)} />
 
         <div
           className="bg-white"
