@@ -524,6 +524,27 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
 
       {/* === 定制化神学 · 12 项事奉倾向（替代原“免费试听”邀请卡） === */}
       <section className="px-4" style={{ marginTop: 18 }}>
+        <div className="flex items-center justify-between" style={{ marginBottom: 10, paddingLeft: 4, paddingRight: 4 }}>
+          <h3
+            style={{
+              fontFamily: '"PingFang SC", -apple-system, "Helvetica Neue", sans-serif',
+              fontSize: 17, fontWeight: 700, lineHeight: '24px',
+              color: '#1F2A37', margin: 0,
+            }}
+          >
+            定制化神学
+          </h3>
+          <button
+            onClick={() => onViewChange(ViewState.CUSTOM_THEOLOGY)}
+            className="flex items-center hover:text-blue-700 transition-colors active:scale-95"
+            style={{
+              fontFamily: '"PingFang SC", -apple-system, sans-serif',
+              fontSize: 13, fontWeight: 400, color: '#98A2B3',
+            }}
+          >
+            了解更多 <ChevronRight size={14} strokeWidth={2} />
+          </button>
+        </div>
         <button
           type="button"
           onClick={() => onViewChange(ViewState.CUSTOM_THEOLOGY)}
@@ -556,11 +577,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
           </div>
 
           <div style={{ position: 'relative', zIndex: 3, paddingRight: 128 }}>
-            <p style={{ margin: '0 0 3px', fontSize: 9.5, fontWeight: 800, letterSpacing: '2px', color: 'rgba(232,201,140,.9)' }}>
+            <p style={{ margin: '0 0 6px', fontSize: 9.5, fontWeight: 800, letterSpacing: '2px', color: 'rgba(232,201,140,.9)' }}>
               AMAS CHRISTIAN PROFILE
-            </p>
-            <p style={{ margin: '0 0 5px', fontSize: 'clamp(13px, 4vw, 15px)', fontWeight: 900, color: '#FFFFFF', letterSpacing: '0.5px' }}>
-              定制化神学
             </p>
             <h3
               style={{

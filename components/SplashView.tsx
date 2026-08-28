@@ -48,7 +48,7 @@ const SplashView: React.FC<SplashViewProps> = ({ onFinish }) => {
         .amas-splash-cta     { animation: amasCtaIn  0.7s ease-out 2.60s both, amasCtaPulse 2.6s ease-in-out 3.50s infinite; }
         .amas-splash-arrow   { animation: amasArrow  1.6s ease-in-out 3.50s infinite; }
         .amas-splash-attr    { animation: amasFade   0.5s ease-out 2.95s both; }
-        @keyframes amasSloganIn { 0% { opacity: 0; transform: translateY(10px); letter-spacing: 6px; } 100% { opacity: 1; transform: translateY(0); letter-spacing: 2px; } }
+        @keyframes amasSloganIn { 0% { opacity: 0; transform: translateY(12px) scale(0.96); letter-spacing: 14px; } 100% { opacity: 1; transform: translateY(0) scale(1); letter-spacing: 6px; } }
         @keyframes amasShimmer  { 0% { background-position: 200% 50%; } 100% { background-position: -200% 50%; } }
         @keyframes amasRule     { 0% { width: 0; opacity: 0; } 100% { width: 56px; opacity: 1; } }
         @keyframes amasChipIn   { 0% { opacity: 0; transform: scale(0.9); } 100% { opacity: 1; transform: scale(1); } }
@@ -206,51 +206,61 @@ const SplashView: React.FC<SplashViewProps> = ({ onFinish }) => {
         </div>
 
         {/* === 定制化神学 SLOGAN (fills the quiet middle of the sky) === */}
-        <div className="flex flex-col items-center justify-center relative" style={{ flex: 1, width: '100%', zIndex: 5, padding: '0 28px' }}>
+        <div className="flex flex-col items-center justify-center relative" style={{ flex: 1, width: '100%', zIndex: 5, padding: '0 24px' }}>
           <span
             className="amas-splash-slogan-chip"
             style={{
               fontFamily: '-apple-system, "SF Pro Text", sans-serif',
-              fontSize: 9.5, fontWeight: 700, letterSpacing: '0.24em',
-              color: 'rgba(232,201,140,0.85)',
-              border: '1px solid rgba(232,201,140,0.35)', borderRadius: 999,
-              padding: '4px 12px',
-              backgroundColor: 'rgba(8,24,59,0.45)',
-              backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
+              fontSize: 9.5, fontWeight: 700, letterSpacing: '0.26em',
+              color: 'rgba(232,201,140,0.8)', textShadow: '0 1px 8px rgba(0,0,0,0.6)',
             }}
           >
-            定制化神学 · CHRISTIAN PROFILE
+            AMAS CHRISTIAN PROFILE
           </span>
 
+          {/* 主标题：定制化神学 */}
           <p
             className="amas-splash-slogan"
             style={{
-              margin: '14px 0 0',
+              margin: '8px 0 0',
               fontFamily: '"PingFang SC", -apple-system, sans-serif',
-              fontSize: 'clamp(24px, 7.2vw, 30px)', fontWeight: 900, lineHeight: 1.25,
-              letterSpacing: '2px', whiteSpace: 'nowrap', textAlign: 'center',
+              fontSize: 'clamp(38px, 11.5vw, 48px)', fontWeight: 900, lineHeight: 1.15,
+              letterSpacing: '6px', whiteSpace: 'nowrap', textAlign: 'center',
               background: 'linear-gradient(100deg, #E4BC6E 0%, #FFF3D0 45%, #F7E3B4 50%, #E4BC6E 55%, #E4BC6E 100%)',
               backgroundSize: '200% 100%',
               WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent',
-              filter: 'drop-shadow(0 2px 10px rgba(0,0,0,0.55))',
+              filter: 'drop-shadow(0 3px 14px rgba(0,0,0,0.6))',
             }}
           >
-            认识你，才能装备你
+            定制化神学
           </p>
 
-          <div className="flex items-center" style={{ marginTop: 12, gap: 10 }}>
+          <div className="flex items-center" style={{ marginTop: 10, gap: 10 }}>
             <span className="amas-splash-slogan-rule" style={{ height: 1, background: 'linear-gradient(90deg, rgba(201,154,69,0), #C99A45)' }} />
             <span style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: '#E8C98C', boxShadow: '0 0 8px rgba(232,201,140,0.9)' }} />
             <span className="amas-splash-slogan-rule" style={{ height: 1, background: 'linear-gradient(90deg, #C99A45, rgba(201,154,69,0))' }} />
           </div>
 
+          {/* 标语 */}
           <p
             className="amas-splash-slogan-sub"
             style={{
               margin: '12px 0 0',
               fontFamily: '"PingFang SC", -apple-system, sans-serif',
-              fontSize: 12.5, fontWeight: 500, letterSpacing: '1.5px', lineHeight: '20px',
-              color: 'rgba(247,242,232,0.88)', textAlign: 'center',
+              fontSize: 'clamp(18px, 5.4vw, 22px)', fontWeight: 800, letterSpacing: '3px', lineHeight: 1.3,
+              color: '#FFF3DA', textAlign: 'center', whiteSpace: 'nowrap',
+              textShadow: '0 2px 12px rgba(0,0,0,0.7)',
+            }}
+          >
+            认识你，才能装备你
+          </p>
+          <p
+            className="amas-splash-slogan-sub"
+            style={{
+              margin: '8px 0 0',
+              fontFamily: '"PingFang SC", -apple-system, sans-serif',
+              fontSize: 12, fontWeight: 500, letterSpacing: '1.5px', lineHeight: '18px',
+              color: 'rgba(247,242,232,0.82)', textAlign: 'center',
               textShadow: '0 1px 8px rgba(0,0,0,0.7)',
             }}
           >
