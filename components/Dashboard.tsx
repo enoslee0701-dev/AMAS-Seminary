@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { ViewState, NewsItem, Course } from '../types';
 import { STOCK_PHOTOS } from '../services/stockPhotos';
-import { readGrowthRole } from '../services/growthArchetypes';
+import { readGrowthRole, archImg } from '../services/growthArchetypes';
 import type { ProgramTier } from './College/programData';
 
 const AIServiceChat = React.lazy(() => import('./AIServiceChat'));
@@ -522,83 +522,69 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
         </div>
       </section>
 
-      {/* === WELCOME / LOW-BARRIER INVITATION === */}
+      {/* === 定制化神学 · 12 项事奉倾向（替代原“免费试听”邀请卡） === */}
       <section className="px-4" style={{ marginTop: 18 }}>
         <button
           type="button"
-          onClick={() => onViewChange(ViewState.COURSES)}
+          onClick={() => onViewChange(ViewState.CUSTOM_THEOLOGY)}
           className="w-full text-left active:scale-[0.99] transition-transform"
           style={{
-            display: 'block',
-            position: 'relative',
-            padding: '16px 18px 14px',
-            borderRadius: 18,
+            display: 'block', position: 'relative', overflow: 'hidden',
+            padding: '16px 16px 15px', borderRadius: 20, color: '#FFF',
             background:
-              'linear-gradient(135deg, #FCEED1 0%, #FFF7E2 55%, #FFFDF6 100%)',
-            border: '1px solid rgba(201,154,69,0.22)',
-            boxShadow: '0 8px 22px rgba(201,154,69,0.12), 0 1px 3px rgba(16,24,40,0.04)',
-            overflow: 'hidden',
+              'radial-gradient(90% 120% at 12% 0%, rgba(240,205,135,.18) 0%, rgba(240,205,135,0) 42%), linear-gradient(160deg, #0B2450 0%, #071A3C 100%)',
+            border: '1px solid rgba(232,201,140,0.28)',
+            boxShadow: '0 12px 28px rgba(4,28,74,0.26), 0 2px 6px rgba(4,28,74,0.10)',
           }}
         >
-          {/* Decorative soft glow on the right */}
-          <div
-            aria-hidden
-            style={{
-              position: 'absolute',
-              top: -40, right: -40,
-              width: 160, height: 160,
-              borderRadius: '50%',
-              background:
-                'radial-gradient(circle, rgba(232,201,140,0.45) 0%, rgba(232,201,140,0) 70%)',
-              filter: 'blur(8px)',
-              pointerEvents: 'none',
-            }}
-          />
-
-          <div className="flex items-center" style={{ gap: 8 }}>
-            <Sparkles size={16} strokeWidth={2} color="#C99A45" />
-            <h3
-              style={{
-                margin: 0,
-                fontFamily: '"PingFang SC", -apple-system, "Helvetica Neue", sans-serif',
-                // Scales with viewport so the line never wraps on narrow phones;
-                // capped at 16px so wide screens look unchanged.
-                fontSize: 'clamp(12px, 4vw, 16px)', fontWeight: 700, lineHeight: 1.4,
-                whiteSpace: 'nowrap',
-                color: '#1F2A37', letterSpacing: '0.1px',
-              }}
-            >
-              神学不是牧者的专利，是每个人的礼物。
-            </h3>
+          {/* 右侧三张倾向卡扇形 */}
+          <div aria-hidden style={{ position: 'absolute', right: -6, top: 10, width: 132, height: 128, pointerEvents: 'none' }}>
+            {(['shepherd', 'teacher', 'leader'] as const).map((k, i) => (
+              <img
+                key={k}
+                src={archImg(k)}
+                alt=""
+                loading="lazy"
+                style={{
+                  position: 'absolute', width: 64, borderRadius: 8,
+                  left: [0, 34, 68][i], top: [16, 4, 16][i],
+                  transform: `rotate(${[-10, 0, 10][i]}deg)`, zIndex: i === 1 ? 2 : 1,
+                  border: '1px solid rgba(232,201,140,.45)', boxShadow: '0 10px 22px rgba(0,0,0,.38)',
+                }}
+              />
+            ))}
           </div>
 
-          <p
-            style={{
-              margin: '8px 0 0 0',
-              fontFamily: '"PingFang SC", -apple-system, "Helvetica Neue", sans-serif',
-              fontSize: 'clamp(10px, 3.1vw, 13px)', fontWeight: 400, lineHeight: 1.55,
-              whiteSpace: 'nowrap',
-              color: '#5C6573',
-            }}
-          >
-            不需要神学阅历，从这里开始就好。学一点，就能用一点。
-          </p>
-
-          <div
-            className="inline-flex items-center"
-            style={{
-              marginTop: 12,
-              paddingLeft: 12, paddingRight: 12,
-              height: 30, borderRadius: 15,
-              backgroundColor: '#04285F',
-              color: '#FFE8C0',
-              fontFamily: '"PingFang SC", -apple-system, sans-serif',
-              fontSize: 13, fontWeight: 600, letterSpacing: '0.4px',
-              gap: 4,
-            }}
-          >
-            免费试听一节
-            <ChevronRight size={14} strokeWidth={2.4} />
+          <div style={{ position: 'relative', zIndex: 3, paddingRight: 128 }}>
+            <p style={{ margin: '0 0 6px', fontSize: 9.5, fontWeight: 800, letterSpacing: '2px', color: 'rgba(232,201,140,.9)' }}>
+              AMAS CHRISTIAN PROFILE
+            </p>
+            <h3
+              style={{
+                margin: 0, fontSize: 'clamp(15px, 4.6vw, 18px)', fontWeight: 900, lineHeight: 1.3, letterSpacing: '0.4px',
+                background: 'linear-gradient(180deg, #F7E3B4 10%, #E4BC6E 90%)',
+                WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent',
+              }}
+            >
+              {growthRole ? `你的倾向：${growthRole.combined}` : '发现你的 12 项事奉倾向'}
+            </h3>
+            <p style={{ margin: '6px 0 0', fontSize: 'clamp(10.5px, 3.2vw, 12px)', lineHeight: 1.6, color: 'rgba(233,238,248,.85)' }}>
+              {growthRole
+                ? `主要倾向 ${growthRole.primary.label} · 次要 ${growthRole.secondary.label}`
+                : '教导、牧养、传福音、建造……每个人都有全部 12 项，只是组合不同。'}
+            </p>
+            <div
+              className="inline-flex items-center"
+              style={{
+                marginTop: 12, height: 32, paddingLeft: 14, paddingRight: 10, borderRadius: 16, gap: 4,
+                background: 'linear-gradient(180deg, #F4D796 0%, #E1B75F 100%)', color: '#123061',
+                fontSize: 12.5, fontWeight: 800, letterSpacing: '0.3px',
+                boxShadow: '0 6px 14px rgba(160,116,38,.32), inset 0 1px 0 rgba(255,255,255,.55)',
+              }}
+            >
+              {growthRole ? '查看我的成长档案' : '开始探索'}
+              <ChevronRight size={14} strokeWidth={2.6} />
+            </div>
           </div>
         </button>
       </section>
