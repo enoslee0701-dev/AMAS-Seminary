@@ -560,7 +560,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
               AMAS CHRISTIAN PROFILE
             </p>
             <p style={{ margin: '0 0 5px', fontSize: 'clamp(13px, 4vw, 15px)', fontWeight: 900, color: '#FFFFFF', letterSpacing: '0.5px' }}>
-              定制化神学训练
+              定制化神学
             </p>
             <h3
               style={{
