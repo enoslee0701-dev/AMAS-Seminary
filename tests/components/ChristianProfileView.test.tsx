@@ -9,7 +9,7 @@ import {
   type ChristianProfileEvidence, type EvidenceType, type EvidencePolarity, type EvidenceStrengthLevel,
 } from '../../services/christianProfile/evidence';
 import {
-  experimentToEvidence, canTransition, canReview,
+  experimentToEvidence, canTransition, canReview, normalizeOutcome,
   type ValidationExperiment, type ValidationOutcome, type SelfReflection,
 } from '../../services/christianProfile/experiments';
 
@@ -178,23 +178,62 @@ describe('validation experiment loop (P2-A)', () => {
     expect(experimentToEvidence(exp({ status: 'cancelled' }), ref('confirmed'))).toEqual([]);
   });
 
-  it('reflection outcome decides polarity — "未能验证" produces CHALLENGE evidence', () => {
+  it('未能验证 ≠ 反证 — inconclusive is NEUTRAL and must not lower confidence (P2-A.1)', () => {
     expect(experimentToEvidence(exp(), ref('confirmed'))[0].polarity).toBe('support');
-    expect(experimentToEvidence(exp(), ref('partial'))[0].polarity).toBe('neutral');
-    expect(experimentToEvidence(exp(), ref('not_confirmed'))[0].polarity).toBe('challenge');
+    expect(experimentToEvidence(exp(), ref('partial'))[0].polarity).toBe('support');
+    // 「这次没能判断」只是中性事实：记录尝试过，不下调任何判断
+    const inc = experimentToEvidence(exp(), ref('inconclusive'));
+    expect(inc[0].polarity).toBe('neutral');
+    expect(inc[0].strength).toBe('weak');
+    const base = { itemsAnswered: 3, scenarioOffered: 2, qualityFlagCount: 0 };
+    const r = computeConfidence({ ...base, externalEvidence: inc });
+    expect(r.conflict).toBe('none');
+    expect(r.level).toBe('moderate');       // 未被下调
+    // 只有「明显不合适」才是反证
+    expect(experimentToEvidence(exp(), ref('disconfirmed'))[0].polarity).toBe('challenge');
   });
 
-  it('a failed experiment feeds back and lowers that orientation confidence', () => {
-    const evidence = experimentToEvidence(exp(), ref('not_confirmed'));
+  it('one self-reported disconfirmation weakens but never overturns (P2-A.1)', () => {
+    const once = experimentToEvidence(exp(), ref('disconfirmed'));
+    const base = { itemsAnswered: 3, scenarioOffered: 2, qualityFlagCount: 0 };
+    const r = computeConfidence({ ...base, externalEvidence: once });
+    // 第一次尝试不顺多半是学习曲线，不足以推翻结论
+    expect(r.conflict).toBe('mixed');
+    expect(r.level).toBe('low');            // moderate 降一档，但不是 contradicted
+    expect(r.reason).toContain('单独一次还不足以改变判断');
+
+    const a = answersFor('standard');
+    const after = scoreAssessment('standard', a, 'T', once);
+    expect(after.ministryOrientation.teacher.conflict).toBe('mixed');
+    expect(after.conflicts.map(c => c.key)).toContain('teacher');
+  });
+
+  it('repeated or mentor-observed disconfirmation DOES overturn (P2-A.1)', () => {
+    const base = { itemsAnswered: 3, scenarioOffered: 2, qualityFlagCount: 0 };
+    // 重复出现 → contradicted
+    const twice = [
+      ...experimentToEvidence(exp(), ref('disconfirmed')),
+      ...experimentToEvidence(exp({ id: 'x2' }), { ...ref('disconfirmed'), id: 'r2', experimentId: 'x2' }),
+    ];
+    expect(computeConfidence({ ...base, externalEvidence: twice }).conflict).toBe('contradicted');
+    // 他人观察 → 一条就够
+    const observed = experimentToEvidence(exp(), ref('disconfirmed'),
+      { id: 'o9', experimentId: 'x1', observerName: '陈牧师', observerRole: 'mentor', outcome: 'disconfirmed', comment: '这次明显吃力', verified: true, createdAt: 'T4' });
+    const rObs = computeConfidence({ ...base, externalEvidence: observed });
+    expect(rObs.conflict).toBe('contradicted');
+    expect(rObs.level).toBe('low');
+
+    // 指数在任何情况下都不变
     const a = answersFor('standard');
     const before = scoreAssessment('standard', a, 'T');
-    const after = scoreAssessment('standard', a, 'T', evidence);
-    // 闭环成立：真实结果回到画像，可信度被下调并标记冲突
-    expect(after.ministryOrientation.teacher.conflict).toBe('contradicted');
-    expect(after.ministryOrientation.teacher.confidence).toBe('low');
-    expect(after.conflicts.map(c => c.key)).toContain('teacher');
-    // 但倾向指数绝不因此改变
+    const after = scoreAssessment('standard', a, 'T', observed);
     expect(after.ministryOrientation.teacher.normalizedScore).toBe(before.ministryOrientation.teacher.normalizedScore);
+  });
+
+  it('legacy not_confirmed records are read as inconclusive, never re-labelled as counter-evidence', () => {
+    expect(normalizeOutcome('not_confirmed')).toBe('inconclusive');
+    const legacy = experimentToEvidence(exp(), { ...ref('confirmed'), outcome: 'not_confirmed' as ValidationOutcome });
+    expect(legacy[0].polarity).toBe('neutral');
   });
 
   it('a user-transcribed mentor comment is not treated as an outside observation', () => {

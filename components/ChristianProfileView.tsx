@@ -16,8 +16,9 @@ import {
   saveReflection, saveMentorObservation, reviewExperiment, readReflections,
 } from '../services/christianProfile/store';
 import {
-  EXPERIMENT_STATUS_LABEL, OUTCOME_LABEL, OUTCOME_HINT, experimentSummary, canReview,
-  type ValidationExperiment, type ValidationOutcome,
+  EXPERIMENT_STATUS_LABEL, OUTCOME_LABEL, OUTCOME_HINT, INCONCLUSIVE_REASON_LABEL,
+  experimentSummary, canReview, normalizeOutcome,
+  type ValidationExperiment, type ValidationOutcome, type InconclusiveReason,
 } from '../services/christianProfile/experiments';
 import { archetypeByKey, archImg, ARCH_GROUPS, ARCH_DISCLAIMER, type ArchKey } from '../services/growthArchetypes';
 import {
@@ -282,6 +283,7 @@ const Bar: React.FC<{ label: string; value: number; sub?: string; accent?: boole
 const ExperimentRow: React.FC<{ exp: ValidationExperiment; onChange: () => void }> = ({ exp, onChange }) => {
   const [open, setOpen] = useState(false);
   const [outcome, setOutcome] = useState<ValidationOutcome>('confirmed');
+  const [why, setWhy] = useState<InconclusiveReason>('limited_opportunity');
   const [text, setText] = useState('');
   const [observer, setObserver] = useState('');
   const [comment, setComment] = useState('');
@@ -318,7 +320,7 @@ const ExperimentRow: React.FC<{ exp: ValidationExperiment; onChange: () => void 
         <div style={{ marginTop: 8, background: '#FAFBFC', border: '1px solid #EDF0F4', borderRadius: 12, padding: '11px 12px' }}>
           <p style={{ margin: '0 0 7px', fontSize: 11.5, fontWeight: 800, color: '#22345E' }}>实际做下来，结果如何？</p>
           <div className="flex" style={{ gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
-            {(['confirmed', 'partial', 'not_confirmed'] as ValidationOutcome[]).map(o => (
+            {(['confirmed', 'partial', 'inconclusive', 'disconfirmed'] as ValidationOutcome[]).map(o => (
               <button key={o} onClick={() => setOutcome(o)} style={{
                 fontSize: 11, fontWeight: 800, borderRadius: 999, padding: '5px 11px',
                 color: outcome === o ? '#FFFFFF' : '#475467',
@@ -328,6 +330,21 @@ const ExperimentRow: React.FC<{ exp: ValidationExperiment; onChange: () => void 
             ))}
           </div>
           <p style={{ margin: '0 0 8px', fontSize: 10.5, color: '#98A2B3', lineHeight: 1.7 }}>{OUTCOME_HINT[outcome]}</p>
+          {outcome === 'inconclusive' && (
+            <div style={{ marginBottom: 8 }}>
+              <p style={{ margin: '0 0 5px', fontSize: 11, fontWeight: 800, color: '#22345E' }}>是什么让这次没能判断？</p>
+              <div className="flex" style={{ gap: 5, flexWrap: 'wrap' }}>
+                {(Object.keys(INCONCLUSIVE_REASON_LABEL) as InconclusiveReason[]).map(r => (
+                  <button key={r} onClick={() => setWhy(r)} style={{
+                    fontSize: 10.5, fontWeight: 700, borderRadius: 999, padding: '4px 9px',
+                    color: why === r ? '#04285F' : '#667085',
+                    background: why === r ? '#EAF0FB' : '#FFFFFF',
+                    border: `1px solid ${why === r ? '#B9CBEA' : '#DDE1E8'}`,
+                  }}>{INCONCLUSIVE_REASON_LABEL[r]}</button>
+                ))}
+              </div>
+            </div>
+          )}
           <textarea
             value={text} onChange={ev => setText(ev.target.value)} rows={3}
             placeholder="发生了什么？你观察到自己什么？"
@@ -335,7 +352,10 @@ const ExperimentRow: React.FC<{ exp: ValidationExperiment; onChange: () => void 
           />
           <button
             disabled={!text.trim()}
-            onClick={() => { saveReflection(exp.id, { outcome, whatHappened: text.trim() }); setText(''); onChange(); }}
+            onClick={() => {
+              saveReflection(exp.id, { outcome, inconclusiveReason: outcome === 'inconclusive' ? why : undefined, whatHappened: text.trim() });
+              setText(''); onChange();
+            }}
             style={{ ...act, marginTop: 8, opacity: text.trim() ? 1 : 0.45 }}
           >保存复盘</button>
         </div>
@@ -344,7 +364,7 @@ const ExperimentRow: React.FC<{ exp: ValidationExperiment; onChange: () => void 
       {exp.status === 'completed' && reflection && (
         <div style={{ marginTop: 8 }}>
           <p style={{ margin: '0 0 8px', fontSize: 11.5, color: '#667085', lineHeight: 1.7 }}>
-            复盘：<b style={{ color: '#22345E' }}>{OUTCOME_LABEL[reflection.outcome]}</b> · {reflection.whatHappened}
+            复盘：<b style={{ color: '#22345E' }}>{OUTCOME_LABEL[normalizeOutcome(reflection.outcome)]}</b> · {reflection.whatHappened}
           </p>
           {!exp.mentorObservationId && !open && (
             <button onClick={() => setOpen(true)} style={{ ...act, marginRight: 6, marginBottom: 8 }}>加入导师／同工观察（可选）</button>
@@ -365,7 +385,7 @@ const ExperimentRow: React.FC<{ exp: ValidationExperiment; onChange: () => void 
               <button
                 disabled={!observer.trim() || !comment.trim()}
                 onClick={() => {
-                  saveMentorObservation(exp.id, { observerName: observer.trim(), outcome: reflection.outcome, comment: comment.trim() });
+                  saveMentorObservation(exp.id, { observerName: observer.trim(), outcome: normalizeOutcome(reflection.outcome), comment: comment.trim() });
                   setObserver(''); setComment(''); setOpen(false); onChange();
                 }}
                 style={{ ...act, opacity: observer.trim() && comment.trim() ? 1 : 0.45 }}
@@ -659,8 +679,9 @@ export const ResultPage: React.FC<{ p: ChristianProfile; courses: Course[]; onCo
           <div style={{ ...card, padding: '14px 16px' }}>
             <p style={{ margin: '0 0 4px', fontSize: 12, color: '#475467', lineHeight: 1.75 }}>{experimentSummary(experiments)}</p>
             <p style={{ margin: '0 0 6px', fontSize: 10.5, color: '#98A2B3', lineHeight: 1.7 }}>
-              登记 → 实践 → 复盘 → 导师观察 → 成为证据 → 回到画像。复盘结论如果是「未能验证」，
-              画像会下调这一项的可信度——这不是失败，是让画像更贴近真实的你。
+              登记 → 实践 → 复盘 → 导师观察 → 成为证据 → 回到画像。
+              「这次没能判断」只会记录你尝试过，不会下调任何判断；只有确实做了而且明显不合，
+              才会影响可信度，而且单独一次不足以改变结论。
             </p>
             {experiments.filter(e => e.status !== 'cancelled').map(e => (
               <ExperimentRow key={e.id} exp={e} onChange={reloadExperiments} />

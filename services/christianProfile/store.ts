@@ -12,7 +12,7 @@ import { isValidEvidence, type ChristianProfileEvidence } from './evidence';
 import {
   isValidExperiment, canTransition, canReview, experimentToEvidence,
   type ValidationExperiment, type ExperimentStatus, type ExperimentSource,
-  type SelfReflection, type MentorObservation, type ValidationOutcome,
+  type SelfReflection, type MentorObservation, type ValidationOutcome, type InconclusiveReason,
 } from './experiments';
 import type { ArchKey } from '../growthArchetypes';
 
@@ -226,7 +226,8 @@ export const cancelExperiment = (id: string) => advanceExperiment(id, 'cancelled
 
 /** 写入自我复盘，并把实验推进到「待复核」。 */
 export function saveReflection(experimentId: string, input: {
-  outcome: ValidationOutcome; whatHappened: string; whatLearned?: string; at?: string;
+  outcome: ValidationOutcome; inconclusiveReason?: InconclusiveReason;
+  whatHappened: string; whatLearned?: string; at?: string;
 }): SelfReflection | null {
   const list = materialize(readExperiments());
   const exp = list.find(e => e.id === experimentId);
@@ -234,6 +235,7 @@ export function saveReflection(experimentId: string, input: {
   const now = input.at ?? new Date().toISOString();
   const r: SelfReflection = {
     id: uid('ref'), experimentId, outcome: input.outcome,
+    inconclusiveReason: input.outcome === 'inconclusive' ? input.inconclusiveReason : undefined,
     whatHappened: input.whatHappened, whatLearned: input.whatLearned, createdAt: now,
   };
   const d = readDoc();

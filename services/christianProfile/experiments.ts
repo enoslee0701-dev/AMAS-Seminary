@@ -42,24 +42,53 @@ export interface ValidationAction {
 }
 
 /**
- * 验证结论。三档，措辞刻意中性：
- * 「没有验证成立」不等于失败，也不等于这个方向不适合你——它只是说明当前证据不支持。
+ * 验证结论（P2-A.1 修正）。
+ *
+ * 关键修正：**「未能验证」不等于「反证」**。旧的三档把这两件事压在一起，
+ * 会用「第一次做得很吃力」去推翻一个人的倾向——这与「用高分推断人格缺点」是同一类错误。
+ *
+ *   inconclusive  这次没能判断（机会太少、场合不合、准备不足、临时状况）→ 中性，**不下调可信度**
+ *   disconfirmed  确实做了，而且明显不合——才是真正的反证
+ *
+ * 措辞铁律：两者都不是「失败」；disconfirmed 说的是「这个场合这段时间」，不是这个人。
  */
-export type ValidationOutcome = 'confirmed' | 'partial' | 'not_confirmed';
+export type ValidationOutcome = 'confirmed' | 'partial' | 'inconclusive' | 'disconfirmed';
+
 export const OUTCOME_LABEL: Record<ValidationOutcome, string> = {
-  confirmed: '验证成立', partial: '部分成立', not_confirmed: '未能验证',
+  confirmed: '验证成立', partial: '部分成立', inconclusive: '这次没能判断', disconfirmed: '明显不合适',
 };
 export const OUTCOME_HINT: Record<ValidationOutcome, string> = {
   confirmed: '实际做下来，这个方向的表现与画像一致。',
-  partial: '有一部分成立，也有一部分与预期不同。',
-  not_confirmed: '实际做下来与画像的判断不一致。这不是失败——它是一条真实证据，会让画像更准确。',
+  partial: '有一部分成立，也有一部分与预期不同。第一次尝试通常都是这样。',
+  inconclusive: '这次的条件不足以判断——机会太少、场合不合适，或者临时有状况。系统只会记录你尝试过，不会因此下调任何判断。',
+  disconfirmed: '确实做了，而且明显感觉不合。这说的是这个场合、这个阶段，不是说这个方向永远不适合你；它会让画像更贴近真实。',
 };
+
+/** 无法判断的原因。逼着系统区分「没机会验证」和「验证了但不成立」。 */
+export type InconclusiveReason = 'limited_opportunity' | 'context_mismatch' | 'too_early' | 'interrupted' | 'other';
+export const INCONCLUSIVE_REASON_LABEL: Record<InconclusiveReason, string> = {
+  limited_opportunity: '机会太少，只做了一两次',
+  context_mismatch: '场合与这个方向不太对应',
+  too_early: '刚开始，还看不出来',
+  interrupted: '中途有状况，没能完整进行',
+  other: '其他原因',
+};
+
+/** 旧数据里的 `not_confirmed` 语义含混。保守地读作「这次没能判断」，绝不追认成反证。 */
+export function normalizeOutcome(raw: string): ValidationOutcome {
+  if (raw === 'not_confirmed') return 'inconclusive';
+  return (['confirmed', 'partial', 'inconclusive', 'disconfirmed'] as const).includes(raw as ValidationOutcome)
+    ? (raw as ValidationOutcome)
+    : 'inconclusive';
+}
 
 /** 自我复盘（R1）。属于自我报告，不算他人观察，可信度最高只能到「较高」。 */
 export interface SelfReflection {
   id: string;
   experimentId: string;
   outcome: ValidationOutcome;
+  /** outcome 为 inconclusive 时的原因，用于把「没机会验证」与「验证了但不成立」分开 */
+  inconclusiveReason?: InconclusiveReason;
   whatHappened: string;
   whatLearned?: string;
   createdAt: string;
@@ -130,10 +159,26 @@ export const canReview = (e: ValidationExperiment): boolean =>
 // 实验 → 证据
 // ------------------------------------------------------------
 
-/** 复盘结论 → 证据极性。「未能验证」产出 challenge，这正是画像被现实修正的方式。 */
+/**
+ * 复盘结论 → 证据极性。
+ * 只有 `disconfirmed`（做了而且明显不合）才产出 challenge；
+ * `inconclusive`（这次没能判断）是中性事实，只记录尝试过，**不下调任何判断**。
+ */
 const POLARITY_OF: Record<ValidationOutcome, ChristianProfileEvidence['polarity']> = {
-  confirmed: 'support', partial: 'neutral', not_confirmed: 'challenge',
+  confirmed: 'support', partial: 'support', inconclusive: 'neutral', disconfirmed: 'challenge',
 };
+
+/**
+ * 复盘结论 → 证据强度。
+ * 自我报告的 disconfirmed 一律 moderate：一个人自己觉得不合，是重要信号，
+ * 但不足以单独推翻测评结论——真正的推翻需要重复出现或他人观察（见 evidence.computeConfidence）。
+ */
+function reflectionStrength(exp: ValidationExperiment, outcome: ValidationOutcome): ChristianProfileEvidence['strength'] {
+  if (outcome === 'inconclusive') return 'weak';
+  if (outcome === 'partial') return 'moderate';
+  if (outcome === 'disconfirmed') return 'moderate';
+  return (exp.actions?.filter(a => a.done).length ?? 0) >= 2 ? 'strong' : 'moderate';
+}
 
 /**
  * 把一个已完成并复盘的实验转成证据。纯函数，确定性，可重复调用得到同样结果。
@@ -149,14 +194,16 @@ export function experimentToEvidence(
 ): ChristianProfileEvidence[] {
   if (!isValidExperiment(exp) || exp.status === 'cancelled' || !reflection) return [];
   const at = exp.completedAt ?? reflection.createdAt;
+  const outcome = normalizeOutcome(reflection.outcome);
+  const reasonNote = outcome === 'inconclusive' && reflection.inconclusiveReason
+    ? `（${INCONCLUSIVE_REASON_LABEL[reflection.inconclusiveReason]}）` : '';
   const out: ChristianProfileEvidence[] = [{
     id: `ev_exp_${exp.id}`,
     type: 'ministry_practice',
     targetOrientations: exp.targetOrientations,
-    polarity: POLARITY_OF[reflection.outcome],
-    // 完成了具体行动的实践比只写了复盘更有分量
-    strength: (exp.actions?.filter(a => a.done).length ?? 0) >= 2 ? 'strong' : 'moderate',
-    summary: `${OUTCOME_LABEL[reflection.outcome]}：${reflection.whatHappened}`,
+    polarity: POLARITY_OF[outcome],
+    strength: reflectionStrength(exp, outcome),
+    summary: `${OUTCOME_LABEL[outcome]}${reasonNote}：${reflection.whatHappened}`,
     sourceId: exp.id,
     sourceLabel: exp.title,
     source: 'self',
@@ -166,13 +213,14 @@ export function experimentToEvidence(
   }];
 
   if (observation) {
+    const obsOutcome = normalizeOutcome(observation.outcome);
     out.push({
       id: `ev_obs_${observation.id}`,
       type: observation.observerRole === 'peer' ? 'peer_feedback' : 'mentor_feedback',
       targetOrientations: exp.targetOrientations,
-      polarity: POLARITY_OF[observation.outcome],
-      strength: observation.verified ? 'strong' : 'moderate',
-      summary: `${OUTCOME_LABEL[observation.outcome]}：${observation.comment}`,
+      polarity: POLARITY_OF[obsOutcome],
+      strength: obsOutcome === 'inconclusive' ? 'weak' : observation.verified ? 'strong' : 'moderate',
+      summary: `${OUTCOME_LABEL[obsOutcome]}：${observation.comment}`,
       sourceId: observation.id,
       sourceLabel: observation.observerName,
       // 未经导师端确认的转述不算他人观察，因此不会把可信度推到最高档

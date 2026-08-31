@@ -172,19 +172,28 @@ export function computeConfidence(input: {
       : '除测评外，已有学习或实际服侍证据支持。';
   }
 
-  // 3) 反证修正——这是 V2.1 让系统「能修正自己」的关键
+  // 3) 反证修正——这是让系统「能修正自己」的关键。
+  //
+  // P2-A.1 的重要约束：**一次自我报告永远不足以推翻结论**。
+  // 单次「我觉得不合适」多半是第一次尝试的学习曲线，不是这个倾向不存在。
+  // 只有当反证重复出现（≥2 条），或来自他人的观察时，才允许判定为 contradicted；
+  // 否则最多是 mixed（降一档），并明说「还需要再验证一两次」。
   let conflict: ConflictLevel = 'none';
   if (challenge.length) {
     const sw = support.reduce((t, e) => t + weightOf(e), 0);
     const cw = challenge.reduce((t, e) => t + weightOf(e), 0);
-    if (cw >= sw) {
+    const corroborated = challenge.length >= 2
+      || challenge.some(e => e.source === 'mentor' || e.source === 'peer');
+    if (cw >= sw && corroborated) {
       conflict = 'contradicted';
       level = 'low';
-      reason = '现实中的表现与测评结论不一致，当前判断需要重新验证。';
+      reason = '现实中的表现多次与测评结论不一致，当前判断需要重新验证。';
     } else {
       conflict = 'mixed';
       level = step(level, -1);
-      reason = '既有支持证据，也有不一致的观察，结论仍需更多验证。';
+      reason = challenge.length === 1 && !corroborated
+        ? '有一次实践结果与测评结论不同。单独一次还不足以改变判断，值得再验证一两次。'
+        : '既有支持证据，也有不一致的观察，结论仍需更多验证。';
     }
   }
 
