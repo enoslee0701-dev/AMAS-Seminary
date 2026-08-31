@@ -55,6 +55,8 @@ export interface ChristianProfile {
   topOrientations: { key: OrientationKey; score: number }[];
   /** 前三项分数极为接近 → 多元组合 */
   multiBlend: boolean;
+  /** 第一与第二并列（四舍五入后同分）→ 呈现为“并列最高”，不强行分主次 */
+  topTie: boolean;
   /** 组合标签（仅解释用，不是新类型） */
   combinedLabel: string;
   /** Orientation × Readiness 矩阵解释（标准版） */
@@ -116,11 +118,17 @@ export function scoreAssessment(level: AssessmentLevel, answers: Answer[], compl
   }
 
   const ministryOrientation = {} as Record<OrientationKey, DimensionScore>;
+  // 精细分（未四舍五入）+ 辅助信号，用于确定性地打破并列：
+  // 同分时依次比较 未取整分 → 情境题被选次数 → 高选项(“比较符合/经常”以上)数量 → 固定维度顺序。
+  const fine = {} as Record<OrientationKey, number>;
+  const topBox = {} as Record<OrientationKey, number>;
+  for (const k of ORIENTATION_KEYS) topBox[k] = likertVals[k].filter(v => v >= 75).length;
   for (const k of ORIENTATION_KEYS) {
     const lk = likertVals[k];
     const likertIdx = lk.length ? mean(lk) : 50;
     const scenIdx = offered[k] > 0 ? (chosen[k] / offered[k]) * 100 : null;
     const normalized = scenIdx === null ? likertIdx : 0.8 * likertIdx + 0.2 * scenIdx;
+    fine[k] = normalized;
     const evidenceStrength: EvidenceStrength =
       lk.length >= 3 && offered[k] >= 2 ? 'high' : lk.length >= 2 ? 'moderate' : 'limited';
     ministryOrientation[k] = {
@@ -176,9 +184,13 @@ export function scoreAssessment(level: AssessmentLevel, answers: Answer[], compl
   }
 
   // ---- Top 3 / 多元组合 / 组合标签 ----
-  const ranked = ORIENTATION_KEYS.map(k => ({ key: k, score: ministryOrientation[k].normalizedScore })).sort((a, b) => b.score - a.score);
+  const ranked = ORIENTATION_KEYS
+    .map((k, i) => ({ key: k, score: ministryOrientation[k].normalizedScore, fine: fine[k], scen: chosen[k], top: topBox[k], order: i }))
+    .sort((a, b) => (b.fine - a.fine) || (b.scen - a.scen) || (b.top - a.top) || (a.order - b.order))
+    .map(({ key, score }) => ({ key, score }));
   const topOrientations = ranked.slice(0, 3);
   const multiBlend = topOrientations[0].score - topOrientations[2].score <= 3;
+  const topTie = topOrientations[0].score === topOrientations[1].score;
   const combinedLabel = archetypeByKey(topOrientations[1].key).mod + archetypeByKey(topOrientations[0].key).label;
 
   // ---- Orientation × Readiness 矩阵 ----
@@ -232,7 +244,7 @@ export function scoreAssessment(level: AssessmentLevel, answers: Answer[], compl
     languageVersion: LANGUAGE_VERSION,
     level, completedAt,
     faithFoundation, discipleshipPractice, ministryOrientation, ministryReadiness,
-    topOrientations, multiBlend, combinedLabel, orientationReadiness,
+    topOrientations, multiBlend, topTie, combinedLabel, orientationReadiness,
     qualityFlags, evidenceStrength, explanations, recommendations,
   };
 }

@@ -1268,6 +1268,8 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
   // ---- 倾向组合演变历史：Christian Profile 的 Top 组合变化时追加一条 ----
   const [showAllRoles, setShowAllRoles] = useState(false);
   const [roleDetail, setRoleDetail] = useState<ArchKey | null>(null);
+  const swipeX = useRef(0);
+  const swipeY = useRef(0);
   useEffect(() => {
     if (!cp || !ct) return;
     const combined = cp.multiBlend ? '多元事奉组合' : cp.combinedLabel;
@@ -1463,6 +1465,11 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
   if (roleDetail) {
     const a = ARCHETYPES.find(x => x.key === roleDetail)!;
     const grp = ARCH_GROUPS.find(x => x.key === a.group)!;
+    // 相邻倾向：可用按钮或左右滑动直接切换，不必返回列表
+    const curIdx = ARCHETYPES.indexOf(a);
+    const stepRole = (d: number) => setRoleDetail(ARCHETYPES[(curIdx + d + ARCHETYPES.length) % ARCHETYPES.length].key);
+    const prevA = ARCHETYPES[(curIdx - 1 + ARCHETYPES.length) % ARCHETYPES.length];
+    const nextA = ARCHETYPES[(curIdx + 1) % ARCHETYPES.length];
     let myScore: number | null = null;
     let myRank = 0;
     const detailPrelim = !!cp && cp.level === 'quick';
@@ -1478,17 +1485,42 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
           <button onClick={() => setRoleDetail(null)} aria-label="返回" className="p-1 -ml-2 rounded-full hover:bg-slate-100 transition">
             <ChevronLeft size={24} className="text-slate-900" />
           </button>
-          <p className="ml-2" style={{ margin: 0, fontSize: 15, fontWeight: 800, color: '#1F2A37' }}>{num} {a.label} · 倾向说明</p>
-          <span className="ml-auto" style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '1px', color: '#8A6519', background: '#FBF6EA', border: '1px solid rgba(201,154,69,.28)', borderRadius: 999, padding: '3px 9px' }}>
-            {grp.en} · {grp.cn}
+          <p className="ml-2 flex-1 min-w-0 truncate" style={{ margin: 0, fontSize: 15, fontWeight: 800, color: '#1F2A37' }}>{num} {a.label}</p>
+          <span className="shrink-0" style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '1px', color: '#8A6519', background: '#FBF6EA', border: '1px solid rgba(201,154,69,.28)', borderRadius: 999, padding: '3px 9px', marginRight: 6 }}>
+            {grp.cn}
           </span>
+          <button onClick={() => stepRole(-1)} aria-label="上一个倾向" className="shrink-0 p-1 rounded-full hover:bg-slate-100 active:scale-90 transition">
+            <ChevronLeft size={20} className="text-slate-500" />
+          </button>
+          <button onClick={() => stepRole(1)} aria-label="下一个倾向" className="shrink-0 p-1 rounded-full hover:bg-slate-100 active:scale-90 transition">
+            <ChevronRight size={20} className="text-slate-500" />
+          </button>
         </div>
-        <div className="flex-1 overflow-y-auto px-4 py-4" style={{ paddingBottom: 30 }}>
+        <div
+          key={a.key}
+          className="flex-1 overflow-y-auto px-4 py-4 animate-fade-in"
+          style={{ paddingBottom: 30 }}
+          onTouchStart={e => { swipeX.current = e.touches[0].clientX; swipeY.current = e.touches[0].clientY; }}
+          onTouchEnd={e => {
+            const dx = e.changedTouches[0].clientX - swipeX.current;
+            const dy = e.changedTouches[0].clientY - swipeY.current;
+            if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) stepRole(dx < 0 ? 1 : -1);
+          }}
+        >
           <img
             src={archImg(a.key)}
             alt={a.label}
             style={{ width: '100%', borderRadius: 18, border: '1px solid rgba(20,40,90,0.10)', boxShadow: '0 8px 20px rgba(16,24,40,.10)' }}
           />
+          <div className="flex items-center" style={{ gap: 8, marginTop: 8 }}>
+            <button onClick={() => stepRole(-1)} className="flex-1 text-left active:scale-[0.98] transition" style={{ fontSize: 11, fontWeight: 700, color: '#667085', border: '1px solid #E7EAF0', borderRadius: 11, padding: '7px 10px', background: '#FFF' }}>
+              ‹ {prevA.label}
+            </button>
+            <span style={{ fontSize: 10, fontWeight: 700, color: '#B6BDC9' }}>{curIdx + 1} / {ARCHETYPES.length}</span>
+            <button onClick={() => stepRole(1)} className="flex-1 text-right active:scale-[0.98] transition" style={{ fontSize: 11, fontWeight: 700, color: '#667085', border: '1px solid #E7EAF0', borderRadius: 11, padding: '7px 10px', background: '#FFF' }}>
+              {nextA.label} ›
+            </button>
+          </div>
 
           {myScore !== null && (
             <div className="flex items-center" style={{ gap: 10, marginTop: 12, padding: '11px 14px', background: 'linear-gradient(160deg, #0B2450 0%, #071A3C 100%)', borderRadius: 14, border: '1px solid rgba(232,201,140,.22)' }}>
@@ -1546,6 +1578,23 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
               <ChevronRight size={15} strokeWidth={2.6} />
             </button>
           )}
+
+          <div style={{ ...ctCard, padding: '12px 12px 10px', marginTop: 12 }}>
+            <p style={{ margin: '0 0 8px', fontSize: 11, fontWeight: 800, color: '#667085' }}>切换查看其他倾向</p>
+            <div className="grid grid-cols-4" style={{ gap: 7 }}>
+              {ARCHETYPES.map(x => (
+                <button
+                  key={x.key}
+                  onClick={() => setRoleDetail(x.key)}
+                  className="active:scale-95 transition"
+                  style={{ padding: 0, border: x.key === a.key ? '1.5px solid rgba(201,154,69,.7)' : '1px solid #ECEEF2', borderRadius: 10, overflow: 'hidden', background: x.key === a.key ? '#FBF6EA' : '#FFF' }}
+                >
+                  <img src={archImg(x.key)} alt={x.label} loading="lazy" style={{ width: '100%', display: 'block' }} />
+                  <span style={{ display: 'block', fontSize: 9.5, fontWeight: 800, color: x.key === a.key ? '#8A6519' : '#475467', padding: '3px 0' }}>{x.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
 
           <p style={{ margin: '14px 2px 0', fontSize: 10, color: '#98A2B3', lineHeight: '16px' }}>
             {ARCH_DISCLAIMER}
@@ -1698,19 +1747,25 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                     </div>
                   </div>
                   <h3 style={{ margin: '0 0 6px', fontSize: 22, fontWeight: 900, letterSpacing: '1px', background: 'linear-gradient(180deg, #F7E3B4 10%, #E4BC6E 90%)', WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-                    {cp.multiBlend ? '多元事奉组合' : cp.combinedLabel}
+                    {cp.multiBlend ? '多元事奉组合' : cp.topTie ? `${rows[0].a.label} × ${rows[1].a.label}` : cp.combinedLabel}
                   </h3>
                   <p style={{ margin: 0, fontSize: 12, lineHeight: 1.8, color: 'rgba(233,238,248,.9)' }}>
-                    {cp.multiBlend ? '你的前三项倾向非常接近，目前呈现多元化的事奉组合。' : `你目前呈现较明显的「${pri.a.label}」倾向：${pri.a.core}。`}
+                    {cp.multiBlend
+                      ? '你的前三项倾向非常接近，目前呈现多元化的事奉组合。'
+                      : cp.topTie
+                        ? `「${rows[0].a.label}」与「${rows[1].a.label}」在你身上并列最高，两者都是你自然的事奉方式。`
+                        : `你目前呈现较明显的「${pri.a.label}」倾向：${pri.a.core}。`}
                   </p>
                   <p style={{ margin: '6px 0 0', fontSize: 10, color: 'rgba(233,238,248,.55)' }}>评估于 {fmtTime(cp.completedAt)} · 右上角可随时重新评估或删除结果</p>
                 </div>
                 <div style={{ padding: '12px 16px 14px' }}>
                   <div className="grid grid-cols-3" style={{ gap: 8 }}>
                     {rows.slice(0, 3).map((r, i) => (
-                      <div key={r.a.key} onClick={() => setRoleDetail(r.a.key)} style={{ cursor: 'pointer', textAlign: 'center', borderRadius: 13, padding: 6, background: i === 0 ? '#FBF6EA' : '#F8FAFC', border: i === 0 ? '1.2px solid rgba(201,154,69,.45)' : '1px solid #EDF0F4' }}>
+                      <div key={r.a.key} onClick={() => setRoleDetail(r.a.key)} style={{ cursor: 'pointer', textAlign: 'center', borderRadius: 13, padding: 6, background: (cp.topTie ? i < 2 : i === 0) ? '#FBF6EA' : '#F8FAFC', border: (cp.topTie ? i < 2 : i === 0) ? '1.2px solid rgba(201,154,69,.45)' : '1px solid #EDF0F4' }}>
                         <img src={archImg(r.a.key)} alt={r.a.label} loading="lazy" style={{ width: '100%', borderRadius: 9, display: 'block' }} />
-                        <p style={{ margin: '5px 0 0', fontSize: 9, fontWeight: 800, letterSpacing: '1px', color: i === 0 ? '#C99A45' : '#98A2B3' }}>{['PRIMARY', 'SECONDARY', 'SUPPORTING'][i]}</p>
+                        <p style={{ margin: '5px 0 0', fontSize: 9, fontWeight: 800, letterSpacing: '1px', color: (cp.topTie ? i < 2 : i === 0) ? '#C99A45' : '#98A2B3' }}>
+                          {cp.topTie && i < 2 ? '并列最高' : ['PRIMARY', 'SECONDARY', 'SUPPORTING'][i]}
+                        </p>
                         <p style={{ margin: 0, fontSize: 12.5, fontWeight: 900, color: '#1F2A37' }}>{r.a.label}</p>
                         <p style={{ margin: 0, fontSize: 15, fontWeight: 900, color: i === 0 ? '#C99A45' : '#04285F' }}>{r.score}</p>
                       </div>

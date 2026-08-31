@@ -150,7 +150,7 @@ const ChristianProfileView: React.FC<Props> = ({ level, courses, onCourseClick, 
   if (phase === 'stage') {
     const s = stages[stageIdx];
     return (
-      <Shell title={LEVEL_META[level].name} onExit={() => { onExit(); }} progress={{ step: stageIdx + 1, total: stages.length, title: s.title, remainingMin }}>
+      <Shell title={LEVEL_META[level].name} onExit={() => { onExit(); }} progress={{ step: stageIdx + 1, total: stages.length, title: s.title, remainingMin, q: idx, qTotal: items.length }}>
         <div style={{ ...card, padding: '22px 18px' }}>
           <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '1px', color: '#C99A45' }}>第 {stageIdx + 1} 阶段 · 共 {stages.length} 阶段</span>
           <h2 style={{ margin: '6px 0 8px', fontSize: 21, fontWeight: 900, color: '#14295A' }}>{s.title}</h2>
@@ -167,7 +167,7 @@ const ChristianProfileView: React.FC<Props> = ({ level, courses, onCourseClick, 
     const item = items[idx];
     const s = stages[stageIdx];
     return (
-      <Shell title={LEVEL_META[level].name} onExit={onExit} progress={{ step: stageIdx + 1, total: stages.length, title: s.title, remainingMin }}>
+      <Shell title={LEVEL_META[level].name} onExit={onExit} progress={{ step: stageIdx + 1, total: stages.length, title: s.title, remainingMin, q: idx + 1, qTotal: items.length }}>
         <div style={{ ...card, padding: '20px 18px' }}>
           <span style={{ display: 'inline-block', fontSize: 10, fontWeight: 800, letterSpacing: '1px', color: '#C99A45', background: '#FBF6EA', border: '1px solid rgba(201,154,69,0.28)', borderRadius: 999, padding: '2px 9px', marginBottom: 10 }}>
             {TYPE_LABEL[item.type]}
@@ -207,13 +207,20 @@ const DISCLAIMER = 'AMAS Christian Profile 旨在帮助基督徒认识自己的�
 // ------------------------------------------------------------
 // 外壳：顶部栏 + 阶段进度
 // ------------------------------------------------------------
-const Shell: React.FC<{ title: string; onExit: () => void; progress?: { step: number; total: number; title: string; remainingMin: number }; children: React.ReactNode }> = ({ title, onExit, progress, children }) => (
+const Shell: React.FC<{ title: string; onExit: () => void; progress?: { step: number; total: number; title: string; remainingMin: number; q?: number; qTotal?: number }; children: React.ReactNode }> = ({ title, onExit, progress, children }) => (
   <div className="fixed inset-0 z-[120] max-w-md mx-auto flex flex-col bg-slate-50 animate-fade-in">
     <div className="px-4 bg-white border-b border-slate-200" style={{ paddingTop: 'calc(var(--safe-top) + 8px)', paddingBottom: 10 }}>
       <div className="flex items-center">
         <button onClick={onExit} aria-label="退出" className="p-1 -ml-2 rounded-full hover:bg-slate-100 transition"><X size={22} className="text-slate-500" /></button>
         <p className="ml-2 flex-1" style={{ margin: 0, fontSize: 15, fontWeight: 800, color: '#1F2A37' }}>{title}</p>
-        {progress && <span style={{ fontSize: 11, fontWeight: 700, color: '#98A2B3' }}>第 {progress.step} / {progress.total} 阶段</span>}
+        {progress && (
+          <span className="text-right" style={{ fontSize: 11, fontWeight: 700, color: '#98A2B3', lineHeight: 1.35 }}>
+            {progress.q !== undefined && progress.qTotal !== undefined && (
+              <span style={{ display: 'block', fontSize: 13, fontWeight: 900, color: '#04285F' }}>{progress.q} / {progress.qTotal} 题</span>
+            )}
+            第 {progress.step} / {progress.total} 阶段
+          </span>
+        )}
       </div>
       {progress && (
         <div style={{ marginTop: 8 }}>
@@ -225,6 +232,11 @@ const Shell: React.FC<{ title: string; onExit: () => void; progress?: { step: nu
               <div key={i} style={{ flex: 1, height: 4, borderRadius: 99, background: i < progress.step ? 'linear-gradient(90deg,#04285F,#C99A45)' : '#EEF1F5' }} />
             ))}
           </div>
+          {progress.q !== undefined && progress.qTotal !== undefined && (
+            <div className="rounded-full overflow-hidden" style={{ height: 3, background: '#EEF1F5', marginTop: 5 }}>
+              <div style={{ height: '100%', width: `${Math.round((progress.q / progress.qTotal) * 100)}%`, background: 'linear-gradient(90deg,#04285F,#C99A45)', borderRadius: 99, transition: 'width .3s ease' }} />
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -256,7 +268,9 @@ export const ResultPage: React.FC<{ p: ChristianProfile; courses: Course[]; onCo
   const courseById = (id: string) => courses.find(c => c.id === id);
   const summary = p.multiBlend
     ? `你的前三项倾向（${p.topOrientations.map(t => archetypeByKey(t.key).label).join('、')}）非常接近，目前呈现多元化的事奉组合。`
-    : `你目前呈现较明显的「${pri.label}–${sec.label}」倾向：${pri.core}，也${sec.core}。`;
+    : p.topTie
+      ? `「${pri.label}」与「${sec.label}」在你身上并列最高：${pri.core}，同样也${sec.core}。两者都是你自然的事奉方式，不必二选一。`
+      : `你目前呈现较明显的「${pri.label}–${sec.label}」倾向：${pri.core}，也${sec.core}。`;
   const groupCn = (k: ArchKey) => ARCH_GROUPS.find(g => g.key === archetypeByKey(k).group)!.cn;
   const flagText: Record<string, string> = {
     too_fast: '部分题目作答较快', straight_lining: '多题选择了相同选项', high_inconsistency: '部分题目之间存在不一致', missing_items: '有题目未作答',
@@ -277,14 +291,16 @@ export const ResultPage: React.FC<{ p: ChristianProfile; courses: Course[]; onCo
             {p.level === 'quick' ? '事奉倾向画像 · 精简版' : 'AMAS CHRISTIAN PROFILE · 完整版'}
           </p>
           <h2 style={{ margin: '0 0 4px', fontSize: 22, fontWeight: 900, letterSpacing: '1px', background: 'linear-gradient(180deg, #F7E3B4 10%, #E4BC6E 90%)', WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-            {p.multiBlend ? '多元事奉组合' : p.combinedLabel}
+            {p.multiBlend ? '多元事奉组合' : p.topTie ? `${pri.label} × ${sec.label}` : p.combinedLabel}
           </h2>
           <p style={{ margin: '0 0 8px', fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 11, letterSpacing: '2px', color: 'rgba(233,238,248,.6)', textTransform: 'uppercase' }}>
             {pri.en} · {sec.en}
           </p>
           <p style={{ margin: 0, fontSize: 12, lineHeight: 1.8, color: 'rgba(233,238,248,.92)' }}>{summary}</p>
           <p style={{ margin: '8px 0 0', fontSize: 10, color: 'rgba(233,238,248,.55)' }}>
-            {p.level === 'quick' ? '这是精简版画像，完成完整版后会加入信仰基础、门徒生命与准备度。' : '这是一个发展性画像，而不是固定身份标签。'}
+            {p.topTie && p.level === 'quick'
+              ? '精简版每项只用 2 道题，出现并列很正常；完整版每项 3 道题 + 12 道情境题，排序会更清晰。'
+              : p.level === 'quick' ? '这是精简版画像，完成完整版后会加入信仰基础、门徒生命与准备度。' : '这是一个发展性画像，而不是固定身份标签。'}
             {' '}结果证据强度：{EVIDENCE_LABEL[p.evidenceStrength]}
           </p>
         </div>
@@ -296,9 +312,11 @@ export const ResultPage: React.FC<{ p: ChristianProfile; courses: Course[]; onCo
             {p.topOrientations.map((t, i) => {
               const a = archetypeByKey(t.key);
               return (
-                <div key={t.key} style={{ ...card, padding: 6, textAlign: 'center', border: i === 0 ? '1.5px solid rgba(201,154,69,.55)' : card.border as string }}>
+                <div key={t.key} style={{ ...card, padding: 6, textAlign: 'center', border: (p.topTie ? i < 2 : i === 0) ? '1.5px solid rgba(201,154,69,.55)' : card.border as string }}>
                   <img src={archImg(t.key)} alt={a.label} loading="lazy" style={{ width: '100%', borderRadius: 10, display: 'block' }} />
-                  <p style={{ margin: '6px 0 0', fontSize: 9, fontWeight: 800, letterSpacing: '1px', color: i === 0 ? '#C99A45' : '#98A2B3' }}>{['PRIMARY', 'SECONDARY', 'SUPPORTING'][i]}</p>
+                  <p style={{ margin: '6px 0 0', fontSize: 9, fontWeight: 800, letterSpacing: '1px', color: (p.topTie ? i < 2 : i === 0) ? '#C99A45' : '#98A2B3' }}>
+                    {p.topTie && i < 2 ? '并列最高' : ['PRIMARY', 'SECONDARY', 'SUPPORTING'][i]}
+                  </p>
                   <p style={{ margin: 0, fontSize: 13, fontWeight: 900, color: '#1F2A37' }}>{a.label}</p>
                   <p style={{ margin: 0, fontSize: 16, fontWeight: 900, color: i === 0 ? '#C99A45' : '#04285F' }}>{t.score}</p>
                   <p style={{ margin: '0 0 4px', fontSize: 9, color: '#B6BDC9', fontWeight: 700 }}>{groupCn(t.key)} · {EVIDENCE_LABEL[p.ministryOrientation[t.key].evidenceStrength]}</p>
