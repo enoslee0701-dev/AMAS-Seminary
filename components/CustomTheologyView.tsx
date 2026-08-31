@@ -931,6 +931,16 @@ const RadarChart: React.FC<{ values: number[] }> = ({ values }) => {
 
 const SAMPLE_RADAR = [85, 72, 68, 80, 75];
 
+/** 完整版（84 题）按钮：深蓝底 + 金字，品牌中代表「完整 / 正式」的一档，视觉重量高于金色入口。 */
+const navyBtn: React.CSSProperties = {
+  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+  border: '1px solid rgba(232,201,140,0.45)', borderRadius: 999,
+  background: 'radial-gradient(90% 140% at 12% 0%, rgba(240,205,135,.18) 0%, rgba(240,205,135,0) 46%), linear-gradient(160deg, #0B2450 0%, #071A3C 100%)',
+  color: '#F2D493', fontSize: 13, fontWeight: 800, letterSpacing: '0.3px',
+  boxShadow: '0 8px 20px rgba(4,28,74,.30), inset 0 1px 0 rgba(255,255,255,.10)',
+  cursor: 'pointer',
+};
+
 const goldBtn: React.CSSProperties = {
   display: 'inline-flex', alignItems: 'center', gap: 8,
   padding: '0 20px', height: 44, border: 'none', borderRadius: 999,
@@ -1796,7 +1806,13 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                   )}
                   <div className="flex" style={{ gap: 8, marginTop: 12 }}>
                     <button onClick={() => setMode('cpResult')} className="flex-1 active:scale-[0.98] transition" style={{ ...goldBtn, height: 40, fontSize: 12.5, justifyContent: 'center' }}>查看完整结果</button>
-                    <button onClick={() => openCp(cp.level === 'quick' ? 'standard' : 'standard')} className="flex-1 active:scale-[0.98] transition" style={{ height: 40, borderRadius: 999, border: '1px solid rgba(4,40,95,.3)', background: '#F8FAFF', color: '#04285F', fontSize: 12.5, fontWeight: 800 }}>
+                    <button
+                      onClick={() => openCp('standard')}
+                      className="flex-1 active:scale-[0.98] transition"
+                      style={cp.level === 'quick'
+                        ? { ...navyBtn, height: 40, fontSize: 12.5 }
+                        : { height: 40, borderRadius: 999, border: '1px solid rgba(4,40,95,.3)', background: '#F8FAFF', color: '#04285F', fontSize: 12.5, fontWeight: 800 }}
+                    >
                       {cp.level === 'quick' ? '完成完整版（84 题）' : '重新评估'}
                     </button>
                   </div>
@@ -1827,7 +1843,8 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
               <button onClick={() => openCp('quick')} className="w-full active:scale-[0.98] transition" style={{ ...goldBtn, width: '100%', justifyContent: 'center', height: 42 }}>
                 事奉倾向画像 · 精简版 · 30 题 <ChevronRight size={14} strokeWidth={2.6} />
               </button>
-              <button onClick={() => openCp('standard')} className="w-full active:scale-[0.98] transition" style={{ width: '100%', marginTop: 8, height: 42, borderRadius: 999, border: '1px solid rgba(4,40,95,.3)', background: '#F8FAFF', color: '#04285F', fontSize: 13, fontWeight: 800 }}>
+              <button onClick={() => openCp('standard')} className="w-full active:scale-[0.98] transition" style={{ ...navyBtn, width: '100%', marginTop: 8, height: 44 }}>
+                <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: '1px', color: '#123061', background: 'linear-gradient(180deg,#F4D796,#E1B75F)', borderRadius: 999, padding: '2px 7px' }}>四层完整</span>
                 Christian Profile · 完整版 · 84 题
               </button>
               <div className="flex items-center" style={{ gap: 10, marginTop: 12, padding: '10px 12px', background: '#FBF6EA', border: '1px solid rgba(201,154,69,.25)', borderRadius: 12 }}>
