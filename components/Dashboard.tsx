@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { ViewState, NewsItem, Course } from '../types';
 import { STOCK_PHOTOS } from '../services/stockPhotos';
-import { readGrowthRole, archImg } from '../services/growthArchetypes';
+import { readGrowthRole, archImg, ARCHETYPES_BASE } from '../services/growthArchetypes';
 import { CATALOG_TOTAL } from '../services/catalog';
 import type { ProgramTier } from './College/programData';
 
@@ -111,6 +111,12 @@ const heroSlides: HeroSlide[] = [
 const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, onOpenCoursePath, newsItems, tierCounts, courses = [], onCourseClick }) => {
   // AI customer-service overlay (opened from the floating 咨询 button).
   const [showAIChat, setShowAIChat] = useState(false);
+  // 定制化神学板块右侧的角色卡自动轮播（每次前进一张，三张成扇形）
+  const [archIdx, setArchIdx] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setArchIdx(i => (i + 1) % ARCHETYPES_BASE.length), 2600);
+    return () => clearInterval(t);
+  }, []);
   // Global app search overlay (opened from the navbar search button).
   const [showSearch, setShowSearch] = useState(false);
 
@@ -540,22 +546,27 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
             boxShadow: '0 12px 28px rgba(4,28,74,0.26), 0 2px 6px rgba(4,28,74,0.10)',
           }}
         >
-          {/* 右侧三张倾向卡扇形 */}
+          {/* 右侧倾向卡：自动轮播的扇形（每 2.6s 前进一张，展示全部 12 项） */}
           <div aria-hidden style={{ position: 'absolute', right: -6, top: 10, width: 132, height: 128, pointerEvents: 'none' }}>
-            {(['shepherd', 'teacher', 'leader'] as const).map((k, i) => (
-              <img
-                key={k}
-                src={archImg(k)}
-                alt=""
-                loading="lazy"
-                style={{
-                  position: 'absolute', width: 64, borderRadius: 8,
-                  left: [0, 34, 68][i], top: [16, 4, 16][i],
-                  transform: `rotate(${[-10, 0, 10][i]}deg)`, zIndex: i === 1 ? 2 : 1,
-                  border: '1px solid rgba(232,201,140,.45)', boxShadow: '0 10px 22px rgba(0,0,0,.38)',
-                }}
-              />
-            ))}
+            {[0, 1, 2].map(slot => {
+              const a = ARCHETYPES_BASE[(archIdx + slot) % ARCHETYPES_BASE.length];
+              return (
+                <img
+                  key={a.key}
+                  src={archImg(a.key)}
+                  alt=""
+                  loading="lazy"
+                  className="animate-fade-in"
+                  style={{
+                    position: 'absolute', width: 64, borderRadius: 8,
+                    left: [0, 34, 68][slot], top: [16, 4, 16][slot],
+                    transform: `rotate(${[-10, 0, 10][slot]}deg)`, zIndex: slot === 1 ? 2 : 1,
+                    border: '1px solid rgba(232,201,140,.45)', boxShadow: '0 10px 22px rgba(0,0,0,.38)',
+                    transition: 'transform .5s ease',
+                  }}
+                />
+              );
+            })}
           </div>
 
           <div style={{ position: 'relative', zIndex: 3, paddingRight: 128 }}>
