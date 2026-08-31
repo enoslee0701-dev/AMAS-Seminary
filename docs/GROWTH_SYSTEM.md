@@ -1,34 +1,45 @@
-# 基督徒定制化神学与成长系统 — 完整版说明
+# 基督徒成长系统 — 历史架构存档（LEGACY）
 
-> **v2 架构变更（2026-08-27）— 依据《AMAS Christian Profile Assessment System v1.0》**
+> **状态：LEGACY · 已归档，不再参与当前评分与推荐。**
+> 现行标准依次为：
+> 1. 《AMAS 12 角色定制化课程与成长路径系统 · Claude 执行总规范 V1.0》
+> 2. 《AMAS 定制化神学 Christian Profile 完整规格》（`docs/CHRISTIAN_PROFILE_SPEC.md`）
+> 3. 《成长路径系统 · 补充规范 V1.1》（`docs/PATH_SYSTEM_SUPPLEMENT_V1.1.md`）
 >
-> 本文第 3–4.5 节描述的「九维分数参与角色评分」「恩赐辨识 → 角色」「初步判定」
-> 已废弃（数据保留为 legacy）。现行架构见 `docs/ASSESSMENT_MIGRATION_PLAN.md`：
->
-> - 12 个“角色”= **12 项独立的事奉倾向维度**，每人都有全部 12 项，只是强弱组合不同。
-> - 四层分别测量、不合成总分：A 信仰基础（知识，独立管线）/ B 门徒生命（实践状态）/
->   C 事奉倾向（Likert + 情境）/ E 事奉准备度（经验事实）。A/B/E **永远不进入** 倾向评分。
-> - 题库 `services/christianProfile/items.ts`：`CP_STANDARD_V1.0` 84 题（A12/B12/C36/D12/E12），
->   `CP_QUICK_V1.0` 30 题；每题含 id/module/dimension/type/reverse_scored/status(pilot)/
->   version/cross_loading_risk/social_desirability_risk。
-> - 评分 `services/christianProfile/scoring.ts`：deterministic（provisional_v1），反向计分、
->   0–100 内部指数、evidence_strength、response quality flags（只降低解释强度）、Top 3 +
->   多元组合规则、Orientation × Readiness 矩阵、规则式推荐与 30/90/180 天计划。AI 不参与打分。
-> - 存储 `services/christianProfile/store.ts`：每题自动保存/续答；Profile 嵌入
->   `amas_ct_state_v2` 文档（`christianProfile` 字段）复用 `/api/growth/state` 同步；
->   `profileHistory` 只追加；版本标记 assessment/scoring/item/language。
-> - UI `components/ChristianProfileView.tsx`：6 阶段进度（Step n of 6 · 预计剩余分钟）、
->   一题一页、撤销、结果页 9 个 Section + 平衡解读（优势/贡献/盲点/方向）+ 可解释性 + 声明。
-> - 网页版 `public/discover.html` = Level 0 `quick_faith_exploration_v1`：10 题只输出 5 项
->   初步状态，**不判定事奉倾向**；引导进入 App 完成 Christian Profile。
-> - 措辞：全部“诊断”改为“评估/探索/画像”；产品标签 **Development Edition**，未完成心理测量
->   验证前不得宣称“标准化/科学验证”。
-
-> AMAS 亚洲宣教神学院 · Christian Formation System
-> 状态：完整版已上线（App 主阵地 + Web Discover 公开入口）
-> 更新：2026-08-26
+> 归档日期：2026-08-31
 
 ---
+
+## 为什么保留这份文档
+
+本文件记录了 2026 年 8 月 Christian Profile 规范确立**之前**的系统架构。历史规则**一律保留、不删除**，用途仅限：
+
+- 读懂历史数据（`amas_ct_state_v2` 中标记为 legacy 的九维分数与恩赐结果）；
+- 追溯当时的设计意图与决策背景；
+- 对照说明哪些规则已被取代、被什么取代。
+
+**任何开发都不得依据本文件的规则实现新功能。**
+
+---
+
+## 已废弃规则对照表
+
+| 本文件中的旧规则 | 现状 | 取代它的现行规则 |
+|---|---|---|
+| 九维分数参与 12 角色评分 | ❌ 废弃 | 12 项事奉倾向**仅**由 C 类（Likert/频率）+ D 类（情境）题目计算 |
+| 恩赐加权 62% + 九维 38% 的角色算法 | ❌ 废弃 | `services/christianProfile/scoring.ts` 确定性评分引擎 |
+| 恩赐辨识 12 题作为角色来源 | ❌ 废弃 | 题库 CP_STANDARD_V1.0 / CP_QUICK_V1.0 |
+| 网页 10 题输出「初步角色判定」 | ❌ 废弃 | Level 0 只输出 5 项初步状态，**不判定任何倾向** |
+| 完成课程给维度 +4 分（上限 +12） | ⚠️ 代码中仍存在（`learningBoost`），**待迁移** | 完成课程只增加「学习证据」，不改任何分数。迁移方案见补充规范 V1.1 §M-1 |
+| 「诊断 / 复诊 / 你就是某角色」措辞 | ❌ 废弃 | 只用「评估 / 探索 / 画像 / 呈现倾向 / 建议尝试」 |
+| 固定盲点补强课自动推荐 | ❌ 废弃 | 成长补强改为**条件触发**（需准备度/实践/导师等额外证据） |
+| 12 角色视为互斥类型 | ❌ 废弃 | 12 项独立倾向维度，每人都有全部 12 项 |
+
+> `learningBoost` 是本轮唯一**仍在运行**的废弃规则。它只影响九维「信仰基础与装备画像」的显示分，**不污染 12 项事奉倾向**（倾向直接读取 `cp.ministryOrientation`）。已列入 Phase 0 待办第 1 项，等待确认后迁移。
+
+---
+
+# ↓↓↓ 以下为历史存档内容（LEGACY，仅供追溯）↓↓↓
 
 ## 1. 系统定位
 
@@ -297,3 +308,4 @@ App 入口由 `APP_URL` 常量控制（当前同域 `/`，上架后改为商店/
 - AI 模拟对话训练（处境任务检验）；
 - 复诊对比视图（两次画像叠加，展示成长曲线）；
 - 教会仪表盘：群体画像与装备缺口分析。
+

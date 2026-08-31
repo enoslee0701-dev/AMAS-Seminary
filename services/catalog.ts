@@ -7,6 +7,16 @@
 
 import { TheologyCategory, AcademicLevel } from '../types';
 
+/**
+ * 课程身份与内容可用性是两件事，必须分开表达：
+ *  - officialCatalog / approvalStatus 说明「这门课属不属于学院」
+ *  - availability 说明「现在有没有可学的内容」
+ * 67 门全部是 confirmed_existing 的正式课程；其中 21 门内容尚在筹备，
+ * 状态为 in_development —— 它们仍计入 67 门，不是新增课程。
+ */
+export type ApprovalStatus = 'confirmed_existing' | 'user_approved' | 'proposed' | 'legacy';
+export type AvailabilityStatus = 'available' | 'in_development';
+
 export interface CatalogEntry {
   id: string;
   title: string;
@@ -14,6 +24,10 @@ export interface CatalogEntry {
   level?: AcademicLevel;
   instructor?: string;
   totalLessons?: number;
+  /** 课程身份：67 门全部为 confirmed_existing（默认值，无需逐条标注） */
+  approvalStatus?: ApprovalStatus;
+  /** 内容可用性：默认由 totalLessons 推导，无课时即 in_development */
+  availability?: AvailabilityStatus;
   /** 讲义文件名（迁移脚本据此从旧的合并课程转挂） */
   files?: string[];
 }
@@ -103,6 +117,30 @@ export const OFFICIAL_CATALOG: CatalogEntry[] = [
 export const RETIRED_COURSE_IDS = ['c_dr_pastoral', 'c_dr_peter', 'c_dr_johannine', 'c_healing'];
 
 export const CATEGORY_ORDER: TheologyCategory[] = [NT, OT, BB, TH, PR, HI, LA];
+
+// ---- 身份与可用性的兼容默认值 ----
+// 说明：这些是**只读派生函数**，本轮不接入任何 UI。现有课程展示行为完全不变
+// （课程页仍按 totalLessons 显示「讲义筹备中」）。接线时机见 Phase 1。
+
+/** 课程身份：67 门全部是学院已确认拥有的正式课程。 */
+export const approvalStatusOf = (c: CatalogEntry): ApprovalStatus => c.approvalStatus ?? 'confirmed_existing';
+
+/** 内容可用性：显式声明优先，否则由课时数推导；无课时 = 内容筹备中。 */
+export const availabilityOf = (c: CatalogEntry): AvailabilityStatus =>
+  c.availability ?? ((c.totalLessons ?? 0) > 0 ? 'available' : 'in_development');
+
+/** 是否可作为「现在开始」的入口。in_development 只能出现在「稍后探索」。 */
+export const canStartNow = (c: CatalogEntry): boolean =>
+  approvalStatusOf(c) === 'confirmed_existing' && availabilityOf(c) === 'available';
+
+/** 内容筹备中的课程仍属于 67 门正式课程，只是暂无可学内容。 */
+export const IN_DEVELOPMENT_LABEL = '课程内容筹备中';
+
+export const catalogCounts = () => ({
+  total: OFFICIAL_CATALOG.length,                                             // 恒为 67
+  available: OFFICIAL_CATALOG.filter(c => availabilityOf(c) === 'available').length,
+  inDevelopment: OFFICIAL_CATALOG.filter(c => availabilityOf(c) === 'in_development').length,
+});
 
 export const catalogById = (id: string) => OFFICIAL_CATALOG.find(c => c.id === id);
 export const catalogCountByCategory = (): Record<TheologyCategory, number> => {

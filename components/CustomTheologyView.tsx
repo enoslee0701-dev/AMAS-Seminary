@@ -20,7 +20,7 @@ import type { AssessmentLevel } from '../services/christianProfile/items';
 /**
  * 定制化神学 — 基督徒成长档案系统（完整版）。
  *
- * 闭环：ASSESS（九维阶梯评估 + 恩赐辨识）→ PROFILE（成长画像/证据等级）
+ * 闭环：ASSESS（Christian Profile 评估）→ PROFILE（成长画像/证据等级）
  * → RECOMMEND（装备路径/事奉匹配）→ LEARN（课程完成反哺画像分数）
  * → SERVE（服事记录填充证据层 + 事奉申请）→ REASSESS。
  *
@@ -530,7 +530,8 @@ const SINGLE_QUESTIONS: Question[] = [
 ];
 
 // ============================================================
-// 恩赐辨识（A04）+ 事奉匹配（A05）
+// [LEGACY] 恩赐辨识（A04）+ 事奉匹配（A05）—— 已由 Christian Profile 取代，
+// 不再参与当前评分与推荐；保留仅为读取历史档案数据。迁移见 Phase 0 第 2 项。
 // ============================================================
 
 type GiftKey =
@@ -1227,7 +1228,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
         email: user?.email || 'app@amas.local',
         organization: 'AMAS App · 定制化神学',
         type: '事奉申请',
-        message: `【成长档案·事奉申请】角色：${roleName}（匹配度 ${pct}%）。来自定制化神学的恩赐辨识匹配。`,
+        message: `【成长档案·事奉申请】角色：${roleName}（匹配度 ${pct}%）。来自 Christian Profile 的事奉倾向匹配。`,
       });
       const next: CTState = { ...ct, applications: [...(ct.applications ?? []), { role: roleName, at: new Date().toISOString() }] };
       saveCT(next); setCt(next); scheduleGrowthPush(next);

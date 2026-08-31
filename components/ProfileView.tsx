@@ -621,7 +621,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ favoriteCourseIds = [], onLog
               <h3 className="font-bold text-slate-800 text-sm">我的事奉倾向</h3>
             </div>
             <button onClick={() => go(ViewState.CUSTOM_THEOLOGY)} className="text-[11px] font-bold text-blue-900 flex items-center active:opacity-60">
-              {growthRole ? '查看档案' : '开始诊断'}<ChevronRight size={12} />
+              {growthRole ? '查看档案' : '开始评估'}<ChevronRight size={12} />
             </button>
           </div>
           {growthRole ? (

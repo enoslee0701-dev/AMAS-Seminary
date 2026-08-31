@@ -3,7 +3,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { db } from '../db.js';
 
 /**
- * Christian growth profile sync (定制化神学 · 恩赐辨识 · 事奉匹配).
+ * Christian growth profile sync (Christian Profile · 事奉倾向 · 实践证据).
  *
  * The client-side assessment engines produce one versioned JSON profile;
  * this endpoint is the shared, headless store for it:

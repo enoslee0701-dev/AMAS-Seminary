@@ -1,6 +1,6 @@
 // growthSyncService — 基督徒成长档案的跨设备同步。
 //
-// 档案（定制化神学诊断 + 恩赐辨识 + 事奉匹配）以一份版本化 JSON 存储：
+// 档案（Christian Profile 评估 + 事奉倾向 + 实践证据）以一份版本化 JSON 存储：
 // localStorage 供即时启动，后端 /api/growth/state 作为共享存储（App 与
 // 未来的 Web Discover 入口读写同一份）。合并策略：completedAt 较新者胜。
 // 未登录 / 未配置后端时静默降级为本地模式。
@@ -44,7 +44,7 @@ async function flush(): Promise<void> {
   } catch { /* best-effort — localStorage still has it */ }
 }
 
-/** 防抖上报（诊断完成/恩赐完成/撤销时调用）。 */
+/** 防抖上报（评估完成 / 档案更新 / 撤销时调用）。 */
 export function scheduleGrowthPush(state: unknown, debounceMs = 1500): void {
   if (!isGrowthSyncAvailable()) return;
   pending = state;
