@@ -1489,12 +1489,6 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
           <span className="shrink-0" style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '1px', color: '#8A6519', background: '#FBF6EA', border: '1px solid rgba(201,154,69,.28)', borderRadius: 999, padding: '3px 9px', marginRight: 6 }}>
             {grp.cn}
           </span>
-          <button onClick={() => stepRole(-1)} aria-label="上一个倾向" className="shrink-0 p-1 rounded-full hover:bg-slate-100 active:scale-90 transition">
-            <ChevronLeft size={20} className="text-slate-500" />
-          </button>
-          <button onClick={() => stepRole(1)} aria-label="下一个倾向" className="shrink-0 p-1 rounded-full hover:bg-slate-100 active:scale-90 transition">
-            <ChevronRight size={20} className="text-slate-500" />
-          </button>
         </div>
         <div
           key={a.key}
@@ -1507,19 +1501,42 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
             if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) stepRole(dx < 0 ? 1 : -1);
           }}
         >
-          <img
-            src={archImg(a.key)}
-            alt={a.label}
-            style={{ width: '100%', borderRadius: 18, border: '1px solid rgba(20,40,90,0.10)', boxShadow: '0 8px 20px rgba(16,24,40,.10)' }}
-          />
-          <div className="flex items-center" style={{ gap: 8, marginTop: 8 }}>
-            <button onClick={() => stepRole(-1)} className="flex-1 text-left active:scale-[0.98] transition" style={{ fontSize: 11, fontWeight: 700, color: '#667085', border: '1px solid #E7EAF0', borderRadius: 11, padding: '7px 10px', background: '#FFF' }}>
-              ‹ {prevA.label}
-            </button>
-            <span style={{ fontSize: 10, fontWeight: 700, color: '#B6BDC9' }}>{curIdx + 1} / {ARCHETYPES.length}</span>
-            <button onClick={() => stepRole(1)} className="flex-1 text-right active:scale-[0.98] transition" style={{ fontSize: 11, fontWeight: 700, color: '#667085', border: '1px solid #E7EAF0', borderRadius: 11, padding: '7px 10px', background: '#FFF' }}>
-              {nextA.label} ›
-            </button>
+          <div className="relative">
+            <img
+              src={archImg(a.key)}
+              alt={a.label}
+              style={{ width: '100%', borderRadius: 18, border: '1px solid rgba(20,40,90,0.10)', boxShadow: '0 8px 20px rgba(16,24,40,.10)', display: 'block' }}
+            />
+            {([[-1, prevA, 'left'], [1, nextA, 'right']] as const).map(([dir, target, side]) => (
+              <button
+                key={side}
+                onClick={() => stepRole(dir)}
+                aria-label={`${dir < 0 ? '上一个' : '下一个'}倾向：${target.label}`}
+                title={target.label}
+                className="absolute flex items-center justify-center active:scale-90 transition"
+                style={{
+                  [side]: 10, top: '50%', transform: 'translateY(-50%)',
+                  width: 38, height: 38, borderRadius: '50%',
+                  background: 'rgba(255,255,255,0.94)',
+                  border: '1px solid rgba(20,40,90,0.12)',
+                  boxShadow: '0 3px 12px rgba(16,24,40,.22)',
+                  backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
+                }}
+              >
+                {dir < 0 ? <ChevronLeft size={21} color="#04285F" /> : <ChevronRight size={21} color="#04285F" />}
+              </button>
+            ))}
+            <span
+              className="absolute"
+              style={{
+                left: '50%', bottom: 12, transform: 'translateX(-50%)',
+                fontSize: 10.5, fontWeight: 800, color: '#33456F',
+                background: 'rgba(255,255,255,0.9)', border: '1px solid rgba(20,40,90,0.1)',
+                borderRadius: 999, padding: '3px 11px',
+              }}
+            >
+              {curIdx + 1} / {ARCHETYPES.length}
+            </span>
           </div>
 
           {myScore !== null && (
