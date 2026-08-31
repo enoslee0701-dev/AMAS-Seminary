@@ -580,12 +580,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
                 WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent',
               }}
             >
-              {growthRole ? `你的倾向：${growthRole.combined}` : '发现你的 12 项事奉倾向'}
+              认识你的事奉倾向，开启专属成长路径
             </h3>
             <p style={{ margin: '6px 0 0', fontSize: 'clamp(10.5px, 3.2vw, 12px)', lineHeight: 1.6, color: 'rgba(233,238,248,.85)' }}>
-              {growthRole
-                ? `主要倾向 ${growthRole.primary.label} · 次要 ${growthRole.secondary.label}`
-                : '教导、牧养、传福音、建造……每个人都有全部 12 项，只是组合不同。'}
+              看见你的优势组合，匹配适合的课程、服侍与装备方向
             </p>
             <div
               className="inline-flex items-center"
