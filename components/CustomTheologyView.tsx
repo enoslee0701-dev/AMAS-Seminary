@@ -1540,9 +1540,9 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
             <button
               onClick={() => { setRoleDetail(null); openCp('quick'); }}
               className="w-full active:scale-[0.98] transition"
-              style={{ ...goldBtn, justifyContent: 'center', marginTop: 14 }}
+              style={{ ...goldBtn, justifyContent: 'center', marginTop: 14, fontSize: 12.5, whiteSpace: 'nowrap' }}
             >
-              完成事奉倾向画像（精简版），看看这一维度在你身上的表现
+              完成精简版画像，看这一维度在你身上的表现
               <ChevronRight size={15} strokeWidth={2.6} />
             </button>
           )}
