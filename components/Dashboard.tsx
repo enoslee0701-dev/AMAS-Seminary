@@ -547,7 +547,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
           }}
         >
           {/* 右侧倾向卡：自动轮播的扇形（每 2.6s 前进一张，展示全部 12 项） */}
-          <div aria-hidden style={{ position: 'absolute', right: -2, top: 2, width: 168, height: 160, pointerEvents: 'none' }}>
+          <div aria-hidden style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', width: 152, height: 132, pointerEvents: 'none' }}>
             {[0, 1, 2].map(slot => {
               const a = ARCHETYPES_BASE[(archIdx + slot) % ARCHETYPES_BASE.length];
               return (
@@ -558,8 +558,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
                   loading="lazy"
                   className="animate-fade-in"
                   style={{
-                    position: 'absolute', width: 82, borderRadius: 9,
-                    left: [0, 42, 84][slot], top: [18, 2, 18][slot],
+                    position: 'absolute', width: 74, borderRadius: 9,
+                    left: [0, 39, 78][slot], top: [16, 2, 16][slot],
                     transform: `rotate(${[-10, 0, 10][slot]}deg)`, zIndex: slot === 1 ? 2 : 1,
                     border: '1px solid rgba(232,201,140,.45)', boxShadow: '0 10px 22px rgba(0,0,0,.38)',
                     transition: 'transform .5s ease',
@@ -569,20 +569,20 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
             })}
           </div>
 
-          <div style={{ position: 'relative', zIndex: 3, paddingRight: 150 }}>
+          <div style={{ position: 'relative', zIndex: 3, paddingRight: 156, minHeight: 138, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
             <p style={{ margin: '0 0 6px', fontSize: 9.5, fontWeight: 800, letterSpacing: '2px', color: 'rgba(232,201,140,.9)' }}>
               AMAS CHRISTIAN PROFILE
             </p>
             <h3
               style={{
-                margin: 0, fontSize: 'clamp(15px, 4.6vw, 18px)', fontWeight: 900, lineHeight: 1.3, letterSpacing: '0.4px',
+                margin: 0, fontSize: 'clamp(15px, 4.4vw, 17.5px)', fontWeight: 900, lineHeight: 1.45, letterSpacing: '0.4px',
                 background: 'linear-gradient(180deg, #F7E3B4 10%, #E4BC6E 90%)',
                 WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent',
               }}
             >
-              认识你的事奉倾向，开启专属成长路径
+              认识你的事奉倾向<br />开启专属成长路径
             </h3>
-            <p style={{ margin: '6px 0 0', fontSize: 'clamp(10.5px, 3.2vw, 12px)', lineHeight: 1.6, color: 'rgba(233,238,248,.85)' }}>
+            <p style={{ margin: '7px 0 0', fontSize: 'clamp(10.5px, 3.1vw, 12px)', lineHeight: 1.7, color: 'rgba(233,238,248,.82)', maxWidth: 200 }}>
               看见你的优势组合，匹配适合的课程、服侍与装备方向
             </p>
             <div
