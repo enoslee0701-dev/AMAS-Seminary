@@ -1659,8 +1659,12 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
             <p style={{ margin: '0 0 14px', maxWidth: 232, fontSize: 12, lineHeight: 1.75, color: 'rgba(233,238,248,.9)', fontWeight: 500 }}>
               认识你的信仰基础、成长状态、事奉倾向与下一步装备方向。
             </p>
-            <button onClick={startQuiz} className="active:scale-95 transition-transform" style={{ ...goldBtn, height: 38, fontSize: 12.5 }}>
-              {ct ? '重新进行信仰基础评估' : '信仰基础与装备画像'}
+            <button
+              onClick={() => (cp ? setMode('cpResult') : openCp('quick'))}
+              className="active:scale-95 transition-transform"
+              style={{ ...goldBtn, height: 38, fontSize: 12.5 }}
+            >
+              {cp ? '查看我的成长档案' : '测出我的事奉定位（30 题）'}
               <ChevronRight size={14} strokeWidth={2.6} />
             </button>
           </div>
@@ -1723,6 +1727,16 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                       {cp.level === 'quick' ? '完成完整版（84 题）' : '重新评估'}
                     </button>
                   </div>
+                  <div className="flex items-center" style={{ gap: 10, marginTop: 12, padding: '10px 12px', background: '#FBF6EA', border: '1px solid rgba(201,154,69,.25)', borderRadius: 12 }}>
+                    <BookOpen size={15} color="#A9812F" className="shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p style={{ margin: 0, fontSize: 11.5, fontWeight: 800, color: '#5C4A1E' }}>第二步 · 信仰基础与装备画像</p>
+                      <p style={{ margin: '1px 0 0', fontSize: 10, color: '#7A6A45' }}>评估圣经与教义根基，生成你的专属装备路径</p>
+                    </div>
+                    <button onClick={startQuiz} className="shrink-0 active:scale-95 transition" style={{ fontSize: 11, fontWeight: 800, color: '#04285F', border: '1px solid rgba(4,40,95,.3)', borderRadius: 999, padding: '5px 12px', background: '#FFF' }}>
+                      {ct ? '重新评估' : '开始'}
+                    </button>
+                  </div>
                   <p style={{ margin: '10px 0 0', fontSize: 10, color: '#98A2B3', lineHeight: '16px' }}>{ARCH_DISCLAIMER}</p>
                   {orientationGallery}
                 </div>
@@ -1743,6 +1757,16 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
               <button onClick={() => openCp('standard')} className="w-full active:scale-[0.98] transition" style={{ width: '100%', marginTop: 8, height: 42, borderRadius: 999, border: '1px solid rgba(4,40,95,.3)', background: '#F8FAFF', color: '#04285F', fontSize: 13, fontWeight: 800 }}>
                 Christian Profile · 完整版 · 84 题
               </button>
+              <div className="flex items-center" style={{ gap: 10, marginTop: 12, padding: '10px 12px', background: '#FBF6EA', border: '1px solid rgba(201,154,69,.25)', borderRadius: 12 }}>
+                <BookOpen size={15} color="#A9812F" className="shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p style={{ margin: 0, fontSize: 11.5, fontWeight: 800, color: '#5C4A1E' }}>第二步 · 信仰基础与装备画像</p>
+                  <p style={{ margin: '1px 0 0', fontSize: 10, color: '#7A6A45' }}>评估圣经与教义根基，生成你的专属装备路径</p>
+                </div>
+                <button onClick={startQuiz} className="shrink-0 active:scale-95 transition" style={{ fontSize: 11, fontWeight: 800, color: '#04285F', border: '1px solid rgba(4,40,95,.3)', borderRadius: 999, padding: '5px 12px', background: '#FFF' }}>
+                  {ct ? '重新评估' : '开始'}
+                </button>
+              </div>
               <p style={{ margin: '10px 0 0', fontSize: 10, color: '#98A2B3', textAlign: 'center' }}>每题自动保存 · 可随时退出继续 · 不显示题号压力，按 6 个阶段进行</p>
               {orientationGallery}
             </div>
@@ -2068,42 +2092,6 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
 
         {!ct && (
           <>
-            {/* ===== 四个层面 ===== */}
-            <section style={{ marginTop: 26 }}>
-              <SectionEyebrow title="AI 将从这 4 个层面认识你" en="Four Levels" />
-              <div className="grid grid-cols-2" style={{ gap: 11 }}>
-                {LEVELS4.map(l => (
-                  <div key={l.t} className="relative overflow-hidden" style={{ ...ctCard, padding: '16px 14px 15px' }}>
-                    <span
-                      style={{
-                        position: 'absolute', right: 10, top: 6,
-                        fontFamily: '"Cormorant Garamond", Georgia, serif', fontStyle: 'italic',
-                        fontSize: 30, fontWeight: 700, color: 'rgba(20,40,90,.055)', lineHeight: 1,
-                      }}
-                    >
-                      {l.num}
-                    </span>
-                    <div
-                      className="flex items-center justify-center"
-                      style={{
-                        width: 46, height: 46, borderRadius: '50%', marginBottom: 11,
-                        background: 'linear-gradient(165deg, #14397F 0%, #071F4E 100%)', color: '#EFCB86',
-                        boxShadow: '0 8px 16px rgba(7,31,78,.20), inset 0 1px 0 rgba(255,255,255,.14)',
-                      }}
-                    >
-                      {l.icon}
-                    </div>
-                    <div className="flex items-baseline" style={{ gap: 6, marginBottom: 6 }}>
-                      <span style={{ fontSize: 15.5, fontWeight: 900, color: '#14295A' }}>{l.t}</span>
-                      <span style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 9.5, fontWeight: 700, letterSpacing: '1.6px', color: '#C1A76A' }}>{l.en}</span>
-                    </div>
-                    <p style={{ margin: 0, fontSize: 11.5, lineHeight: 1.7, color: '#6B7488', fontWeight: 500 }}>{l.d}</p>
-                    <div style={{ marginTop: 11, height: 3, width: 34, borderRadius: 99, background: 'linear-gradient(90deg, #C99A45, rgba(201,154,69,.15))' }} />
-                  </div>
-                ))}
-              </div>
-            </section>
-
             {/* ===== 你将获得 ===== */}
             <section style={{ marginTop: 26 }}>
               <SectionEyebrow title="你将获得" en="You Will Get" />
@@ -2124,116 +2112,6 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                     <p style={{ margin: 0, fontSize: 10.5, lineHeight: 1.65, color: '#6B7488', fontWeight: 500 }}>{g.d}</p>
                   </div>
                 ))}
-              </div>
-            </section>
-
-            {/* ===== 评估流程 ===== */}
-            <section style={{ marginTop: 26 }}>
-              <SectionEyebrow title="评估流程" en="How It Works" />
-              <div className="relative overflow-hidden" style={{ ...ctCard, padding: '20px 12px 16px' }}>
-                <span
-                  style={{
-                    position: 'absolute', left: 36, right: 36, top: 44, height: 2,
-                    background: 'linear-gradient(90deg, rgba(201,154,69,.0), rgba(201,154,69,.45) 18%, rgba(201,154,69,.45) 82%, rgba(201,154,69,0))',
-                  }}
-                />
-                <div className="grid grid-cols-4 text-center relative" style={{ gap: 4 }}>
-                  {FLOW_STEPS.map(f => (
-                    <div key={f.n}>
-                      <div
-                        className="flex items-center justify-center relative z-10"
-                        style={{
-                          width: 50, height: 50, margin: '0 auto 10px', borderRadius: '50%',
-                          background: f.gold ? '#FBF6EA' : '#FFFFFF',
-                          border: f.gold ? '1.5px solid #C99A45' : '1.5px solid #E4E0D2',
-                          color: f.gold ? '#C99A45' : '#17397E',
-                          boxShadow: '0 6px 14px rgba(18,31,63,.08)',
-                        }}
-                      >
-                        {f.icon}
-                      </div>
-                      <span
-                        className="inline-grid place-items-center"
-                        style={{
-                          width: 17, height: 17, borderRadius: '50%', marginBottom: 5,
-                          background: 'linear-gradient(180deg, #E3BC67, #C99A45)', color: '#FFF',
-                          fontSize: 10, fontWeight: 800, boxShadow: '0 3px 6px rgba(160,116,38,.3)',
-                        }}
-                      >
-                        {f.n}
-                      </span>
-                      <p style={{ margin: '0 0 4px', fontSize: 12.5, fontWeight: 900, color: '#172A57' }}>{f.t}</p>
-                      <p style={{ margin: 0, fontSize: 9.8, lineHeight: 1.55, color: '#98A2B3', fontWeight: 500, padding: '0 2px' }}>{f.d}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </section>
-
-            {/* ===== 示例成长画像 ===== */}
-            <section style={{ marginTop: 26 }}>
-              <SectionEyebrow title="示例成长画像" en="Growth Portrait" />
-              <div style={{ ...ctCard, padding: '18px 16px 14px' }}>
-                <span
-                  className="inline-flex items-center"
-                  style={{
-                    gap: 5, fontSize: 9.5, fontWeight: 800, letterSpacing: '1px', color: '#C99A45',
-                    background: '#FBF6EA', border: '1px solid rgba(201,154,69,0.28)', borderRadius: 999,
-                    padding: '3px 9px', marginBottom: 12,
-                  }}
-                >
-                  <Sparkles size={9} /> 成长型服事者 · LEVEL 3
-                </span>
-                <div className="flex items-center" style={{ gap: 8 }}>
-                  <div className="shrink-0"><RadarChart values={SAMPLE_RADAR} /></div>
-                  <div className="flex-1 flex flex-col" style={{ gap: 12 }}>
-                    {RADAR_AXES.map((n, i) => (
-                      <div key={n} className="grid items-center" style={{ gridTemplateColumns: '30px 1fr 40px', gap: 8 }}>
-                        <span style={{ fontSize: 12, fontWeight: 800, color: '#22345E' }}>{n}</span>
-                        <div className="rounded-full overflow-hidden" style={{ height: 5, backgroundColor: '#EBEEF4' }}>
-                          <div
-                            className="h-full rounded-full"
-                            style={{
-                              width: SAMPLE_RADAR[i] + '%',
-                              background: i === 2 ? 'linear-gradient(90deg, #C99A45, #E3C078)' : 'linear-gradient(90deg, #16397E, #2C55A6)',
-                            }}
-                          />
-                        </div>
-                        <span className="text-right" style={{ fontSize: 12, color: '#1F2F52', fontWeight: 900 }}>
-                          {SAMPLE_RADAR[i]}<small style={{ color: '#AEB6C6', fontWeight: 700, fontSize: 9 }}>/100</small>
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <p
-                  className="flex items-center"
-                  style={{ gap: 6, margin: '13px 0 0', paddingTop: 11, borderTop: '1px dashed #ECE7DA', fontSize: 10, color: '#98A2B3', fontWeight: 500 }}
-                >
-                  <TrendingUp size={11} /> 此为示例数据，实际结果将基于你的评估情况生成。
-                </p>
-              </div>
-            </section>
-
-            {/* ===== FAQ ===== */}
-            <section style={{ marginTop: 26 }}>
-              <div className="flex items-start" style={{ ...ctCard, gap: 13, padding: '17px 16px' }}>
-                <div
-                  className="shrink-0 flex items-center justify-center"
-                  style={{
-                    width: 40, height: 40, borderRadius: '50%', border: '1.6px solid #1A3B7C',
-                    color: '#1A3B7C', background: '#F6F8FD',
-                    fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 22, fontWeight: 700,
-                  }}
-                >
-                  ?
-                </div>
-                <div>
-                  <p style={{ margin: '0 0 6px', fontSize: 14.5, fontWeight: 900, color: '#14295A' }}>为什么不是普通答题？</p>
-                  <p style={{ margin: 0, fontSize: 11.5, lineHeight: 1.8, color: '#6B7488', fontWeight: 500 }}>
-                    这不是一次机械考试，而是一场 AI 自适应评估。系统会根据你的回答动态追问，并结合后续学习持续更新你的成长画像。
-                  </p>
-                </div>
               </div>
             </section>
 
@@ -2260,8 +2138,8 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                   <p style={{ margin: 0, fontSize: 11.5, color: 'rgba(233,238,248,.82)', lineHeight: 1.6, fontWeight: 500 }}>开启更有方向的成长与事奉。</p>
                 </div>
               </div>
-              <button onClick={startQuiz} className="active:scale-[0.98] transition-transform" style={{ ...goldBtn, marginTop: 15, width: '100%', justifyContent: 'center' }}>
-                开始信仰基础评估
+              <button onClick={() => openCp('quick')} className="active:scale-[0.98] transition-transform" style={{ ...goldBtn, marginTop: 15, width: '100%', justifyContent: 'center' }}>
+                测出我的事奉定位（30 题）
                 <ChevronRight size={15} strokeWidth={2.6} />
               </button>
             </section>
