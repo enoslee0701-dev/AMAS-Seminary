@@ -586,15 +586,15 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
               看见你的优势组合，匹配适合的课程、服侍与装备方向
             </p>
             <div
-              className="inline-flex items-center"
+              className="inline-flex items-center justify-center"
               style={{
-                marginTop: 12, height: 32, paddingLeft: 14, paddingRight: 10, borderRadius: 16, gap: 4,
+                marginTop: 12, alignSelf: 'flex-start', height: 32, paddingLeft: 16, paddingRight: 12, borderRadius: 16, gap: 4,
                 background: 'linear-gradient(180deg, #F4D796 0%, #E1B75F 100%)', color: '#123061',
                 fontSize: 12.5, fontWeight: 800, letterSpacing: '0.3px',
                 boxShadow: '0 6px 14px rgba(160,116,38,.32), inset 0 1px 0 rgba(255,255,255,.55)',
               }}
             >
-              {growthRole ? '查看我的成长档案' : '开始探索'}
+              测试我的专属定位
               <ChevronRight size={14} strokeWidth={2.6} />
             </div>
           </div>
