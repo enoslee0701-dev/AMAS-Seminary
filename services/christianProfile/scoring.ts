@@ -12,8 +12,8 @@ import {
 } from './items';
 import { ARCHETYPES_BASE, archetypeByKey } from '../growthArchetypes';
 import {
-  computeConfidence, buildSourceRows,
-  type ConfidenceLevel, type EvidenceItem, type SourceRow,
+  computeConfidence, buildSourceRows, overallConfidence, isValidEvidence,
+  type ConfidenceLevel, type ConflictLevel, type ChristianProfileEvidence, type SourceRow,
 } from './evidence';
 
 export interface Answer {
@@ -36,6 +36,10 @@ export interface DimensionScore {
   confidence: ConfidenceLevel;
   /** 「为什么这样判断」面板的证据来源清单 */
   sources: SourceRow[];
+  /** 现实证据与本次测评结论是否冲突。contradicted 时应提示重新评估。 */
+  conflict: ConflictLevel;
+  /** 这一档可信度是怎么来的（一句话，用于判断依据页） */
+  confidenceReason: string;
   itemsAnswered: number;
 }
 
@@ -75,8 +79,10 @@ export interface ChristianProfile {
   qualityFlags: QualityFlag[];
   /** @deprecated 用 confidence 代替 */
   evidenceStrength: EvidenceStrength;
-  /** 整份画像的可信度（取 Top 3 的最低档） */
+  /** 整份画像的可信度（Top 3 的中位档；任一项被现实证据反证时再降一档） */
   confidence: ConfidenceLevel;
+  /** 现实证据与测评结论不一致的倾向。非空时结果页必须显式提示并建议重新评估。 */
+  conflicts: { key: OrientationKey; level: ConflictLevel }[];
   /** 用户可见的画像版本号：V1、V2 …（由已保存的历史条数决定，保存时回填） */
   versionNo: number;
   /** 可解释性：每个 Top 维度的主要来源（行为标签） */
@@ -128,7 +134,7 @@ export function scoreAssessment(
   answers: Answer[],
   completedAt = new Date().toISOString(),
   /** 已有的外部证据（课程 / 服事 / 导师 / 同伴）。当前版本调用方尚未接入，默认空。 */
-  externalEvidence: EvidenceItem[] = [],
+  externalEvidence: ChristianProfileEvidence[] = [],
 ): ChristianProfile {
   const byId = new Map(answers.map(a => [a.itemId, a]));
   const answered = (i: Item) => byId.get(i.id);
@@ -170,17 +176,21 @@ export function scoreAssessment(
     fine[k] = normalized;
     const evidenceStrength: EvidenceStrength =
       lk.length >= 3 && offered[k] >= 2 ? 'high' : lk.length >= 2 ? 'moderate' : 'limited';
-    const related = externalEvidence.filter(e => e.orientations.includes(k));
+    // 证据必须声明验证目标；无目标的证据被丢弃，不进入任何倾向（V2.1）
+    const related = externalEvidence.filter(e => isValidEvidence(e) && e.targetOrientations.includes(k));
+    const conf = computeConfidence({
+      itemsAnswered: lk.length,
+      scenarioOffered: offered[k],
+      externalEvidence: related,
+      qualityFlagCount: 0,   // 质量标记在下方统一评估后再降档
+    });
     ministryOrientation[k] = {
       rawScore: Math.round(lk.reduce((t, n) => t + n / 25 + 1, 0) + chosen[k]),
       normalizedScore: Math.round(clamp(normalized)),
       evidenceStrength,
-      confidence: computeConfidence({
-        itemsAnswered: lk.length,
-        scenarioOffered: offered[k],
-        externalEvidence: related,
-        qualityFlagCount: 0,   // 质量标记在下方统一评估后再降档
-      }),
+      confidence: conf.level,
+      conflict: conf.conflict,
+      confidenceReason: conf.reason,
       sources: buildSourceRows({
         assessmentTags: Array.from(new Set(sources[k].filter(t => t !== '情境题中优先选择了此类行动'))),
         scenarioPicked: chosen[k],
@@ -200,7 +210,7 @@ export function scoreAssessment(
       const items = ITEM_BANK.filter(i => i.module === 'faith_foundation' && i.dimension === f);
       let correct = 0, n = 0;
       for (const it of items) { const a = answered(it); if (!a) continue; n++; if (it.options[a.optionIndex]?.correct) correct++; }
-      facets[f] = { rawScore: correct, normalizedScore: n ? Math.round((correct / n) * 100) : 0, itemsAnswered: n, evidenceStrength: n >= 3 ? 'high' : n >= 2 ? 'moderate' : 'limited', confidence: n >= 3 ? 'high' : n >= 2 ? 'moderate' : 'low', sources: [] };
+      facets[f] = { rawScore: correct, normalizedScore: n ? Math.round((correct / n) * 100) : 0, itemsAnswered: n, evidenceStrength: n >= 3 ? 'high' : n >= 2 ? 'moderate' : 'limited', confidence: n >= 3 ? 'high' : n >= 2 ? 'moderate' : 'low', sources: [], conflict: 'none', confidenceReason: '' };
     }
     faithFoundation = { overall: Math.round(mean(facetKeys.map(f => facets[f].normalizedScore))), facets };
   }
@@ -229,7 +239,7 @@ export function scoreAssessment(
       const items = ITEM_BANK.filter(i => i.module === 'readiness' && i.dimension === f);
       const vals: number[] = [];
       for (const it of items) { const a = answered(it); const v = a ? itemValue(it, a.optionIndex) : null; if (v !== null) vals.push(scaleToIndex(v)); }
-      facets[f] = { rawScore: vals.length, normalizedScore: Math.round(mean(vals)), itemsAnswered: vals.length, evidenceStrength: vals.length >= 2 ? 'high' : vals.length === 1 ? 'moderate' : 'limited', confidence: vals.length >= 2 ? 'high' : vals.length === 1 ? 'moderate' : 'low', sources: [] };
+      facets[f] = { rawScore: vals.length, normalizedScore: Math.round(mean(vals)), itemsAnswered: vals.length, evidenceStrength: vals.length >= 2 ? 'high' : vals.length === 1 ? 'moderate' : 'limited', confidence: vals.length >= 2 ? 'high' : vals.length === 1 ? 'moderate' : 'low', sources: [], conflict: 'none', confidenceReason: '' };
     }
     const overall = Math.round(mean(keys.map(f => facets[f].normalizedScore)));
     ministryReadiness = { overall, level: overall >= 70 ? 'strong' : overall >= 45 ? 'developing' : 'early', facets };
@@ -290,11 +300,16 @@ export function scoreAssessment(
       ministryOrientation[k].confidence = order[Math.max(0, order.indexOf(cur) - 1)];
     }
   }
-  // 整份画像的可信度 = Top 3 中最低的一档（不夸大整体把握）
-  const confOrder: ConfidenceLevel[] = ['low', 'moderate', 'high', 'very_high'];
-  const confidence = topOrientations
-    .map(t => ministryOrientation[t.key].confidence)
-    .reduce((lowest, c) => (confOrder.indexOf(c) < confOrder.indexOf(lowest) ? c : lowest), 'very_high' as ConfidenceLevel);
+  // 整体可信度取 Top 3 的中位数（取最低值会被第三位单方面拖垮），任一项被反证再降一档
+  const confidence = overallConfidence(topOrientations.map(t => ({
+    level: ministryOrientation[t.key].confidence,
+    conflict: ministryOrientation[t.key].conflict,
+    reason: ministryOrientation[t.key].confidenceReason,
+  })));
+  // 现实证据与测评结论冲突的倾向：结果页需显式提示，而不是把冲突藏起来
+  const conflicts = ORIENTATION_KEYS
+    .filter(k => ministryOrientation[k].conflict !== 'none')
+    .map(k => ({ key: k, level: ministryOrientation[k].conflict }));
 
   // ---- 可解释性（只给来源，不给权重） ----
   const explanations: Partial<Record<OrientationKey, string[]>> = {};
@@ -311,7 +326,7 @@ export function scoreAssessment(
     level, completedAt,
     faithFoundation, discipleshipPractice, ministryOrientation, ministryReadiness,
     topOrientations, multiBlend, topTie, combinedLabel, orientationReadiness,
-    qualityFlags, evidenceStrength, confidence, versionNo: 1, explanations, recommendations,
+    qualityFlags, evidenceStrength, confidence, conflicts, versionNo: 1, explanations, recommendations,
   };
 }
 

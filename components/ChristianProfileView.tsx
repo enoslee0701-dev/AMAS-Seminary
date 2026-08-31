@@ -10,10 +10,13 @@ import {
   scoreAssessment, balancedInterpretation, PRACTICE_LEVEL_LABEL, READINESS_LEVEL_LABEL,
   type Answer, type ChristianProfile, type EvidenceStrength,
 } from '../services/christianProfile/scoring';
-import { loadSession, saveSession, clearSession, saveChristianProfile, readProfileHistory } from '../services/christianProfile/store';
+import {
+  loadSession, saveSession, clearSession, saveChristianProfile, readProfileHistory,
+  recordVerificationIntent, readVerificationIntents,
+} from '../services/christianProfile/store';
 import { archetypeByKey, archImg, ARCH_GROUPS, ARCH_DISCLAIMER, type ArchKey } from '../services/growthArchetypes';
 import {
-  CONFIDENCE_LABEL, CONFIDENCE_HINT, EVIDENCE_TYPE_LABEL, SOURCE_STATUS_LABEL,
+  CONFIDENCE_LABEL, CONFIDENCE_HINT, EVIDENCE_TYPE_LABEL, SOURCE_STATUS_LABEL, CONFLICT_LABEL, type SourceStatus,
 } from '../services/christianProfile/evidence';
 
 /**
@@ -250,6 +253,15 @@ const Shell: React.FC<{ title: string; onExit: () => void; progress?: { step: nu
 // ------------------------------------------------------------
 // 结果页（Section 1–9 + 可解释性 + 声明）
 // ------------------------------------------------------------
+
+/** 证据四态的统一配色：支持=绿 / 中性=蓝灰 / 反证=红 / 暂无=浅灰。红色只用于「与判断冲突」，不表示好坏。 */
+const STATUS_STYLE: Record<SourceStatus, { color: string; background: string; border: string }> = {
+  support: { color: '#0F5138', background: '#EDFAF3', border: '1px solid #C7EDDA' },
+  neutral: { color: '#41557E', background: '#F2F5FB', border: '1px solid #DCE4F2' },
+  challenge: { color: '#9B2C2C', background: '#FDF2F2', border: '1px solid #F3C8C8' },
+  none: { color: '#98A2B3', background: '#F4F5F8', border: '1px solid #E4E7EC' },
+};
+
 const Bar: React.FC<{ label: string; value: number; sub?: string; accent?: boolean }> = ({ label, value, sub, accent }) => (
   <div className="flex items-center" style={{ gap: 10, marginBottom: 8 }}>
     <span className="shrink-0" style={{ width: 64, fontSize: 12, fontWeight: 700, color: '#475467' }}>{label}</span>
@@ -264,7 +276,8 @@ const Bar: React.FC<{ label: string; value: number; sub?: string; accent?: boole
 export const ResultPage: React.FC<{ p: ChristianProfile; courses: Course[]; onCourseClick: (id: string) => void; onExit: () => void; onRestart: () => void }> = ({ p, courses, onCourseClick, onExit, onRestart }) => {
   const [showAll, setShowAll] = useState(false);
   const [whyKey, setWhyKey] = useState<ArchKey | null>(null);      // 「为什么这样判断」详情
-  const [tryIntents, setTryIntents] = useState<string[]>([]);      // 「我愿意尝试」的验证场景
+  // 「我愿意尝试」的验证场景：写入证据日志（neutral/weak，不提升可信度）
+  const [tryIntents, setTryIntents] = useState<string[]>(() => { try { return readVerificationIntents(); } catch { return []; } });
   const pri = archetypeByKey(p.topOrientations[0].key);
   const sec = archetypeByKey(p.topOrientations[1].key);
   const third = p.topOrientations[2] ? archetypeByKey(p.topOrientations[2].key) : null;
@@ -305,12 +318,10 @@ export const ResultPage: React.FC<{ p: ChristianProfile; courses: Course[]; onCo
                   <span
                     style={{
                       fontSize: 10, fontWeight: 800, borderRadius: 999, padding: '2px 8px',
-                      color: row.status === 'none' ? '#98A2B3' : row.status === 'strong' ? '#0F5138' : '#8A6519',
-                      background: row.status === 'none' ? '#F4F5F8' : row.status === 'strong' ? '#EDFAF3' : '#FBF6EA',
-                      border: `1px solid ${row.status === 'none' ? '#E4E7EC' : row.status === 'strong' ? '#C7EDDA' : 'rgba(201,154,69,.3)'}`,
+                      ...STATUS_STYLE[row.status],
                     }}
                   >
-                    {SOURCE_STATUS_LABEL[row.status]}
+                    {SOURCE_STATUS_LABEL[row.status]}{row.emphasis && row.status !== 'none' ? ' · 较强' : ''}
                   </span>
                 </div>
                 <p style={{ margin: '4px 0 0', fontSize: 12, color: '#667085', lineHeight: 1.7 }}>{row.detail}</p>
@@ -322,6 +333,14 @@ export const ResultPage: React.FC<{ p: ChristianProfile; courses: Course[]; onCo
               </p>
               <p style={{ margin: '4px 0 0', fontSize: 11, color: '#667085', lineHeight: 1.7 }}>{CONFIDENCE_HINT[d.confidence]}</p>
             </div>
+            {d.conflict !== 'none' && (
+              <div style={{ marginTop: 10, padding: '11px 13px', background: '#FDF2F2', border: '1px solid #F3C8C8', borderRadius: 12 }}>
+                <p style={{ margin: 0, fontSize: 12.5, fontWeight: 800, color: '#9B2C2C' }}>{CONFLICT_LABEL[d.conflict]}</p>
+                <p style={{ margin: '4px 0 0', fontSize: 11.5, color: '#7A4A4A', lineHeight: 1.75 }}>
+                  {d.confidenceReason}系统不会因为测评分数高就坚持原来的判断——建议在真实服侍中继续观察，或重新评估一次。
+                </p>
+              </div>
+            )}
             <p style={{ margin: '12px 0 0', fontSize: 11.5, color: '#7A6A45', lineHeight: 1.75, background: '#FBF6EA', border: '1px solid rgba(201,154,69,.25)', borderRadius: 12, padding: '10px 12px' }}>
               完成真实的学习与服侍任务，可以进一步验证或修正这一判断。
             </p>
@@ -365,6 +384,17 @@ export const ResultPage: React.FC<{ p: ChristianProfile; courses: Course[]; onCo
             </button>
           </div>
         </div>
+
+        {/* 证据冲突：现实表现与测评结论不一致时必须显式说出来，而不是继续给高可信度 */}
+        {p.conflicts.length > 0 && (
+          <div style={{ marginTop: 12, padding: '13px 15px', background: '#FDF2F2', border: '1px solid #F3C8C8', borderRadius: 14 }}>
+            <p style={{ margin: 0, fontSize: 13, fontWeight: 900, color: '#9B2C2C' }}>这份画像需要重新验证</p>
+            <p style={{ margin: '5px 0 0', fontSize: 12, color: '#7A4A4A', lineHeight: 1.8 }}>
+              在{p.conflicts.map(c => `「${archetypeByKey(c.key).label}」`).join('、')}上，你后来的学习与服侍表现与本次测评结论并不一致。
+              系统不会因为分数高就坚持原来的判断——这几项的可信度已经下调，建议与牧者或导师谈一次，或重新评估。
+            </p>
+          </div>
+        )}
 
         {/* 短版说明前置 */}
         <p style={{ margin: '10px 2px 0', fontSize: 10.5, color: '#98A2B3', lineHeight: 1.75 }}>
@@ -417,8 +447,8 @@ export const ResultPage: React.FC<{ p: ChristianProfile; courses: Course[]; onCo
               {p.ministryOrientation[pri.key].sources.map(row => (
                 <React.Fragment key={row.type}>
                   <span style={{ fontSize: 12, color: '#475467' }}>{EVIDENCE_TYPE_LABEL[row.type]}</span>
-                  <span style={{ fontSize: 11, fontWeight: 800, color: row.status === 'none' ? '#B6BDC9' : row.status === 'strong' ? '#137A4F' : '#8A6519' }}>
-                    {SOURCE_STATUS_LABEL[row.status]}
+                  <span style={{ fontSize: 11, fontWeight: 800, color: STATUS_STYLE[row.status].color }}>
+                    {SOURCE_STATUS_LABEL[row.status]}{row.emphasis && row.status !== 'none' ? ' · 较强' : ''}
                   </span>
                 </React.Fragment>
               ))}
@@ -480,7 +510,10 @@ export const ResultPage: React.FC<{ p: ChristianProfile; courses: Course[]; onCo
                 <div key={m} className="flex items-center" style={{ gap: 10, padding: '9px 0', borderTop: '1px solid #F3F1EA' }}>
                   <span className="flex-1" style={{ fontSize: 13, fontWeight: 700, color: '#1F2A37' }}>{m}</span>
                   <button
-                    onClick={() => setTryIntents(v => (picked ? v.filter(x => x !== m) : [...v, m]))}
+                    onClick={() => {
+                      if (!picked) recordVerificationIntent({ orientations: p.topOrientations.map(t => t.key), ministry: m });
+                      setTryIntents(v => (picked ? v.filter(x => x !== m) : [...v, m]));
+                    }}
                     className="shrink-0 active:scale-95 transition"
                     style={{
                       fontSize: 11, fontWeight: 800, borderRadius: 999, padding: '5px 12px',
@@ -496,7 +529,8 @@ export const ResultPage: React.FC<{ p: ChristianProfile; courses: Course[]; onCo
             })}
             {tryIntents.length > 0 && (
               <p style={{ margin: '10px 0 0', fontSize: 11, color: '#7A6A45', lineHeight: 1.7, background: '#FBF6EA', border: '1px solid rgba(201,154,69,.25)', borderRadius: 11, padding: '9px 11px' }}>
-                已记录 {tryIntents.length} 个意向。涉及教导、牧养、带领的场景，建议先与牧者或导师沟通后再开始。
+                已记录 {tryIntents.length} 个意向，会保留到下次评估。涉及教导、牧养、带领的场景，建议先与牧者或导师沟通后再开始。
+                意向本身还不算证据——真正验证这些倾向的，是你之后实际做出来的服侍。
               </p>
             )}
           </div>
