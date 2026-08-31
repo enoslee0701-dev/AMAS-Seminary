@@ -1554,7 +1554,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
             <div className="flex items-center" style={{ gap: 10, marginTop: 12, padding: '11px 14px', background: 'linear-gradient(160deg, #0B2450 0%, #071A3C 100%)', borderRadius: 14, border: '1px solid rgba(232,201,140,.22)' }}>
               <Sparkles size={15} color="#F2D493" className="shrink-0" />
               <p style={{ margin: 0, fontSize: 12, color: 'rgba(233,238,248,.92)', lineHeight: 1.7 }}>
-                你在这一维度的当前指数 <b style={{ color: '#F2D493', fontSize: 14 }}>{myScore}</b>，
+                你在这一维度的当前<b style={{ color: '#F2D493' }}>倾向指数 {myScore}</b>，
                 在你 12 项倾向中排第 <b style={{ color: '#F2D493' }}>{myRank}</b> 位
                 {myRank === 1 ? '——这是你目前最明显的倾向。' : myRank === 2 ? '——这是你的次要倾向。' : '。'}
                 {detailPrelim && '（精简版画像，完成完整版 Christian Profile 后更新）'}
@@ -1643,7 +1643,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
         <span style={{ fontSize: 12.5, fontWeight: 900, color: '#172A57' }}>探索 12 项事奉倾向</span>
         <span style={{ marginLeft: 'auto', fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 9.5, fontWeight: 700, letterSpacing: '2px', color: '#B9C0CF', textTransform: 'uppercase' }}>Ministry Orientation</span>
       </div>
-      <p style={{ margin: '0 0 8px', fontSize: 10.5, color: '#98A2B3', lineHeight: 1.65 }}>每个人都有全部 12 项倾向，只是强弱组合不同。点击卡片了解每一项。</p>
+      <p style={{ margin: '0 0 8px', fontSize: 10.5, color: '#98A2B3', lineHeight: 1.65 }}>每个人都有全部 12 项倾向，只是强弱组合不同。指数表示这个方向当前有多明显，指数低不代表不适合。点击卡片了解每一项。</p>
       <div
         className="flex overflow-x-auto"
         style={{ gap: 8, margin: '0 -16px', padding: '2px 16px 6px', scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch' }}
@@ -1795,10 +1795,14 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                           {cp.topTie && i < 2 ? '并列最高' : ['PRIMARY', 'SECONDARY', 'SUPPORTING'][i]}
                         </p>
                         <p style={{ margin: 0, fontSize: 12.5, fontWeight: 900, color: '#1F2A37' }}>{r.a.label}</p>
-                        <p style={{ margin: 0, fontSize: 15, fontWeight: 900, color: i === 0 ? '#C99A45' : '#04285F' }}>{r.score}</p>
+                        <p style={{ margin: '2px 0 0', fontSize: 8.5, color: '#98A2B3', fontWeight: 700 }}>倾向指数</p>
+                        <p style={{ margin: 0, fontSize: 15, fontWeight: 900, color: i === 0 ? '#C99A45' : '#04285F', lineHeight: 1.1 }}>{r.score}</p>
                       </div>
                     ))}
                   </div>
+                  <p style={{ margin: '8px 0 0', fontSize: 10.5, color: '#98A2B3', lineHeight: 1.7 }}>
+                    倾向指数表示这个方向当前有多明显；系统凭什么这样判断，请在完整结果中查看「判断依据」。
+                  </p>
                   {cp.orientationReadiness && (
                     <p style={{ margin: '10px 0 0', fontSize: 11.5, color: '#14295A', lineHeight: 1.7, padding: '9px 11px', background: '#F6F8FD', border: '1px solid #E2E8F4', borderRadius: 11 }}>
                       {cp.orientationReadiness.text}

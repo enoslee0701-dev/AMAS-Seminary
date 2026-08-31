@@ -11,6 +11,10 @@ import {
   type Item, type OrientationKey, type FaithFacet, type PracticeKey, type ReadinessFacet, type AssessmentLevel,
 } from './items';
 import { ARCHETYPES_BASE, archetypeByKey } from '../growthArchetypes';
+import {
+  computeConfidence, buildSourceRows,
+  type ConfidenceLevel, type EvidenceItem, type SourceRow,
+} from './evidence';
 
 export interface Answer {
   itemId: string;
@@ -23,8 +27,15 @@ export type EvidenceStrength = 'limited' | 'moderate' | 'high';
 
 export interface DimensionScore {
   rawScore: number;
+  /** 倾向指数 0–100：当前证据中这一事奉方向表现得有多明显。
+   *  **不是**百分比、百分位、能力分数或属灵成熟度。 */
   normalizedScore: number;
+  /** @deprecated 用 confidence 代替；保留仅为兼容历史档案 */
   evidenceStrength: EvidenceStrength;
+  /** 证据可信度：系统凭什么这样判断。与 normalizedScore 完全独立。 */
+  confidence: ConfidenceLevel;
+  /** 「为什么这样判断」面板的证据来源清单 */
+  sources: SourceRow[];
   itemsAnswered: number;
 }
 
@@ -62,18 +73,40 @@ export interface ChristianProfile {
   /** Orientation × Readiness 矩阵解释（标准版） */
   orientationReadiness?: { key: 'potential_needs_equipping' | 'expand_responsibility' | 'review_direction' | 'forming'; text: string };
   qualityFlags: QualityFlag[];
+  /** @deprecated 用 confidence 代替 */
   evidenceStrength: EvidenceStrength;
+  /** 整份画像的可信度（取 Top 3 的最低档） */
+  confidence: ConfidenceLevel;
+  /** 用户可见的画像版本号：V1、V2 …（由已保存的历史条数决定，保存时回填） */
+  versionNo: number;
   /** 可解释性：每个 Top 维度的主要来源（行为标签） */
   explanations: Partial<Record<OrientationKey, string[]>>;
   recommendations: Recommendations;
 }
 
+/** 成长实验：不是待办清单，而是「目标 → 行动 → 验证 → 新证据」的一轮验证。 */
+export interface GrowthStage {
+  span: '30天' | '90天' | '6个月';
+  objective: string;
+  actions: string[];
+  verification: string[];
+  newEvidence: string[];
+}
+
 export interface Recommendations {
+  /** 推荐验证场景（原「建议尝试的事奉」）——不是职位安排 */
   ministriesToTry: string[];
+  /** 分三档，避免一次给太多课程 */
+  coursesPriority: string[];
+  coursesRecommended: string[];
+  coursesLater: string[];
+  /** @deprecated 兼容旧调用；等于三档之和 */
   courseIds: string[];
   practices: string[];
   equippingFocus: string[];
-  growthPlan: { d30: string[]; d90: string[]; d180: string[] };
+  /** 为什么建议这些装备重点 */
+  equippingReason: string;
+  growthPlan: GrowthStage[];
 }
 
 const clamp = (n: number) => Math.max(0, Math.min(100, n));
@@ -90,7 +123,13 @@ function itemValue(item: Item, optionIndex: number): number | null {
 // ------------------------------------------------------------
 // 主入口
 // ------------------------------------------------------------
-export function scoreAssessment(level: AssessmentLevel, answers: Answer[], completedAt = new Date().toISOString()): ChristianProfile {
+export function scoreAssessment(
+  level: AssessmentLevel,
+  answers: Answer[],
+  completedAt = new Date().toISOString(),
+  /** 已有的外部证据（课程 / 服事 / 导师 / 同伴）。当前版本调用方尚未接入，默认空。 */
+  externalEvidence: EvidenceItem[] = [],
+): ChristianProfile {
   const byId = new Map(answers.map(a => [a.itemId, a]));
   const answered = (i: Item) => byId.get(i.id);
 
@@ -131,10 +170,23 @@ export function scoreAssessment(level: AssessmentLevel, answers: Answer[], compl
     fine[k] = normalized;
     const evidenceStrength: EvidenceStrength =
       lk.length >= 3 && offered[k] >= 2 ? 'high' : lk.length >= 2 ? 'moderate' : 'limited';
+    const related = externalEvidence.filter(e => e.orientations.includes(k));
     ministryOrientation[k] = {
       rawScore: Math.round(lk.reduce((t, n) => t + n / 25 + 1, 0) + chosen[k]),
       normalizedScore: Math.round(clamp(normalized)),
       evidenceStrength,
+      confidence: computeConfidence({
+        itemsAnswered: lk.length,
+        scenarioOffered: offered[k],
+        externalEvidence: related,
+        qualityFlagCount: 0,   // 质量标记在下方统一评估后再降档
+      }),
+      sources: buildSourceRows({
+        assessmentTags: Array.from(new Set(sources[k].filter(t => t !== '情境题中优先选择了此类行动'))),
+        scenarioPicked: chosen[k],
+        scenarioOffered: offered[k],
+        externalEvidence: related,
+      }),
       itemsAnswered: lk.length + chosen[k],
     };
   }
@@ -148,7 +200,7 @@ export function scoreAssessment(level: AssessmentLevel, answers: Answer[], compl
       const items = ITEM_BANK.filter(i => i.module === 'faith_foundation' && i.dimension === f);
       let correct = 0, n = 0;
       for (const it of items) { const a = answered(it); if (!a) continue; n++; if (it.options[a.optionIndex]?.correct) correct++; }
-      facets[f] = { rawScore: correct, normalizedScore: n ? Math.round((correct / n) * 100) : 0, itemsAnswered: n, evidenceStrength: n >= 3 ? 'high' : n >= 2 ? 'moderate' : 'limited' };
+      facets[f] = { rawScore: correct, normalizedScore: n ? Math.round((correct / n) * 100) : 0, itemsAnswered: n, evidenceStrength: n >= 3 ? 'high' : n >= 2 ? 'moderate' : 'limited', confidence: n >= 3 ? 'high' : n >= 2 ? 'moderate' : 'low', sources: [] };
     }
     faithFoundation = { overall: Math.round(mean(facetKeys.map(f => facets[f].normalizedScore))), facets };
   }
@@ -177,7 +229,7 @@ export function scoreAssessment(level: AssessmentLevel, answers: Answer[], compl
       const items = ITEM_BANK.filter(i => i.module === 'readiness' && i.dimension === f);
       const vals: number[] = [];
       for (const it of items) { const a = answered(it); const v = a ? itemValue(it, a.optionIndex) : null; if (v !== null) vals.push(scaleToIndex(v)); }
-      facets[f] = { rawScore: vals.length, normalizedScore: Math.round(mean(vals)), itemsAnswered: vals.length, evidenceStrength: vals.length >= 2 ? 'high' : vals.length === 1 ? 'moderate' : 'limited' };
+      facets[f] = { rawScore: vals.length, normalizedScore: Math.round(mean(vals)), itemsAnswered: vals.length, evidenceStrength: vals.length >= 2 ? 'high' : vals.length === 1 ? 'moderate' : 'limited', confidence: vals.length >= 2 ? 'high' : vals.length === 1 ? 'moderate' : 'low', sources: [] };
     }
     const overall = Math.round(mean(keys.map(f => facets[f].normalizedScore)));
     ministryReadiness = { overall, level: overall >= 70 ? 'strong' : overall >= 45 ? 'developing' : 'early', facets };
@@ -230,6 +282,20 @@ export function scoreAssessment(level: AssessmentLevel, answers: Answer[], compl
   const evidenceStrength: EvidenceStrength =
     qualityFlags.length >= 2 ? 'limited' : level === 'quick' || qualityFlags.length === 1 ? 'moderate' : 'high';
 
+  // 质量标记统一降档（每维 + 整体），保证「作答存疑 → 结论强度下降」
+  if (qualityFlags.length >= 2) {
+    const order: ConfidenceLevel[] = ['low', 'moderate', 'high', 'very_high'];
+    for (const k of ORIENTATION_KEYS) {
+      const cur = ministryOrientation[k].confidence;
+      ministryOrientation[k].confidence = order[Math.max(0, order.indexOf(cur) - 1)];
+    }
+  }
+  // 整份画像的可信度 = Top 3 中最低的一档（不夸大整体把握）
+  const confOrder: ConfidenceLevel[] = ['low', 'moderate', 'high', 'very_high'];
+  const confidence = topOrientations
+    .map(t => ministryOrientation[t.key].confidence)
+    .reduce((lowest, c) => (confOrder.indexOf(c) < confOrder.indexOf(lowest) ? c : lowest), 'very_high' as ConfidenceLevel);
+
   // ---- 可解释性（只给来源，不给权重） ----
   const explanations: Partial<Record<OrientationKey, string[]>> = {};
   for (const t of topOrientations) explanations[t.key] = Array.from(new Set(sources[t.key])).slice(0, 4);
@@ -245,7 +311,7 @@ export function scoreAssessment(level: AssessmentLevel, answers: Answer[], compl
     level, completedAt,
     faithFoundation, discipleshipPractice, ministryOrientation, ministryReadiness,
     topOrientations, multiBlend, topTie, combinedLabel, orientationReadiness,
-    qualityFlags, evidenceStrength, explanations, recommendations,
+    qualityFlags, evidenceStrength, confidence, versionNo: 1, explanations, recommendations,
   };
 }
 
@@ -288,30 +354,97 @@ function buildRecommendations(
   readiness: ChristianProfile['ministryReadiness'],
 ): Recommendations {
   const pri = archetypeByKey(top[0].key), sec = archetypeByKey(top[1].key);
+  const comboLabel = `${pri.label} × ${sec.label}`;
+
+  // 推荐验证场景：不是职位安排，是可以去验证倾向的真实环境
   const ministriesToTry = Array.from(new Set([...pri.ministries.slice(0, 4), ...sec.ministries.slice(0, 2)]));
-  const courseIds = Array.from(new Set([...COURSES_BY_ORIENTATION[top[0].key], ...COURSES_BY_ORIENTATION[top[1].key].slice(0, 1)]));
-  const practices = [...PRACTICE_BY_ORIENTATION[top[0].key], PRACTICE_BY_ORIENTATION[top[1].key][0]];
-  const equippingFocus = [...pri.equip.slice(0, 3)];
+
+  // 装备重点先于课程：先说明为什么，再给课
+  const equippingFocus = Array.from(new Set([...pri.equip.slice(0, 3), sec.equip[0]]));
+  let equippingReason = `为进一步验证和发展你目前较明显的「${comboLabel}」倾向，现阶段建议优先加强以下能力。`;
+
+  // 课程分三档，避免一次给太多
+  const priCourses = COURSES_BY_ORIENTATION[top[0].key];
+  const secCourses = COURSES_BY_ORIENTATION[top[1].key];
+  const thirdCourses = top[2] ? COURSES_BY_ORIENTATION[top[2].key] : [];
+  let coursesPriority = priCourses.slice(0, 2);
+  const coursesRecommended = Array.from(new Set([...priCourses.slice(2), ...secCourses.slice(0, 2)])).filter(c => !coursesPriority.includes(c)).slice(0, 2);
+  const coursesLater = Array.from(new Set([...secCourses.slice(2), ...thirdCourses])).filter(c => !coursesPriority.includes(c) && !coursesRecommended.includes(c)).slice(0, 3);
 
   if (faith && faith.overall < 60) {
-    courseIds.unshift('c_bible_intro', 'c_basics');
+    coursesPriority = Array.from(new Set(['c_bible_intro', 'c_basics', ...coursesPriority])).slice(0, 2);
     equippingFocus.unshift('信仰基础与圣经整体脉络');
-  }
-  if (readiness && readiness.overall < 50) {
-    practices.unshift('寻找一位导师或牧者，约定每月一次服事反馈');
-    equippingFocus.push('在固定小岗位中建立持续性');
-  }
-  if (readiness && readiness.facets.mentoring.normalizedScore < 40) {
-    practices.push('主动邀请一位牧者观察你的一次服事并给予反馈');
+    equippingReason = `你的信仰基础目前还在建立中，因此在发展「${comboLabel}」倾向之前，建议先补齐根基。`;
   }
 
-  const growthPlan = {
-    d30: [`完成「${ARCHETYPES_BASE.find(a => a.key === top[0].key)!.equip[0]}」相关课程的前两课`, practices[0]],
-    d90: [practices[1] ?? practices[0], `在「${ministriesToTry[0]}」中承担一个具体角色`, '记录至少 2 条服事反思'],
-    d180: ['邀请导师或同工给出一次正式反馈', '重新完成 Christian Profile，对比倾向与准备度的变化'],
+  const practices = [...PRACTICE_BY_ORIENTATION[top[0].key], PRACTICE_BY_ORIENTATION[top[1].key][0]];
+  if (readiness && readiness.overall < 50) practices.unshift('寻找一位导师或牧者，约定每月一次服事反馈');
+  if (readiness && readiness.facets.mentoring.normalizedScore < 40) practices.push('主动邀请一位牧者观察你的一次服事并给予反馈');
+
+  const firstCourse = coursesPriority[0];
+  const firstScene = ministriesToTry[0];
+
+  // 成长实验：目标 → 行动 → 验证指标 → 新证据
+  const growthPlan: GrowthStage[] = [
+    {
+      span: '30天',
+      objective: `验证你的「${pri.label}」倾向能否转化为实际能力。`,
+      actions: [
+        `完成「${equippingFocus[0]}」相关课程的前两课`,
+        practices[0],
+        '把过程写成一页笔记或记录',
+      ],
+      verification: [
+        '你能否用自己的话说清楚学到的核心内容？',
+        '这件事做起来是消耗你，还是让你更有活力？',
+        '有没有出现你没预料到的困难？',
+      ],
+      newEvidence: ['学习完成记录', '一份可以给别人看的产出', '自我复盘（R1）'],
+    },
+    {
+      span: '90天',
+      objective: `把个人学习转化为真实服侍，让「${comboLabel}」的判断接受实际检验。`,
+      actions: [
+        practices[1] ?? practices[0],
+        `在「${firstScene}」这类场景中承担一个具体的小角色`,
+        '邀请一位同工或负责人给你一次口头反馈并记录下来',
+      ],
+      verification: [
+        '你能否把复杂的内容讲清楚，或把事情组织起来？',
+        '别人是否真的因此得到帮助？',
+        '与团队配搭时是否顺畅？',
+        '几周之后，你是否仍然投入？',
+      ],
+      newEvidence: ['实际服侍记录', '同工反馈（F1）', '至少 2 条服侍反思'],
+    },
+    {
+      span: '6个月',
+      objective: '根据真实学习与服侍证据，重新验证并更新你的 Christian Profile。',
+      actions: [
+        '邀请导师或牧者给出一次正式反馈',
+        '整理这半年的学习、服侍与反思记录',
+        '重新完成 Christian Profile',
+      ],
+      verification: [
+        '哪些倾向被真实经历印证了？',
+        '哪些倾向的证据仍然不足？',
+        '你的准备度是否随着实践提升？',
+      ],
+      newEvidence: ['导师反馈（F2）', '新一版 Christian Profile', '两版画像的对比'],
+    },
+  ];
+
+  return {
+    ministriesToTry,
+    coursesPriority,
+    coursesRecommended,
+    coursesLater,
+    courseIds: Array.from(new Set([...coursesPriority, ...coursesRecommended, ...coursesLater])),
+    practices: practices.slice(0, 4),
+    equippingFocus: equippingFocus.slice(0, 4),
+    equippingReason,
+    growthPlan,
   };
-
-  return { ministriesToTry, courseIds: Array.from(new Set(courseIds)).slice(0, 5), practices: practices.slice(0, 4), equippingFocus: equippingFocus.slice(0, 4), growthPlan };
 }
 
 /** 单一维度的平衡解释：优势 / 典型贡献 / 盲点 / 成长方向（规范 §37） */

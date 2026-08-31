@@ -66,8 +66,10 @@ export function readProfileHistory(): ProfileHistoryEntry[] {
   return readDoc().profileHistory ?? [];
 }
 
-export function saveChristianProfile(p: ChristianProfile): void {
+export function saveChristianProfile(profile: ChristianProfile): void {
   const d = readDoc();
+  // 用户可见的画像版本号：第 N 次生成即 VN。历史只追加，不覆盖。
+  const p: ChristianProfile = { ...profile, versionNo: (d.profileHistory?.length ?? 0) + 1 };
   const entry: ProfileHistoryEntry = {
     completedAt: p.completedAt, assessmentVersion: p.assessmentVersion, scoringVersion: p.scoringVersion,
     top: p.topOrientations, combinedLabel: p.combinedLabel,
