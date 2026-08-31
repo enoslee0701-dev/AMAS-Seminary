@@ -8,6 +8,10 @@ import {
   computeConfidence, overallConfidence, buildSourceRows, isValidEvidence,
   type ChristianProfileEvidence, type EvidenceType, type EvidencePolarity, type EvidenceStrengthLevel,
 } from '../../services/christianProfile/evidence';
+import {
+  experimentToEvidence, canTransition, canReview,
+  type ValidationExperiment, type ValidationOutcome, type SelfReflection,
+} from '../../services/christianProfile/experiments';
 
 /** 构造一条指向「教导者」的证据 */
 const ev = (
@@ -158,6 +162,70 @@ describe('evidence model V2.1', () => {
   });
 });
 
+describe('validation experiment loop (P2-A)', () => {
+  const exp = (over: Partial<ValidationExperiment> = {}): ValidationExperiment => ({
+    id: 'x1', targetOrientations: ['teacher'], title: '主日学助教',
+    source: 'profile_recommendation', status: 'completed',
+    completedAt: 'T2', createdAt: 'T1', updatedAt: 'T2', ...over,
+  });
+  const ref = (outcome: ValidationOutcome): SelfReflection =>
+    ({ id: 'r1', experimentId: 'x1', outcome, whatHappened: '带了两次查经', createdAt: 'T3' });
+
+  it('an intent is a workflow state, not evidence — it produces none until reflected', () => {
+    expect(experimentToEvidence(exp({ status: 'not_started', completedAt: undefined }))).toEqual([]);
+    expect(experimentToEvidence(exp({ status: 'active' }))).toEqual([]);
+    expect(experimentToEvidence(exp(), undefined)).toEqual([]);          // 没有复盘 → 没有证据
+    expect(experimentToEvidence(exp({ status: 'cancelled' }), ref('confirmed'))).toEqual([]);
+  });
+
+  it('reflection outcome decides polarity — "未能验证" produces CHALLENGE evidence', () => {
+    expect(experimentToEvidence(exp(), ref('confirmed'))[0].polarity).toBe('support');
+    expect(experimentToEvidence(exp(), ref('partial'))[0].polarity).toBe('neutral');
+    expect(experimentToEvidence(exp(), ref('not_confirmed'))[0].polarity).toBe('challenge');
+  });
+
+  it('a failed experiment feeds back and lowers that orientation confidence', () => {
+    const evidence = experimentToEvidence(exp(), ref('not_confirmed'));
+    const a = answersFor('standard');
+    const before = scoreAssessment('standard', a, 'T');
+    const after = scoreAssessment('standard', a, 'T', evidence);
+    // 闭环成立：真实结果回到画像，可信度被下调并标记冲突
+    expect(after.ministryOrientation.teacher.conflict).toBe('contradicted');
+    expect(after.ministryOrientation.teacher.confidence).toBe('low');
+    expect(after.conflicts.map(c => c.key)).toContain('teacher');
+    // 但倾向指数绝不因此改变
+    expect(after.ministryOrientation.teacher.normalizedScore).toBe(before.ministryOrientation.teacher.normalizedScore);
+  });
+
+  it('a user-transcribed mentor comment is not treated as an outside observation', () => {
+    const unverified = experimentToEvidence(exp(), ref('confirmed'),
+      { id: 'o1', experimentId: 'x1', observerName: '陈牧师', observerRole: 'mentor', outcome: 'confirmed', comment: '讲解清楚', verified: false, createdAt: 'T4' });
+    const verified = experimentToEvidence(exp(), ref('confirmed'),
+      { id: 'o2', experimentId: 'x1', observerName: '陈牧师', observerRole: 'mentor', outcome: 'confirmed', comment: '讲解清楚', verified: true, createdAt: 'T4' });
+    expect(unverified[1].source).toBe('self');      // 转述 → 不算他人观察
+    expect(verified[1].source).toBe('mentor');
+    const base = { itemsAnswered: 3, scenarioOffered: 2, qualityFlagCount: 0 };
+    expect(computeConfidence({ ...base, externalEvidence: unverified }).level).toBe('high');
+    expect(computeConfidence({ ...base, externalEvidence: verified }).level).toBe('very_high');
+  });
+
+  it('state machine rejects skipping practice or reviewing without a reflection', () => {
+    expect(canTransition('not_started', 'active')).toBe(true);
+    expect(canTransition('not_started', 'reviewed')).toBe(false);   // 不能没做就复核
+    expect(canTransition('reviewed', 'active')).toBe(false);        // 终态不可回退
+    expect(canReview(exp({ selfReflectionId: undefined }))).toBe(false);
+    expect(canReview(exp({ selfReflectionId: 'r1' }))).toBe(true);
+    expect(canReview(exp({ status: 'active', selfReflectionId: 'r1' }))).toBe(false);
+  });
+
+  it('experiment evidence is bound to the experiment targets only', () => {
+    const e = experimentToEvidence(exp({ targetOrientations: ['teacher', 'equipper'] }), ref('confirmed'))[0];
+    expect(e.targetOrientations).toEqual(['teacher', 'equipper']);
+    expect(isValidEvidence(e)).toBe(true);
+    expect(e.sourceId).toBe('x1');
+  });
+});
+
 describe('ChristianProfileView renders', () => {
   it('intro (quick) renders without throwing', () => {
     const html = renderToStaticMarkup(<ChristianProfileView level="quick" courses={[]} onCourseClick={() => {}} onExit={() => {}} />);
@@ -169,7 +237,7 @@ describe('ChristianProfileView renders', () => {
     for (const t of [
       '你当前最明显的成长倾向', '三项主要事奉倾向', '倾向指数', '当前画像可信度',
       '系统为什么这样判断', '值得留意', '12 项事奉倾向', '推荐验证场景',
-      '当前装备重点', '下一阶段成长实验', '我的成长历史',
+      '当前装备重点', '下一阶段成长实验', '我的成长历史', '我的验证实验',
       '你的信仰基础', '门徒生命', '事奉准备度',
     ]) expect(html).toContain(t);
     // 禁止项：不得出现「你就是」式的固定身份表述

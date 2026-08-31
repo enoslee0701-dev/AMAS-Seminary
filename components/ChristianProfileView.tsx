@@ -12,8 +12,13 @@ import {
 } from '../services/christianProfile/scoring';
 import {
   loadSession, saveSession, clearSession, saveChristianProfile, readProfileHistory,
-  recordVerificationIntent, readVerificationIntents,
+  readExperiments, createExperiment, advanceExperiment, cancelExperiment,
+  saveReflection, saveMentorObservation, reviewExperiment, readReflections,
 } from '../services/christianProfile/store';
+import {
+  EXPERIMENT_STATUS_LABEL, OUTCOME_LABEL, OUTCOME_HINT, experimentSummary, canReview,
+  type ValidationExperiment, type ValidationOutcome,
+} from '../services/christianProfile/experiments';
 import { archetypeByKey, archImg, ARCH_GROUPS, ARCH_DISCLAIMER, type ArchKey } from '../services/growthArchetypes';
 import {
   CONFIDENCE_LABEL, CONFIDENCE_HINT, EVIDENCE_TYPE_LABEL, SOURCE_STATUS_LABEL, CONFLICT_LABEL, type SourceStatus,
@@ -273,11 +278,124 @@ const Bar: React.FC<{ label: string; value: number; sub?: string; accent?: boole
   </div>
 );
 
+/** 一个验证实验的完整生命周期：登记 → 实践 → 复盘 → 导师观察 → 成为证据。 */
+const ExperimentRow: React.FC<{ exp: ValidationExperiment; onChange: () => void }> = ({ exp, onChange }) => {
+  const [open, setOpen] = useState(false);
+  const [outcome, setOutcome] = useState<ValidationOutcome>('confirmed');
+  const [text, setText] = useState('');
+  const [observer, setObserver] = useState('');
+  const [comment, setComment] = useState('');
+  const reflection = useMemo(() => readReflections().find(r => r.id === exp.selfReflectionId), [exp.selfReflectionId]);
+
+  const chip = (label: string, tone: 'idle' | 'live' | 'done') => (
+    <span style={{
+      fontSize: 9.5, fontWeight: 800, borderRadius: 999, padding: '2px 8px',
+      color: tone === 'done' ? '#0F5138' : tone === 'live' ? '#8A6519' : '#667085',
+      background: tone === 'done' ? '#EDFAF3' : tone === 'live' ? '#FBF6EA' : '#F4F5F8',
+      border: `1px solid ${tone === 'done' ? '#C7EDDA' : tone === 'live' ? 'rgba(201,154,69,.3)' : '#E4E7EC'}`,
+    }}>{label}</span>
+  );
+  const act: React.CSSProperties = {
+    fontSize: 11, fontWeight: 800, borderRadius: 999, padding: '5px 12px',
+    color: '#04285F', background: '#F8FAFF', border: '1px solid rgba(4,40,95,.25)',
+  };
+
+  return (
+    <div style={{ padding: '10px 0', borderTop: '1px solid #F3F1EA' }}>
+      <div className="flex items-center" style={{ gap: 8 }}>
+        <span className="flex-1" style={{ fontSize: 13, fontWeight: 700, color: '#1F2A37' }}>{exp.title}</span>
+        {chip(EXPERIMENT_STATUS_LABEL[exp.status], exp.status === 'reviewed' ? 'done' : exp.status === 'not_started' ? 'idle' : 'live')}
+      </div>
+
+      {exp.status === 'not_started' && (
+        <button onClick={() => { advanceExperiment(exp.id, 'active'); onChange(); }} style={{ ...act, marginTop: 8 }}>开始这个实验</button>
+      )}
+      {exp.status === 'active' && (
+        <button onClick={() => { advanceExperiment(exp.id, 'completed'); onChange(); }} style={{ ...act, marginTop: 8 }}>我已经做了，去复盘</button>
+      )}
+
+      {exp.status === 'completed' && !reflection && (
+        <div style={{ marginTop: 8, background: '#FAFBFC', border: '1px solid #EDF0F4', borderRadius: 12, padding: '11px 12px' }}>
+          <p style={{ margin: '0 0 7px', fontSize: 11.5, fontWeight: 800, color: '#22345E' }}>实际做下来，结果如何？</p>
+          <div className="flex" style={{ gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+            {(['confirmed', 'partial', 'not_confirmed'] as ValidationOutcome[]).map(o => (
+              <button key={o} onClick={() => setOutcome(o)} style={{
+                fontSize: 11, fontWeight: 800, borderRadius: 999, padding: '5px 11px',
+                color: outcome === o ? '#FFFFFF' : '#475467',
+                background: outcome === o ? '#16397E' : '#FFFFFF',
+                border: `1px solid ${outcome === o ? '#16397E' : '#DDE1E8'}`,
+              }}>{OUTCOME_LABEL[o]}</button>
+            ))}
+          </div>
+          <p style={{ margin: '0 0 8px', fontSize: 10.5, color: '#98A2B3', lineHeight: 1.7 }}>{OUTCOME_HINT[outcome]}</p>
+          <textarea
+            value={text} onChange={ev => setText(ev.target.value)} rows={3}
+            placeholder="发生了什么？你观察到自己什么？"
+            style={{ width: '100%', fontSize: 12, color: '#1F2A37', border: '1px solid #DDE1E8', borderRadius: 10, padding: '8px 10px', resize: 'vertical', fontFamily: 'inherit' }}
+          />
+          <button
+            disabled={!text.trim()}
+            onClick={() => { saveReflection(exp.id, { outcome, whatHappened: text.trim() }); setText(''); onChange(); }}
+            style={{ ...act, marginTop: 8, opacity: text.trim() ? 1 : 0.45 }}
+          >保存复盘</button>
+        </div>
+      )}
+
+      {exp.status === 'completed' && reflection && (
+        <div style={{ marginTop: 8 }}>
+          <p style={{ margin: '0 0 8px', fontSize: 11.5, color: '#667085', lineHeight: 1.7 }}>
+            复盘：<b style={{ color: '#22345E' }}>{OUTCOME_LABEL[reflection.outcome]}</b> · {reflection.whatHappened}
+          </p>
+          {!exp.mentorObservationId && !open && (
+            <button onClick={() => setOpen(true)} style={{ ...act, marginRight: 6, marginBottom: 8 }}>加入导师／同工观察（可选）</button>
+          )}
+          {open && !exp.mentorObservationId && (
+            <div style={{ background: '#FAFBFC', border: '1px solid #EDF0F4', borderRadius: 12, padding: '11px 12px', marginBottom: 8 }}>
+              <input
+                value={observer} onChange={ev => setObserver(ev.target.value)} placeholder="观察者姓名或称呼"
+                style={{ width: '100%', fontSize: 12, border: '1px solid #DDE1E8', borderRadius: 10, padding: '7px 10px', marginBottom: 6, fontFamily: 'inherit' }}
+              />
+              <textarea
+                value={comment} onChange={ev => setComment(ev.target.value)} rows={2} placeholder="他／她怎么说？"
+                style={{ width: '100%', fontSize: 12, border: '1px solid #DDE1E8', borderRadius: 10, padding: '8px 10px', resize: 'vertical', fontFamily: 'inherit' }}
+              />
+              <p style={{ margin: '6px 0 8px', fontSize: 10.5, color: '#98A2B3', lineHeight: 1.7 }}>
+                由你转述的反馈会记为「待确认」，可信度上限低于导师本人直接填写的观察。
+              </p>
+              <button
+                disabled={!observer.trim() || !comment.trim()}
+                onClick={() => {
+                  saveMentorObservation(exp.id, { observerName: observer.trim(), outcome: reflection.outcome, comment: comment.trim() });
+                  setObserver(''); setComment(''); setOpen(false); onChange();
+                }}
+                style={{ ...act, opacity: observer.trim() && comment.trim() ? 1 : 0.45 }}
+              >保存观察</button>
+            </div>
+          )}
+          {canReview(exp) && (
+            <button onClick={() => { reviewExperiment(exp.id); onChange(); }} style={{ ...gold, height: 38, fontSize: 12.5, marginTop: 4 }}>
+              完成这轮验证，写入画像
+            </button>
+          )}
+        </div>
+      )}
+
+      {exp.status === 'reviewed' && (
+        <p style={{ margin: '6px 0 0', fontSize: 11, color: '#667085', lineHeight: 1.7 }}>
+          已产生 {exp.generatedEvidenceIds?.length ?? 0} 条证据，计入这些倾向的证据可信度。倾向指数不因此改变。
+        </p>
+      )}
+    </div>
+  );
+};
+
+
 export const ResultPage: React.FC<{ p: ChristianProfile; courses: Course[]; onCourseClick: (id: string) => void; onExit: () => void; onRestart: () => void }> = ({ p, courses, onCourseClick, onExit, onRestart }) => {
   const [showAll, setShowAll] = useState(false);
   const [whyKey, setWhyKey] = useState<ArchKey | null>(null);      // 「为什么这样判断」详情
-  // 「我愿意尝试」的验证场景：写入证据日志（neutral/weak，不提升可信度）
-  const [tryIntents, setTryIntents] = useState<string[]>(() => { try { return readVerificationIntents(); } catch { return []; } });
+  // 验证实验（P2-A）。「我愿意尝试」写入 ValidationExperiment，不再写入 Evidence。
+  const [experiments, setExperiments] = useState<ValidationExperiment[]>(() => { try { return readExperiments(); } catch { return []; } });
+  const reloadExperiments = () => { try { setExperiments(readExperiments()); } catch {} };
   const pri = archetypeByKey(p.topOrientations[0].key);
   const sec = archetypeByKey(p.topOrientations[1].key);
   const third = p.topOrientations[2] ? archetypeByKey(p.topOrientations[2].key) : null;
@@ -505,14 +623,15 @@ export const ResultPage: React.FC<{ p: ChristianProfile; courses: Course[]; onCo
               这些不是职位安排，而是帮助你验证和发展当前事奉倾向的真实场景。
             </p>
             {p.recommendations.ministriesToTry.map(m => {
-              const picked = tryIntents.includes(m);
+              const picked = experiments.some(e => e.title === m && e.status !== 'cancelled');
               return (
                 <div key={m} className="flex items-center" style={{ gap: 10, padding: '9px 0', borderTop: '1px solid #F3F1EA' }}>
                   <span className="flex-1" style={{ fontSize: 13, fontWeight: 700, color: '#1F2A37' }}>{m}</span>
                   <button
                     onClick={() => {
-                      if (!picked) recordVerificationIntent({ orientations: p.topOrientations.map(t => t.key), ministry: m });
-                      setTryIntents(v => (picked ? v.filter(x => x !== m) : [...v, m]));
+                      if (picked) { const e = experiments.find(x => x.title === m && x.status !== 'cancelled'); if (e) cancelExperiment(e.id); }
+                      else createExperiment({ targetOrientations: p.topOrientations.map(t => t.key), title: m });
+                      reloadExperiments();
                     }}
                     className="shrink-0 active:scale-95 transition"
                     style={{
@@ -522,16 +641,32 @@ export const ResultPage: React.FC<{ p: ChristianProfile; courses: Course[]; onCo
                       border: `1px solid ${picked ? '#C7EDDA' : 'rgba(4,40,95,.25)'}`,
                     }}
                   >
-                    {picked ? '✓ 已记录' : '我愿意尝试'}
+                    {picked ? '✓ 已登记' : '我愿意尝试'}
                   </button>
                 </div>
               );
             })}
-            {tryIntents.length > 0 && (
-              <p style={{ margin: '10px 0 0', fontSize: 11, color: '#7A6A45', lineHeight: 1.7, background: '#FBF6EA', border: '1px solid rgba(201,154,69,.25)', borderRadius: 11, padding: '9px 11px' }}>
-                已记录 {tryIntents.length} 个意向，会保留到下次评估。涉及教导、牧养、带领的场景，建议先与牧者或导师沟通后再开始。
-                意向本身还不算证据——真正验证这些倾向的，是你之后实际做出来的服侍。
-              </p>
+            <p style={{ margin: '10px 0 0', fontSize: 11, color: '#7A6A45', lineHeight: 1.7, background: '#FBF6EA', border: '1px solid rgba(201,154,69,.25)', borderRadius: 11, padding: '9px 11px' }}>
+              登记后会成为下方的「验证实验」，跨评估保留。涉及教导、牧养、带领的场景，建议先与牧者或导师沟通后再开始。
+              登记本身还不算证据——真正验证这些倾向的，是你之后实际做出来的服侍与复盘。
+            </p>
+          </div>
+        </section>
+
+        {/* ===== 6.5 验证实验（P2-A 闭环） ===== */}
+        <section style={{ marginTop: 22 }}>
+          <Eyebrow title="我的验证实验" en="Validation Loop" />
+          <div style={{ ...card, padding: '14px 16px' }}>
+            <p style={{ margin: '0 0 4px', fontSize: 12, color: '#475467', lineHeight: 1.75 }}>{experimentSummary(experiments)}</p>
+            <p style={{ margin: '0 0 6px', fontSize: 10.5, color: '#98A2B3', lineHeight: 1.7 }}>
+              登记 → 实践 → 复盘 → 导师观察 → 成为证据 → 回到画像。复盘结论如果是「未能验证」，
+              画像会下调这一项的可信度——这不是失败，是让画像更贴近真实的你。
+            </p>
+            {experiments.filter(e => e.status !== 'cancelled').map(e => (
+              <ExperimentRow key={e.id} exp={e} onChange={reloadExperiments} />
+            ))}
+            {!experiments.some(e => e.status !== 'cancelled') && (
+              <p style={{ margin: '8px 0 0', fontSize: 11.5, color: '#98A2B3' }}>从上方的推荐验证场景中选一个开始。</p>
             )}
           </div>
         </section>

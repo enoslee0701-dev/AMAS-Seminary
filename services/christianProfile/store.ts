@@ -9,6 +9,11 @@ import { scheduleGrowthPush } from '../growthSyncService';
 import type { Answer, ChristianProfile } from './scoring';
 import type { AssessmentLevel } from './items';
 import { isValidEvidence, type ChristianProfileEvidence } from './evidence';
+import {
+  isValidExperiment, canTransition, canReview, experimentToEvidence,
+  type ValidationExperiment, type ExperimentStatus, type ExperimentSource,
+  type SelfReflection, type MentorObservation, type ValidationOutcome,
+} from './experiments';
 import type { ArchKey } from '../growthArchetypes';
 
 const DOC_KEY = 'amas_ct_state_v2';
@@ -48,6 +53,10 @@ interface GrowthDoc {
   profileHistory?: ProfileHistoryEntry[];
   /** 证据日志：只追加，重新评估**不清空**（规范 §31「不清空历史数据重新开始」） */
   profileEvidence?: ChristianProfileEvidence[];
+  /** 验证实验与其复盘 / 观察。实验是 workflow state，不是证据。 */
+  experiments?: ValidationExperiment[];
+  reflections?: SelfReflection[];
+  observations?: MentorObservation[];
   legacy?: boolean;
   [k: string]: unknown;
 }
@@ -135,30 +144,155 @@ export function appendEvidence(e: ChristianProfileEvidence): void {
   scheduleGrowthPush(next);
 }
 
+// ---------- 验证实验（P2-A） ----------
+//
+// 「我愿意尝试」从 P2-A 起写入 ValidationExperiment，**不再写入 Evidence**——
+// 打算做的事不是证据。旧的 verification_intent 记录仍然可读（见 readExperiments 的迁移），
+// 只是不再新增。
+
+const uid = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+
 /**
- * 记录一个「我愿意尝试」的验证意向。
- * 意向本身是 neutral / weak——只表示打算去验证，**不构成任何支持证据**，
- * 因此不会提高可信度；真正的证据要等实际服侍或反馈回来才产生。
+ * 读取全部验证实验。
+ * 兼容：V2.1 写入的 verification_intent 证据会被就地转换成 not_started 的实验展示，
+ * 原证据保留不删（append-only），但因为是 neutral/weak，本来也不影响任何可信度。
  */
-export function recordVerificationIntent(input: {
-  orientations: ArchKey[]; ministry: string; at?: string;
-}): void {
-  const now = input.at ?? new Date().toISOString();
-  appendEvidence({
-    id: `intent_${input.ministry}_${now}`,
-    type: 'verification_intent',
-    targetOrientations: input.orientations,
-    polarity: 'neutral',
-    strength: 'weak',
-    summary: `愿意尝试：${input.ministry}`,
-    sourceLabel: input.ministry,
-    source: 'self',
-    observedAt: now,
-    createdAt: now,
-  });
+export function readExperiments(): ValidationExperiment[] {
+  const d = readDoc();
+  const list = (d.experiments ?? []).filter(isValidExperiment);
+  const known = new Set(list.map(e => e.title));
+  const migrated: ValidationExperiment[] = (d.profileEvidence ?? [])
+    .filter(e => e.type === 'verification_intent' && !known.has(e.sourceLabel ?? ''))
+    .map(e => ({
+      id: `mig_${e.id}`,
+      targetOrientations: e.targetOrientations,
+      title: e.sourceLabel ?? e.summary,
+      source: 'profile_recommendation' as const,
+      status: 'not_started' as const,
+      createdAt: e.createdAt,
+      updatedAt: e.createdAt,
+    }));
+  return [...list, ...migrated];
 }
 
-/** 已登记的验证意向（供结果页回显选中状态）。 */
-export function readVerificationIntents(): string[] {
-  return readEvidence().filter(e => e.type === 'verification_intent').map(e => e.sourceLabel ?? '');
+function writeExperiments(next: ValidationExperiment[]): void {
+  const d = readDoc();
+  const doc: GrowthDoc = { ...d, experiments: next.filter(e => !e.id.startsWith('mig_')).slice(-100) };
+  try { localStorage.setItem(DOC_KEY, JSON.stringify(doc)); } catch {}
+  scheduleGrowthPush(doc);
+}
+
+/** 登记一个验证实验（「我愿意尝试」）。同标题不重复登记。 */
+export function createExperiment(input: {
+  targetOrientations: ArchKey[]; title: string; source?: ExperimentSource; growthGoal?: string; at?: string;
+}): ValidationExperiment | null {
+  if (!input.targetOrientations.length || !input.title) return null;
+  const list = readExperiments();
+  const dup = list.find(e => e.title === input.title && e.status !== 'cancelled');
+  if (dup) return dup;
+  const now = input.at ?? new Date().toISOString();
+  const exp: ValidationExperiment = {
+    id: uid('exp'),
+    targetOrientations: input.targetOrientations,
+    title: input.title,
+    source: input.source ?? 'profile_recommendation',
+    status: 'not_started',
+    growthGoal: input.growthGoal,
+    createdAt: now, updatedAt: now,
+  };
+  writeExperiments([...list.filter(e => !e.id.startsWith('mig_')), exp]);
+  return exp;
+}
+
+/** 推进实验状态。非法迁移直接拒绝，返回 false。 */
+export function advanceExperiment(id: string, to: ExperimentStatus, at?: string): boolean {
+  const list = readExperiments();
+  const exp = list.find(e => e.id === id);
+  if (!exp || !canTransition(exp.status, to)) return false;
+  if (to === 'reviewed' && !canReview(exp)) return false;   // 没有复盘就不能复核
+  const now = at ?? new Date().toISOString();
+  const next: ValidationExperiment = {
+    ...exp, status: to, updatedAt: now,
+    ...(to === 'active' ? { startedAt: exp.startedAt ?? now } : {}),
+    ...(to === 'completed' ? { completedAt: now } : {}),
+    ...(to === 'reviewed' ? { reviewedAt: now } : {}),
+  };
+  writeExperiments(materialize(list).map(e => (e.id === id ? next : e)));
+  return true;
+}
+
+/** 取消实验：不产出任何证据，但记录保留。 */
+export const cancelExperiment = (id: string) => advanceExperiment(id, 'cancelled');
+
+/** 写入自我复盘，并把实验推进到「待复核」。 */
+export function saveReflection(experimentId: string, input: {
+  outcome: ValidationOutcome; whatHappened: string; whatLearned?: string; at?: string;
+}): SelfReflection | null {
+  const list = materialize(readExperiments());
+  const exp = list.find(e => e.id === experimentId);
+  if (!exp || (exp.status !== 'completed' && exp.status !== 'active')) return null;
+  const now = input.at ?? new Date().toISOString();
+  const r: SelfReflection = {
+    id: uid('ref'), experimentId, outcome: input.outcome,
+    whatHappened: input.whatHappened, whatLearned: input.whatLearned, createdAt: now,
+  };
+  const d = readDoc();
+  const doc: GrowthDoc = { ...d, reflections: [...(d.reflections ?? []), r].slice(-200) };
+  try { localStorage.setItem(DOC_KEY, JSON.stringify(doc)); } catch {}
+  writeExperiments(list.map(e => (e.id === experimentId
+    ? { ...e, status: 'completed' as const, completedAt: e.completedAt ?? now, selfReflectionId: r.id, updatedAt: now }
+    : e)));
+  return r;
+}
+
+/**
+ * 记录导师 / 同工观察。
+ * `verified` 默认 false——由用户本人转述的反馈不当作他人观察，
+ * 因此不会把该倾向的可信度推到最高档。只有导师端确认过的观察才 verified。
+ */
+export function saveMentorObservation(experimentId: string, input: {
+  observerName: string; observerRole?: 'mentor' | 'peer'; outcome: ValidationOutcome;
+  comment: string; verified?: boolean; at?: string;
+}): MentorObservation | null {
+  const list = materialize(readExperiments());
+  const exp = list.find(e => e.id === experimentId);
+  if (!exp) return null;
+  const now = input.at ?? new Date().toISOString();
+  const o: MentorObservation = {
+    id: uid('obs'), experimentId, observerName: input.observerName,
+    observerRole: input.observerRole ?? 'mentor', outcome: input.outcome,
+    comment: input.comment, verified: input.verified ?? false, createdAt: now,
+  };
+  const d = readDoc();
+  const doc: GrowthDoc = { ...d, observations: [...(d.observations ?? []), o].slice(-200) };
+  try { localStorage.setItem(DOC_KEY, JSON.stringify(doc)); } catch {}
+  writeExperiments(list.map(e => (e.id === experimentId ? { ...e, mentorObservationId: o.id, updatedAt: now } : e)));
+  return o;
+}
+
+export const readReflections = (): SelfReflection[] => readDoc().reflections ?? [];
+export const readObservations = (): MentorObservation[] => readDoc().observations ?? [];
+
+/** 迁移出来的实验第一次被写入时需要落成真实记录，否则更新会丢失。 */
+function materialize(list: ValidationExperiment[]): ValidationExperiment[] {
+  return list.map(e => (e.id.startsWith('mig_') ? { ...e, id: e.id.replace('mig_', 'exp_') } : e));
+}
+
+/**
+ * 完成一轮验证：把实验 + 复盘 + 观察转成证据写入证据日志，实验进入终态 reviewed。
+ * 这是 P2-A 闭环的最后一环——现实世界的结果在这里第一次回到画像。
+ */
+export function reviewExperiment(id: string, at?: string): ChristianProfileEvidence[] {
+  const list = materialize(readExperiments());
+  const exp = list.find(e => e.id === id);
+  if (!exp || !canReview(exp)) return [];
+  const reflection = readReflections().find(r => r.id === exp.selfReflectionId);
+  const observation = readObservations().find(o => o.id === exp.mentorObservationId);
+  const evidence = experimentToEvidence(exp, reflection, observation);
+  for (const e of evidence) appendEvidence(e);
+  const now = at ?? new Date().toISOString();
+  writeExperiments(readExperiments().map(e => (e.id === id
+    ? { ...e, status: 'reviewed' as const, reviewedAt: now, generatedEvidenceIds: evidence.map(x => x.id), updatedAt: now }
+    : e)));
+  return evidence;
 }
