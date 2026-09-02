@@ -1160,8 +1160,10 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
           </div>
 
           <div className="flex items-center space-x-2 z-20">
-            {/* Avatars Summary Component */}
-            <button
+            {/* Avatars Summary Component
+                祷告室隐藏：新版式已有完整的「在线成员」卡（含真实 presence），
+                两处同时显示会给出互相矛盾的人数。 */}
+            {!isPrayerRoom && <button
                 onClick={() => setShowParticipantsList(true)}
                 className="flex items-center bg-black/20 backdrop-blur-md rounded-full pl-1 pr-3 py-1 border border-white/10 hover:bg-black/30 transition-all active:scale-95"
             >
@@ -1171,7 +1173,7 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
                     ))}
                 </div>
                 <span className="text-[10px] font-black text-white">{participants.length}</span>
-            </button>
+            </button>}
 
             <button onClick={() => setShowRoomInfo(true)} aria-label={t('voiceRoom.header.settings')} className="p-2 -mr-2 rounded-full hover:bg-white/10 transition">
                <MoreHorizontal size={20} className="text-white/80" />
@@ -1191,6 +1193,9 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
                     meAvatar={me?.avatar ?? ''}
                     fontSize={fontSize}
                     showToast={showToast}
+                    localParticipants={participants}
+                    onViewParticipants={() => setShowParticipantsList(true)}
+                    onViewProfile={handleUserClick}
                 />
             ) : isBibleRoom ? (
                 <div className="flex-1 flex flex-col pt-0 overflow-y-auto scrollbar-hide px-4">

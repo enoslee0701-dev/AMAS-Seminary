@@ -28,6 +28,11 @@ interface Props {
   meAvatar: string;
   fontSize: number;
   showToast: (msg: string) => void;
+  /** 房间本地已知的成员（麦位/传输层维护）。与后端 presence 合并后展示，
+   *  避免出现「头部胶囊写 6 人、成员卡只有 1 人」这种自相矛盾。 */
+  localParticipants?: { id: string; name: string; avatar: string; role: string; isSpeaking?: boolean }[];
+  onViewParticipants?: () => void;
+  onViewProfile?: (p: any) => void;
 }
 
 const wine = {
@@ -65,7 +70,10 @@ const verseOfToday = () => {
   return DAILY_VERSES[n % DAILY_VERSES.length];
 };
 
-const PrayerRoomPanel: React.FC<Props> = ({ roomId, meName, meAvatar, fontSize, showToast }) => {
+const PrayerRoomPanel: React.FC<Props> = ({
+  roomId, meName, meAvatar, fontSize, showToast,
+  localParticipants = [], onViewParticipants, onViewProfile,
+}) => {
   const [state, setState] = useState<PrayerRoomState>(EMPTY_STATE);
   const [loaded, setLoaded] = useState(false);
   const [editingTopics, setEditingTopics] = useState(false);
@@ -105,7 +113,28 @@ const PrayerRoomPanel: React.FC<Props> = ({ roomId, meName, meAvatar, fontSize, 
   }, [panel]);
 
   const nowMs = state.serverTime || Date.now();
-  const online = state.presence;
+
+  /**
+   * 在线成员 = 后端 presence（跨设备真实在线）∪ 房间本地成员（麦位）。
+   * 同一个人以 userId / 名称去重，后端的角色信息优先（房主由 rooms.host_id 判定）。
+   */
+  const online = useMemo(() => {
+    const out: { userId: string; name: string; avatar: string | null; role: string; live: boolean }[] = [];
+    const seen = new Set<string>();
+    for (const p of state.presence) {
+      out.push({ userId: p.userId, name: p.name, avatar: p.avatar, role: p.role, live: true });
+      seen.add(p.userId); seen.add(p.name);
+    }
+    for (const p of localParticipants) {
+      if (seen.has(p.id) || seen.has(p.name)) continue;
+      seen.add(p.id); seen.add(p.name);
+      out.push({ userId: p.id, name: p.name, avatar: p.avatar || null, role: p.role, live: false });
+    }
+    // 房主排在最前，其次管理员，其余保持原序
+    const rank = (r: string) => (r === 'host' ? 0 : r === 'admin' ? 1 : 2);
+    return out.sort((a, b) => rank(a.role) - rank(b.role));
+  }, [state.presence, localParticipants]);
+
   const shown = showAllMembers ? online : online.slice(0, 6);
   const verse = useMemo(verseOfToday, []);
 
@@ -249,45 +278,63 @@ const PrayerRoomPanel: React.FC<Props> = ({ roomId, meName, meAvatar, fontSize, 
 
       {/* ===== 在线成员 ===== */}
       <div className={`${wine.soft} p-4 mt-3`}>
-        <div className="flex items-center mb-3">
-          <span className="font-serif text-white text-[15px] font-bold">在线成员</span>
-          <span className="ml-2 w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
-          <span className="ml-1.5 text-[11px] text-white/60">{online.length} 人在线</span>
-          {online.length > 6 && (
-            <button onClick={() => setShowAllMembers(v => !v)} className="ml-auto text-[11px] text-white/60 border border-white/15 rounded-full px-3 py-1 flex items-center gap-1">
-              {showAllMembers ? '收起' : '查看全部'} <ChevronRight size={11} />
-            </button>
-          )}
+        <div className="flex items-center mb-3.5">
+          <span className="font-serif text-white text-[16px] font-bold">在线成员</span>
+          <span className="ml-2.5 w-2 h-2 rounded-full bg-emerald-400 shrink-0 shadow-[0_0_6px_rgba(52,211,153,.8)]" />
+          <span className="ml-1.5 text-[12px] text-white/65 font-medium">{online.length} 人在线</span>
+          <button
+            onClick={() => (onViewParticipants ? onViewParticipants() : setShowAllMembers(v => !v))}
+            className="ml-auto text-[11px] text-white/65 border border-white/15 rounded-full px-3 py-1 flex items-center gap-0.5 active:scale-95 transition"
+          >
+            查看全部 <ChevronRight size={12} />
+          </button>
         </div>
+
         {online.length === 0 ? (
           <p className="text-white/40 text-xs py-2">
             {backend ? '正在同步房间成员…' : '多人在线需要连接服务器，当前未配置后端地址。'}
           </p>
         ) : (
-          <div className="flex flex-wrap gap-3">
+          <div className="flex gap-3 overflow-x-auto scrollbar-hide -mx-1 px-1 pb-1">
             {shown.map(p => (
-              <div key={p.userId} className="flex flex-col items-center w-12">
+              <button
+                key={p.userId}
+                onClick={() => onViewProfile?.({ id: p.userId, name: p.name, avatar: p.avatar ?? '', role: p.role })}
+                className="flex flex-col items-center shrink-0 w-[62px] active:scale-95 transition"
+              >
                 <div className="relative">
-                  <Avatar src={p.avatar} name={p.name} size={44} />
-                  <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-400 border-2 border-[#1a0510]" />
+                  <Avatar
+                    src={p.avatar}
+                    name={p.name}
+                    size={56}
+                    ring={p.role === 'host' ? 'ring-[#E8C98C]/70' : 'ring-[#C99A45]/35'}
+                  />
+                  {/* 后端心跳确认在线的才点绿灯；仅本地已知的不谎报在线 */}
+                  {p.live && (
+                    <span className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-emerald-400 border-2 border-[#2a0812] shadow-[0_0_5px_rgba(52,211,153,.9)]" />
+                  )}
                   {p.role === 'host' && (
-                    <span className="absolute -top-1 -right-1 bg-amber-500 rounded-full p-0.5 border border-[#1a0510]">
-                      <Crown size={8} className="text-white" fill="currentColor" />
+                    <span className="absolute -top-0.5 -right-0.5 bg-gradient-to-b from-[#F4D796] to-[#D9A54B] rounded-full p-1 border-2 border-[#2a0812] shadow">
+                      <Crown size={9} className="text-[#5c3a08]" fill="currentColor" />
                     </span>
                   )}
                   {p.role === 'admin' && (
-                    <span className="absolute -top-1 -right-1 bg-purple-500 rounded-full p-0.5 border border-[#1a0510]">
-                      <Shield size={8} className="text-white" fill="currentColor" />
+                    <span className="absolute -top-0.5 -right-0.5 bg-purple-500 rounded-full p-1 border-2 border-[#2a0812] shadow">
+                      <Shield size={9} className="text-white" fill="currentColor" />
                     </span>
                   )}
                 </div>
-                <span className="text-[9px] text-white/70 font-bold mt-1 truncate w-full text-center">{p.name}</span>
-              </div>
+                <span className="text-[10.5px] text-white/80 font-bold mt-1.5 truncate w-full text-center">{p.name}</span>
+              </button>
             ))}
+
             {!showAllMembers && online.length > 6 && (
-              <button onClick={() => setShowAllMembers(true)} className="w-11 h-11 rounded-full bg-white/5 border border-white/15 flex flex-col items-center justify-center">
-                <Users size={12} className="text-white/60" />
-                <span className="text-[9px] text-white/60 font-bold">{online.length - 6}+</span>
+              <button
+                onClick={() => setShowAllMembers(true)}
+                className="shrink-0 w-[56px] h-[56px] rounded-full bg-white/5 border border-white/15 flex flex-col items-center justify-center active:scale-95 transition self-start"
+              >
+                <Users size={13} className="text-white/60" />
+                <span className="text-[10px] text-white/70 font-black mt-0.5">{online.length - 6}+</span>
               </button>
             )}
           </div>
