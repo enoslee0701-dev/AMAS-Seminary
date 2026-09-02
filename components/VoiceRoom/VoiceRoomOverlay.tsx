@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import PrayerRoomPanel from './PrayerRoomPanel';
 import {
   Heart, MessageCircle, Share2, MoreHorizontal,
   HandHeart, Music, BookOpen, UserPlus, Check, Mic,
@@ -1180,7 +1181,18 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
         </div>
 
         <div className="flex-1 relative w-full overflow-hidden flex flex-col">
-            {(isPrayerRoom || isBibleRoom) ? (
+            {isPrayerRoom ? (
+                /* 祷告室走独立的重新设计版式（P0–P2）；其余四种房间保持原样。
+                   下方 isBibleRoom 分支里残留的 isPrayerRoom 三元判断已恒为 false，
+                   属读经室专用路径，不再服务祷告室。 */
+                <PrayerRoomPanel
+                    roomId={activeVoiceRoom.id}
+                    meName={me?.name ?? '我'}
+                    meAvatar={me?.avatar ?? ''}
+                    fontSize={fontSize}
+                    showToast={showToast}
+                />
+            ) : isBibleRoom ? (
                 <div className="flex-1 flex flex-col pt-0 overflow-y-auto scrollbar-hide px-4">
                     {/* Header Slogan Box */}
                     <div className="flex flex-col items-center mt-1 mb-2 px-8">

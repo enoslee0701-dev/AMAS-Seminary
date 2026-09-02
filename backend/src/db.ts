@@ -85,6 +85,53 @@ db.exec(`
     created_at INTEGER NOT NULL
   );
 
+  -- ===== 祷告室（Prayer Room）=====
+  -- 本次祷告主题：取代原先只存在 localStorage 的「祷告墙」纯文本，
+  -- 让房主编辑的内容对全房可见。只有房主/管理员可写。
+  CREATE TABLE IF NOT EXISTS room_prayer_topics (
+    id TEXT PRIMARY KEY,
+    room_id TEXT NOT NULL,
+    seq INTEGER NOT NULL,
+    text TEXT NOT NULL,
+    created_by TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_prayer_topics_room ON room_prayer_topics(room_id, seq);
+
+  -- 祷告分享。内容常涉及第三方的敏感信息（家人的病情等），因此：
+  -- 仅房内可见、支持匿名、发布者可随时软删除（deleted_at）。
+  CREATE TABLE IF NOT EXISTS prayer_shares (
+    id TEXT PRIMARY KEY,
+    room_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    text TEXT NOT NULL,
+    is_anonymous INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    deleted_at INTEGER
+  );
+  CREATE INDEX IF NOT EXISTS idx_prayer_shares_room ON prayer_shares(room_id, created_at);
+
+  -- 代祷登记。这不是「点赞」——给「求主医治我母亲」点赞在语义上是错的。
+  -- 一人对一条只能登记一次，可取消。
+  CREATE TABLE IF NOT EXISTS prayer_intercessions (
+    share_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (share_id, user_id)
+  );
+
+  -- 在线成员：心跳 + 超时判离线（轮询档，不需要 WebSocket）。
+  CREATE TABLE IF NOT EXISTS room_presence (
+    room_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    avatar TEXT,
+    role TEXT NOT NULL,
+    last_seen_at INTEGER NOT NULL,
+    PRIMARY KEY (room_id, user_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_room_presence_seen ON room_presence(room_id, last_seen_at);
+
   CREATE TABLE IF NOT EXISTS push_tokens (
     user_id TEXT NOT NULL,
     token TEXT NOT NULL,
