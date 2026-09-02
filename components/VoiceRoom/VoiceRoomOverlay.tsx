@@ -1100,7 +1100,9 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
         );
     }
 
-    const containerClass = `fixed inset-0 z-[9999] ${bgGradient} animate-fade-in flex flex-col text-white h-[100dvh]`;
+    // max-w-md mx-auto：与 App 其余全屏视图一致。此前缺这一条，桌面宽度下
+    // 整个房间被拉成 1200px+，卡片横摊、比例全垮（设计稿是手机竖屏）。
+    const containerClass = `fixed inset-0 z-[9999] max-w-md mx-auto ${bgGradient} animate-fade-in flex flex-col text-white h-[100dvh]`;
 
     const overlayContent = (
       <div className={containerClass}>
@@ -1478,7 +1480,7 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
                 </div>
             )}
 
-          <div className={`${(isPrayerRoom || isBibleRoom) ? 'h-32 shrink-0' : 'flex-1'} min-h-0 relative w-full flex flex-col z-20 transition-all`}>
+          <div className={`${isPrayerRoom ? 'h-0 shrink-0' : isBibleRoom ? 'h-32 shrink-0' : 'flex-1'} min-h-0 relative w-full flex flex-col z-20 transition-all`}>
              <div
                 ref={chatContainerRef}
                 className="flex-1 overflow-y-auto px-4 pb-1 scrollbar-hide max-w-[85%] mx-auto w-full"
@@ -1541,7 +1543,7 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
            <div className="flex items-center space-x-1.5 max-w-full px-1">
               <button onClick={() => setShowMenu(!showMenu)} className="shrink-0 w-8 h-8 rounded-full bg-[#1a1a2e] text-white border border-white/10 flex items-center justify-center hover:bg-[#252542] active:scale-90 transition-transform"><Plus size={18} /></button>
 
-              <div className="flex-1 bg-[#1a1a2e]/80 backdrop-blur-md rounded-full px-2.5 h-9 flex items-center border border-white/10 focus-within:border-white/20 transition-all">
+              {isPrayerRoom ? <div className="flex-1" /> : <div className="flex-1 bg-[#1a1a2e]/80 backdrop-blur-md rounded-full px-2.5 h-9 flex items-center border border-white/10 focus-within:border-white/20 transition-all">
                 <input
                     type="text"
                     value={chatInput}
@@ -1555,7 +1557,7 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
                         <Send size={14} />
                     </button>
                 )}
-              </div>
+              </div>}
 
               <div className="flex items-center space-x-1 shrink-0">
                 {isOnStage ? (
@@ -1568,7 +1570,7 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
                   </button>
                 )}
 
-                <button onClick={() => setShowGiftPanel(!showGiftPanel)} aria-label="送出礼物" className="w-8 h-8 rounded-full flex items-center justify-center bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-lg active:scale-90 transition-transform">
+                <button onClick={() => setShowGiftPanel(!showGiftPanel)} aria-label="送出礼物" className={`w-8 h-8 rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-transform ${isPrayerRoom ? 'bg-gradient-to-b from-[#F4D796] to-[#DDAE55] text-[#4A2E05]' : 'bg-gradient-to-br from-amber-500 to-orange-600 text-white'}`}>
                   <Gift size={16} />
                 </button>
 

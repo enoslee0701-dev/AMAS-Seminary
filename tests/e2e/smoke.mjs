@@ -234,7 +234,7 @@ const run = async () => {
       const card = [...document.querySelectorAll('div.cursor-pointer')].find((d) => { const t = d.textContent || ''; return t.includes('祷告室') && t.includes('晨更'); });
       card && card.click();
     });
-    await page.waitForFunction(() => document.body.innerText.includes('祷告墙'), { timeout: 12000 });
+    await page.waitForFunction(() => document.body.innerText.includes('本次祷告主题'), { timeout: 12000 });
     record('voice-room: enter 祷告室 → overlay renders', true);
   } catch {
     record('voice-room: enter 祷告室 → overlay renders', false);
