@@ -19,6 +19,9 @@ const CHROME = process.env.CHROME_PATH
     .find(p => existsSync(p));
 if (!CHROME) { console.error('找不到 Chrome'); process.exit(1); }
 
+/** MockTransport 的虚拟成员。这些人不存在，绝不能出现在正式成员列表里。 */
+const MOCK_NAMES = ['王牧师', '李姊妹', 'Daniel', 'Mary', '张弟兄', 'Grace'];
+
 const ROOMS = [
   { name: '祷告室', sentinel: '本次祷告主题' },
   { name: '赞美室', sentinel: '推荐诗歌' },
@@ -54,7 +57,10 @@ const backend = spawn(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'src/s
 });
 const server = spawn(process.execPath,
   ['node_modules/vite/bin/vite.js', '--port', String(port), '--strictPort'],
-  { stdio: 'ignore', env: { ...process.env, VITE_API_BASE_URL: apiBase, VITE_VOICE_TRANSPORT: '' } });
+  { stdio: 'ignore', env: { ...process.env, VITE_API_BASE_URL: apiBase,
+      // §8 回归：即使 transport=mock，正式成员列表也不得由 transport 构造。
+      // 这里刻意开着 mock 跑整套断言。
+      VITE_VOICE_TRANSPORT: process.env.ROOMS_GUARD_TRANSPORT ?? '' } });
 process.on('exit', () => {
   for (const p of [server, backend]) { try { p.kill(); } catch { /* 已退出 */ } }
   try { rmSync(TMP, { recursive: true, force: true }); } catch { /* 尽力而为 */ }
@@ -143,8 +149,27 @@ for (const room of ROOMS) {
     check(`${room.name}：专属内容出现「${room.sentinel}」`, body.includes(room.sentinel));
   }
 
-  // 拆掉的假象不得复现
+  // ── §17 拆掉的假象不得复现 ──
   check(`${room.name}：无「主持人邀请您上麦」脚本`, !body.includes('主持人邀请您上麦'));
+
+  if (room.name !== '祷告室') {
+    // 真实成员模块必须在（要么已就绪，要么如实说明状态）
+    check(`${room.name}：真实成员模块存在`,
+      /\d+ 人在线|正在加入房间|成员状态暂时无法更新|需要连接服务器/.test(body));
+    // 只有自己一个人时，就该如实显示 1 人
+    check(`${room.name}：如实显示 1 人在线（不补虚拟成员）`,
+      body.includes('1 人在线'), body.match(/\d+ 人在线/)?.[0] ?? '未出现人数');
+    // 固定假人数不得复活
+    check(`${room.name}：无写死的 12/8/25/45 人`,
+      !/(12|8|25|45)\s*人(在线|在听)/.test(body));
+    // MockTransport 的虚拟成员姓名不得出现
+    check(`${room.name}：无 MockTransport 虚拟成员`,
+      !MOCK_NAMES.some(n => body.includes(n)),
+      MOCK_NAMES.filter(n => body.includes(n)).join(', '));
+    // 音频状态措辞不得复活
+    check(`${room.name}：无正在讲话 / 正在听 / 正在敬拜等措辞`,
+      !/正在讲话|人正在听|正在敬拜|正在交通|正在听道|实时发言/.test(body));
+  }
   if (room.name === '赞美室') {
     check('赞美室：不再显示写死的歌名与播放态',
       !body.includes('这一生最美的祝福') || !/正在播放/.test(body));
@@ -160,6 +185,34 @@ for (const room of ROOMS) {
   await sleep(1200);
   const backOnList = await page.evaluate(() => (document.body.innerText || '').includes('热门讨论房间'));
   if (!backOnList) { await clickText('校友圈'); await sleep(1000); }
+}
+
+// ── §11 错误隔离：presence 挂掉不能让房间白屏，专属功能仍可用 ──
+console.log('');
+{
+  // 回到读经室，然后真的把 backend 杀掉
+  await page.evaluate(() => {
+    const card = [...document.querySelectorAll('div.cursor-pointer')]
+      .find(d => (d.textContent || '').includes('读经室'));
+    if (card) card.click();
+  });
+  await sleep(1600);
+  await clickText('我明白了');
+  await sleep(1000);
+
+  backend.kill();
+  // 等一个轮询周期（10s）让 presence 请求真的失败
+  await sleep(13000);
+
+  const body = await page.evaluate(() => document.body.innerText || '');
+  check('presence 失败后读经室未白屏', body.trim().length > 40, `正文 ${body.trim().length} 字`);
+  check('presence 失败后圣经仍可读', body.includes('起初') || body.includes('创世记'));
+  check('presence 失败显示轻量提示，不显示假人数',
+    body.includes('成员状态暂时无法更新') || /\d+ 人在线/.test(body) === false,
+    body.includes('成员状态暂时无法更新') ? '已显示轻量提示' : '(无提示)');
+  check('presence 失败后不出现任何虚构成员',
+    !MOCK_NAMES.some(n => body.includes(n)));
+  await page.screenshot({ path: 'screenshots/rooms/读经室-presence-failure.png' });
 }
 
 check('全程无 JS 运行时错误', errors.length === 0, errors[0]?.slice(0, 160) ?? '');

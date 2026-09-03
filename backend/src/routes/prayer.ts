@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import { requireAuth } from '../middleware/auth.js';
 import { requireRoomExists, requireRoomMember, requireRoomManager } from '../middleware/roomAuth.js';
 import { sanitizeDisplayName, inspectPrayerText } from '../middleware/textSafety.js';
+import { readPresence, writeHeartbeat, clearPresence } from '../rooms/presence.js';
 import { prayerWriteLimiter, prayerHeartbeatLimiter } from '../middleware/rateLimit.js';
 import { db } from '../db.js';
 import { emitRoomEvent } from '../realtime/roomEvents.js';
@@ -18,7 +19,7 @@ import { emitRoomEvent } from '../realtime/roomEvents.js';
  *  - 在线成员用心跳 + 超时判定，不需要 WebSocket（轮询档）。
  */
 
-const PRESENCE_TTL_MS = 45_000;      // 超过 45 秒没心跳视为离线
+// PRESENCE_TTL / 心跳 / 在线名单已迁至 rooms/presence.ts，与其它四个房间共用。
 const MAX_TEXT = 500;
 const MAX_TOPICS = 12;
 const SHARE_PAGE = 50;
@@ -99,21 +100,7 @@ const stmtMine = db.prepare<[string, string], { share_id: string }>(`
   WHERE s.room_id = ? AND i.user_id = ?
 `);
 
-// ---- 在线 ----
-const stmtHeartbeat = db.prepare<[string, string, string, string | null, string, number]>(`
-  INSERT INTO room_presence (room_id, user_id, name, avatar, role, last_seen_at)
-  VALUES (?, ?, ?, ?, ?, ?)
-  ON CONFLICT(room_id, user_id) DO UPDATE SET
-    name = excluded.name, avatar = excluded.avatar,
-    role = excluded.role, last_seen_at = excluded.last_seen_at
-`);
-const stmtPresence = db.prepare<[string, number], {
-  user_id: string; name: string; avatar: string | null; role: string; last_seen_at: number;
-}>(
-  'SELECT user_id, name, avatar, role, last_seen_at FROM room_presence WHERE room_id = ? AND last_seen_at > ? ORDER BY last_seen_at DESC',
-);
-const stmtLeave = db.prepare<[string, string]>('DELETE FROM room_presence WHERE room_id = ? AND user_id = ?');
-const stmtSweep = db.prepare<[number]>('DELETE FROM room_presence WHERE last_seen_at < ?');
+// ---- 在线 ---- （实现见 rooms/presence.ts，祷告室与其它四房共用同一份）
 
 function userOf(req: Request) {
   const p = req.principal;
@@ -133,8 +120,9 @@ export function registerPrayerRoutes(app: Express): void {
     const me = userOf(req);
     if (!me) return res.status(401).json({ error: 'User token required.' });
     const { roomId } = req.params;
-    const cutoff = now() - PRESENCE_TTL_MS;
-    stmtSweep.run(cutoff - 60 * 60 * 1000);   // 顺手清理一小时前的死记录
+    // 在线名单与祷告室之外的四个房间共用同一份实现（rooms/presence.ts），
+    // 免得 TTL、显示名清洗、role 判定在两处慢慢漂移。
+    const presence = readPresence(roomId);
 
     const counts = new Map(stmtCounts.all(roomId).map(r => [r.share_id, r.n]));
     const mine = new Set(stmtMine.all(roomId, me.id).map(r => r.share_id));
@@ -165,9 +153,7 @@ export function registerPrayerRoutes(app: Express): void {
 
     res.json({
       topics: stmtTopics.all(roomId),
-      presence: stmtPresence.all(roomId, cutoff).map(p => ({
-        userId: p.user_id, name: p.name, avatar: p.avatar, role: p.role,
-      })),
+      presence,
       shares,
       isHost: isHostReq(req),
       isManager: Boolean(req.room?.isManager),
@@ -351,21 +337,16 @@ export function registerPrayerRoutes(app: Express): void {
     const me = userOf(req);
     if (!me) return res.status(401).json({ error: 'User token required.' });
     const { roomId } = req.params;
-    // SEC-2 §7：显示名与头像**只从服务器读取**，不再信任 body 里的
-    // name / displayName / avatar / role —— 否则 C 可以把自己显示成「王牧师」。
-    const profile = stmtUserProfile.get(me.id);
-    // §15：剥离 bidi 控制符与零宽字符，防止伪装成管理员/牧师。
-    //      阿拉伯文、希伯来文等正常 RTL 名字不受影响。
-    const name = sanitizeDisplayName(profile?.name ?? me.id).slice(0, 40) || me.id;
-    const role = isHostReq(req) ? 'host' : 'listener';
-    stmtHeartbeat.run(roomId, me.id, name, profile?.avatar ?? null, role, now());
+    // SEC-2 §7 的「显示名只从服务器读取」与 §15 的 bidi 清洗都在
+    // rooms/presence.ts 里，两条路径共用同一份实现。
+    writeHeartbeat(req, roomId, me.id);
     res.json({ ok: true });
   });
 
   app.delete('/api/rooms/:roomId/prayer/presence', requireAuth, requireRoomExists, requireRoomMember, (req: Request, res: Response) => {
     const me = userOf(req);
     if (!me) return res.status(401).json({ error: 'User token required.' });
-    stmtLeave.run(req.params.roomId, me.id);
+    clearPresence(req.params.roomId, me.id);
     res.json({ ok: true });
   });
 }

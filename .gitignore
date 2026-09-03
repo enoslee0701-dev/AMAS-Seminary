@@ -36,3 +36,4 @@ backend/recordings/
 .tmp-sysroom/
 backend/.tmp-test/
 .tmp-rooms/
+.tmp-presence/

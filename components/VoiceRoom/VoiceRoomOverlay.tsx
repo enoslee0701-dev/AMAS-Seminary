@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import PrayerRoomPanel from './PrayerRoomPanel';
+import RoomMembers from './RoomMembers';
+import { useRoomPresence } from './useRoomPresence';
+import { getCurrentUser } from '../../services/authService';
 import { VARIANT, MODAL_WIDTH, type RoomVariant } from './prayerTheme';
 import {
   Heart, MessageCircle, Share2, MoreHorizontal,
@@ -153,6 +156,33 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
         { id: 'me', name: '我', avatar: initialAvatar('me', '我'), isSpeaking: false, role: meIsRoomHost ? 'host' : 'listener', degree: 'M.Div 2023' },
     ]));
     const me = participants.find(p => p.id === 'me');
+
+    /**
+     * P1-1 真实在线成员。
+     *
+     * 祷告室走 PrayerRoomPanel 自己的一套 presence，这里必须关掉，
+     * 否则同一个房间会有两条心跳链路。
+     */
+    const authUser = getCurrentUser();
+    const presence = useRoomPresence(activeVoiceRoom.id, authUser?.id, activeVoiceRoom.type !== 'prayer');
+
+    /**
+     * 房间花名册。**唯一来源是后端 room_presence。**
+     *
+     * 之前这里用的是本地 `participants`，里面永远只有写死的「我」一个人；
+     * 更早的版本还会合并 MockTransport 的虚拟 peer。现在两者都不再进入 UI：
+     * 名单里的每一个人都对应数据库里的一行真实记录。
+     *
+     * isSpeaking 恒为 false —— 没有实时语音，没有人在说话，
+     * 这个字段只是为了兼容既有的 Participant 类型，不驱动任何「正在讲话」显示。
+     */
+    const roster: Participant[] = React.useMemo(() => presence.members.map(m => ({
+      id: m.userId,
+      name: m.userId === authUser?.id ? '我' : m.name,
+      avatar: m.avatar || initialAvatar(m.userId, m.name),
+      isSpeaking: false,
+      role: (m.role === 'host' ? 'host' : 'listener') as Participant['role'],
+    })), [presence.members, authUser?.id]);
     const isOnStage = me?.role !== 'listener';
     const canManage = me?.role === 'host' || me?.role === 'admin';
     const isHost = me?.role === 'host';
@@ -725,7 +755,7 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
 
     const ParticipantsListModal = () => {
         const [searchTerm, setSearchTerm] = useState("");
-        const filtered = participants.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
+        const filtered = roster.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
         return (
             <div className={`fixed inset-0 z-[120] ${MODAL_WIDTH} flex flex-col animate-slide-up h-[100dvh]`}
@@ -1029,8 +1059,9 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
       </div>
     );
 
-    const leftParticipants = participants.slice(0, 5);
-    const rightParticipants = participants.slice(5, 10);
+    // 舞台头像来自真实在线成员。不足十人时就是不足十人，不补占位。
+    const leftParticipants = roster.slice(0, 5);
+    const rightParticipants = roster.slice(5, 10);
 
     if (isRoomMinimized) {
         return createPortal(
@@ -1072,6 +1103,8 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
                         onClick={(e) => {
                             e.stopPropagation();
                             disconnectFromGemini();
+                            // 最小化气泡上的挂断＝显式退出，同样要解除 membership
+                            void presence.leave();
                             if (isHost) onEndRoom();
                             else setActiveVoiceRoom(null);
                         }}
@@ -1158,11 +1191,11 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
                 className="flex items-center bg-black/20 backdrop-blur-md rounded-full pl-1 pr-3 py-1 border border-white/10 hover:bg-black/30 transition-all active:scale-95"
             >
                 <div className="flex -space-x-2 mr-2">
-                    {participants.slice(0, 3).map(p => (
+                    {roster.slice(0, 3).map(p => (
                         <img key={p.id} src={p.avatar} className="w-6 h-6 rounded-full border border-white/20 object-cover" alt={p.name} />
                     ))}
                 </div>
-                <span className="text-[10px] font-black text-white">{participants.length}</span>
+                <span className="text-[10px] font-black text-white">{presence.onlineCount}</span>
             </button>}
 
             <button onClick={() => setShowRoomInfo(true)} aria-label={t('voiceRoom.header.settings')} className="p-2 -mr-2 rounded-full hover:bg-white/10 transition">
@@ -1196,9 +1229,14 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
                     <div className="flex flex-col items-center mt-1 mb-2 px-8">
                         <div className="border border-dashed border-white/30 rounded-xl py-3 px-6 text-center w-full bg-white/5 backdrop-blur-sm shadow-inner">
                             <p className="text-sm font-medium text-white/90 text-shadow-sm leading-relaxed">
-                                {isPrayerRoom ? "同心合意，为国度祷告。" : "每日共读圣经，在话语中得着喂养。"}
+                                每日共读圣经，在话语中得着喂养。
                             </p>
                         </div>
+                    </div>
+
+                    {/* P1-1 真实在线成员。每一项都对应后端 room_presence 的一行记录。 */}
+                    <div className="mb-3">
+                        <RoomMembers presence={presence} meId={authUser?.id} />
                     </div>
 
                     <div className="flex flex-row items-stretch justify-between flex-1">
@@ -1310,6 +1348,11 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
                 </div>
             ) : (
                 <div className="shrink-0 z-10 relative p-6 pb-2 max-h-[55vh] overflow-y-auto scrollbar-hide">
+                    {/* P1-1 真实在线成员。每一项都对应后端 room_presence 的一行记录。 */}
+                    <div className="mb-4">
+                        <RoomMembers presence={presence} meId={authUser?.id} />
+                    </div>
+
                     <div className="text-center mb-6 mt-2 relative">
                     {isEditingDesc ? (
                         <div className="bg-black/40 p-4 rounded-xl border border-white/20 animate-fade-in backdrop-blur-md">
@@ -1341,7 +1384,7 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
 
                     <div className="mb-4 animate-fade-in">
                         <div className="grid grid-cols-3 gap-4 justify-items-center">
-                            {participants.filter(p => p.role === 'host' || p.role === 'admin' || p.role === 'speaker').map(p => (
+                            {roster.filter(p => p.role === 'host' || p.role === 'admin' || p.role === 'speaker').map(p => (
                             <div key={p.id} onClick={() => handleUserClick(p)} className="flex flex-col items-center group cursor-pointer relative w-20">
                                 <div className="relative mb-2 w-16 h-16">
                                     {p.isSpeaking && (<><span className={`absolute inset-0 rounded-squircle border-[3px] ${isPrayerRoom ? 'border-rose-400/50' : (isPreachingRoom ? 'border-purple-400/50' : 'border-blue-400/50')} animate-ping`}></span><span className={`absolute -inset-2 rounded-squircle border ${isPrayerRoom ? 'border-rose-400/20' : (isPreachingRoom ? 'border-purple-400/20' : 'border-blue-400/20')} animate-pulse`}></span></>)}
@@ -1361,9 +1404,11 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
                                         </div>
                                     )}
 
-                                    <span className={`absolute -bottom-1 -right-1 rounded-full p-1 shadow-lg z-10 ${p.isSpeaking ? 'bg-white text-slate-900' : 'bg-slate-800 text-white'}`}>
-                                        {p.isMutedByHost ? <MicOff size={10} className="text-rose-500" /> : (p.isSpeaking ? <Mic size={10} fill="currentColor" /> : <MicOff size={10} />)}
-                                    </span>
+                                    {/*
+                                      这里曾经给每个头像挂一个麦克风角标（说话 / 静音）。
+                                      实时语音尚未接入，isSpeaking 恒为 false，它只能永远显示
+                                      「静音」——一个恒定的、没有依据的状态标记。已移除。
+                                    */}
                                 </div>
                                 <span className="text-xs font-bold text-white truncate w-full text-center text-shadow-sm">{p.name}</span>
                             </div>
@@ -1418,7 +1463,7 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
                     )}
 
                     <div className="grid grid-cols-5 gap-y-4 gap-x-2 px-1">
-                    {participants.filter(p => p.role === 'listener').map(p => (
+                    {roster.filter(p => p.role === 'listener').map(p => (
                         <div key={p.id} className="flex flex-col items-center cursor-pointer" onClick={() => handleUserClick(p)}>
                             <div className="w-9 h-9 bg-white/5 p-[1px] mb-1 border border-white/5 relative rounded-squircle">
                                 <img src={p.avatar} alt={p.name} className={`w-full h-full rounded-squircle object-cover transition-opacity ${p.isMutedByHost ? 'grayscale opacity-40' : 'opacity-80 hover:opacity-100'}`} />
@@ -1562,7 +1607,7 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
                         <HelpCircle size={16} className="mr-2"/> 房间指南
                     </button>
                     <button onClick={() => setShowShareModal(true)} className="w-full py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 text-sm flex items-center justify-center transition-all active:scale-[0.98]"><Share2 size={16} className="mr-2"/> 分享房间</button>
-                    {isHost ? (<button onClick={() => { disconnectFromGemini(); setShowRoomInfo(false); onEndRoom(); }} className="w-full py-3 bg-rose-500 text-white font-bold rounded-xl hover:bg-rose-600 shadow-md text-sm flex items-center justify-center mt-2 transition-all active:scale-[0.98]"><PhoneOff size={16} className="mr-2"/> 结束房间</button>) : (<button onClick={() => { disconnectFromGemini(); setActiveVoiceRoom(null); setShowRoomInfo(false);}} className="w-full py-3 bg-rose-50 text-rose-600 font-bold rounded-xl hover:bg-rose-100 text-sm flex items-center justify-center transition-all active:scale-[0.98]"><PhoneOff size={16} className="mr-2"/> 退出房间</button>)}
+                    {isHost ? (<button onClick={() => { disconnectFromGemini(); void presence.leave(); setShowRoomInfo(false); onEndRoom(); }} className="w-full py-3 bg-rose-500 text-white font-bold rounded-xl hover:bg-rose-600 shadow-md text-sm flex items-center justify-center mt-2 transition-all active:scale-[0.98]"><PhoneOff size={16} className="mr-2"/> 结束房间</button>) : (<button onClick={() => { disconnectFromGemini(); void presence.leave(); setActiveVoiceRoom(null); setShowRoomInfo(false);}} className="w-full py-3 bg-rose-50 text-rose-600 font-bold rounded-xl hover:bg-rose-100 text-sm flex items-center justify-center transition-all active:scale-[0.98]"><PhoneOff size={16} className="mr-2"/> 退出房间</button>)}
                  </div>
                  <button onClick={setShowRoomInfo.bind(null, false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><X size={20} /></button>
               </div>
