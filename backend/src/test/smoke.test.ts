@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import net from 'node:net';
 import { spawn, type ChildProcess } from 'node:child_process';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocket } from 'ws';
@@ -21,6 +22,17 @@ const __dirname = path.dirname(__filename);
 const BACKEND_ROOT = path.resolve(__dirname, '../..');
 
 const APP_SECRET = 'test-secret';
+// AUTH-M3：_promote 提权端点已移除。测试改为直接给自己的 fixture 数据库播种，
+// 因此需要一个可从测试进程访问的文件库（原来是子进程内的 :memory:）。
+const SMOKE_DB = path.join(os.tmpdir(), `amas-smoke-${Date.now().toString(36)}.sqlite`);
+
+/** 直接把某账号置为 admin —— 只作用于测试自己的 fixture 库，不经任何生产代码路径。 */
+async function seedAdmin(userId: string): Promise<void> {
+  const { default: Database } = await import('better-sqlite3');
+  const d = new Database(SMOKE_DB);
+  d.prepare('UPDATE users SET role = ? WHERE id = ?').run('admin', userId);
+  d.close();
+}
 const AUTH_HEADERS = { authorization: `Bearer ${APP_SECRET}` };
 
 let serverProcess: ChildProcess | null = null;
@@ -140,7 +152,7 @@ before(async () => {
     // Wave-1 persistence uses better-sqlite3. `:memory:` gives every
     // spawn a fresh, isolated in-process DB that vanishes on exit — no
     // tempfile cleanup needed, no cross-run contamination.
-    DB_PATH: ':memory:',
+    DB_PATH: SMOKE_DB,
   };
 
   // Spawn tsx via its JS entry with the current Node binary. `spawn('npx', ...)`
@@ -743,10 +755,7 @@ test('POST /api/announcements as admin (promoted) returns 200', async () => {
   });
   assert.equal(reg.status, 200);
   const tokens = reg.json<AuthTokens>();
-  const promote = await request('POST', '/api/auth/_promote', {
-    userId: tokens.user.id,
-  }, AUTH_HEADERS);
-  assert.equal(promote.status, 200, `expected 200, got ${promote.status} body=${promote.body}`);
+  await seedAdmin(tokens.user.id);
   // Re-login to get a new access token that carries role=admin in its claims.
   // (Our requireAdmin re-reads role from the user store, so the existing
   // token would also work — but a fresh login mirrors a real admin flow.)

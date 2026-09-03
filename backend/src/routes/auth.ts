@@ -3,13 +3,11 @@ import {
   createUser,
   findByEmail,
   findById,
-  promoteToAdmin,
   setPassword,
   updateProfile,
   verifyPassword,
   toPublicUser,
 } from '../auth/users.js';
-import { requireAppSecret } from '../middleware/auth.js';
 import {
   issueTokens,
   verifyAccess,
@@ -227,26 +225,12 @@ export function registerAuthRoutes(app: Express): void {
     res.status(200).json({ ok: true });
   });
 
-  /**
-   * POST /api/auth/_promote — DEV/OPS ONLY.
-   * Body: { userId }. Gated by APP_SECRET bearer (machine-only). Promotes
-   * the named user to `admin` role. Used by the test suite to construct
-   * an admin principal without needing a seed step. Safe to expose only
-   * because APP_SECRET is required.
-   */
-  app.post('/api/auth/_promote', requireAppSecret, (req, res) => {
-    const { userId } = (req.body ?? {}) as { userId?: string };
-    if (!userId || typeof userId !== 'string') {
-      res.status(400).json({ error: 'userId is required.' });
-      return;
-    }
-    const ok = promoteToAdmin(userId);
-    if (!ok) {
-      res.status(404).json({ error: 'User not found.' });
-      return;
-    }
-    res.status(200).json({ ok: true });
-  });
+  // POST /api/auth/_promote 已于 AUTH-M3 移除（2026-09-03）。
+  //
+  // 原实现由 APP_SECRET 把关，可把任意账号提升为 admin。Supabase roles 成为
+  // 授权的唯一 Source of Truth 之后，这条旧路径就是**第二套权限入口**——
+  // 即便只在开发/测试中使用，也不得在生产代码里保留隐藏开关。
+  // 测试构造管理员改为直接给测试自己的 fixture 数据库播种，不经任何 HTTP 端点。
 
   app.get('/api/auth/me', async (req, res) => {
     const token = bearer(req);

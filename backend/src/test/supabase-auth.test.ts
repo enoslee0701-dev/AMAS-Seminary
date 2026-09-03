@@ -188,6 +188,74 @@ test('AUTH-M2 Supabase 身份接入', { skip }, async (t) => {
     assert.equal(r.status, 403, '角色现查必须即时生效，不得等到 JWT 过期');
   });
 
+  // ===================== AUTH-M3 · _promote 提权后门移除验收 =====================
+
+  await t.test('M3-1 _promote 端点已不存在（404/410）', async () => {
+    const r = await api('/api/auth/_promote', undefined, {
+      method: 'POST',
+      headers: { authorization: 'Bearer authm2-test-secret' },  // 原来的 APP_SECRET 关卡
+      body: JSON.stringify({ userId: stuId }),
+    });
+    assert.ok(r.status === 404 || r.status === 410, `expected 404/410, got ${r.status}`);
+  });
+
+  await t.test('M3-2 student 无法经任何 legacy route 取得 admin', async () => {
+    // 穷举所有可能残留的提权路径
+    for (const path of ['/api/auth/_promote', '/api/auth/promote', '/api/auth/role', '/api/users/role']) {
+      const r = await api(path, stuJwt, { method: 'POST', body: JSON.stringify({ userId: stuId, role: 'admin' }) });
+      assert.ok(r.status >= 400, `${path} 不应成功，实际 ${r.status}`);
+    }
+    // 提权失败后仍然不能办管理动作
+    const after = await api('/api/courses', stuJwt, {
+      method: 'POST',
+      body: JSON.stringify({ id: `c_nope_${tag}`, title: 'x', instructor: 'x', category: 'nt', level: 'BTH' }),
+    });
+    assert.equal(after.status, 403);
+  });
+
+  await t.test('M3-3 伪造 role 声明不产生任何权限（服务端现查）', async () => {
+    // 手工拼一张把 role 写成 admin 的 token：签名必然对不上，直接 401
+    const [h, p0] = stuJwt.split('.');
+    const claims = JSON.parse(Buffer.from(p0.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString());
+    claims.role = 'admin';
+    claims.app_metadata = { roles: ['super_admin'] };
+    const tampered = `${h}.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.${stuJwt.split('.')[2]}`;
+    const r = await api('/api/courses/progress', tampered);
+    assert.equal(r.status, 401, '篡改载荷必须验签失败');
+  });
+
+  await t.test('M3-4 Supabase roles 是唯一正式管理员授权源', async () => {
+    // 给学生临时授予 registrar，管理动作应立即可用；撤销后立即不可用
+    const ins = await sbAdmin('/rest/v1/user_roles', {
+      method: 'POST', headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({ user_id: stuId, role: 'registrar', granted_by: stuId }),
+    });
+    const rows = await ins.json() as Array<{ id: string }>;
+    const body = JSON.stringify({ id: `c_m34_${tag}`, title: 'M3-4', instructor: 'x', category: 'nt', level: 'BTH' });
+    const granted = await api('/api/courses', stuJwt, { method: 'POST', body });
+    assert.ok(granted.status < 400, `授予后应可用，实际 ${granted.status}`);
+
+    await sbAdmin(`/rest/v1/user_roles?id=eq.${rows[0].id}`, {
+      method: 'PATCH', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ revoked_at: new Date().toISOString() }),
+    });
+    const revoked = await api('/api/courses', stuJwt, {
+      method: 'POST',
+      body: JSON.stringify({ id: `c_m34b_${tag}`, title: 'M3-4b', instructor: 'x', category: 'nt', level: 'BTH' }),
+    });
+    assert.equal(revoked.status, 403, '撤销后必须立即失权（同一张 JWT）');
+  });
+
+  await t.test('M3-5 APP_SECRET 仍可用于机器路径，但不能凭它提权某个用户', async () => {
+    // service principal 本身是机器管理员（既有设计），但已无任何端点可把"用户"变成 admin
+    const r = await api('/api/auth/_promote', undefined, {
+      method: 'POST',
+      headers: { authorization: 'Bearer authm2-test-secret' },
+      body: JSON.stringify({ userId: stuId }),
+    });
+    assert.ok(r.status === 404 || r.status === 410);
+  });
+
   // 清理：整个测试库是临时文件，直接删掉即可
   for (const id of created) await sbAdmin(`/auth/v1/admin/users/${id}`, { method: 'DELETE' });
   proc?.kill();

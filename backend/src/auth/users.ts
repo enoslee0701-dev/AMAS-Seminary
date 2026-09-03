@@ -196,27 +196,6 @@ export function verifyPassword(user: UserRecord, candidate: string): boolean {
   return crypto.timingSafeEqual(a, b);
 }
 
-/**
- * Promote a user to admin role. Returns true if a user was found and
- * promoted (or was already admin); false if no user matched.
- *
- * Used by the APP_SECRET-gated dev endpoint `/api/auth/_promote` so the
- * test suite can mint admin principals without needing a seed step. In
- * production, real admin promotion should happen through an out-of-band
- * process (DB migration / ops tool).
- */
-export function promoteToAdmin(id: string): boolean {
-  const info = stmtUpdateRole.run('admin', id);
-  return info.changes > 0;
-}
-
-/**
- * Replace the user's password hash + salt with a freshly-derived pair.
- * Caller is responsible for verifying the old password first.
- *
- * Mutates the passed-in `user` object (so callers reading it after the
- * call see the new values) AND writes the new pair to the database.
- */
 export function setPassword(user: UserRecord, newPassword: string): void {
   user.salt = crypto.randomBytes(SALT_BYTES).toString('hex');
   user.passwordHash = hashPassword(newPassword, user.salt);
