@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } 
 import {
   ClipboardList, BookMarked, Leaf, ChevronRight, Crown, Shield, Lock,
   Users, Trash2, EyeOff, Check, X, Plus as PlusIcon, ChevronLeft, MoreHorizontal,
-  Flag, EyeOff as HideIcon, Eye,
+  Flag, EyeOff as HideIcon, Eye, Play, SkipForward, Square, UserCheck,
 } from 'lucide-react';
 import {
   fetchPrayerRoom, savePrayerTopics, postPrayerShare, deletePrayerShare,
@@ -12,6 +12,8 @@ import {
   type PrayerRoomState, type PrayerShare,
 } from '../../services/prayerRoomService';
 import { PT, prayerCard } from './prayerTheme';
+import { usePrayerSession } from './usePrayerSession';
+import { elapsedText, ERROR_TEXT } from '../../services/prayerSessionService';
 import PrayerRoomActionBar, { type PrayerAction } from './PrayerRoomActionBar';
 import PrayerBottomSheet from './PrayerBottomSheet';
 
@@ -217,6 +219,203 @@ const Hero: React.FC<{ online: number; onBack?: () => void; onOpenInfo?: () => v
     </div>
   );
 
+/**
+ * 共享祷告会区块。**所有显示值都来自服务器**，本组件不持有任何共享状态。
+ *
+ * 「正在带领」来自 session.facilitator（manager 指定的展示角色），
+ * **不是** voice 的 isSpeaking——两者完全无关。
+ *
+ * 次序里的 ✓ 只表示「已经经过该祷告事项」，不是「已完成属灵任务」。
+ */
+const PrayerSessionBlock: React.FC<{
+  ps: ReturnType<typeof usePrayerSession>;
+  clockTick: number;
+  showToast: (m: string) => void;
+  presence: { userId: string; name: string; role: string }[];
+}> = ({ ps, clockTick, showToast, presence }) => {
+  const { session: s, canManage, pending } = ps;
+  const [pickFacilitator, setPickFacilitator] = useState(false);
+
+  const act = async (fn: () => Promise<{ ok: boolean; code?: keyof typeof ERROR_TEXT }>) => {
+    const r = await fn();
+    // §31 必须按错误码区分提示，不能一律「操作失败」
+    if (!r.ok && r.code) showToast(ERROR_TEXT[r.code]);
+  };
+
+  // ---------- 没有祷告会 ----------
+  if (!s) {
+    return (
+      <div className="mt-6">
+        <Head title="祷告会" />
+        <p className="text-[12px] mt-2.5 px-1 leading-relaxed" style={{ color: PT.muted }}>
+          目前没有正在进行的祷告会。你仍然可以浏览代祷墙、发布代祷、默想经文或安静等候。
+        </p>
+        {canManage && (
+          <button
+            onClick={() => act(() => ps.create([
+              { title: '为世界和平祷告' },
+              { title: '为教会复兴祷告', scriptureRef: '西 4:2', scriptureText: '你们要恒切祷告，在此警醒感恩。' },
+              { title: '为身心软弱的肢体代祷' },
+              { title: '求主赐下智慧与启示' },
+            ]))}
+            disabled={pending === 'create'}
+            className="mt-3 inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[12px] font-bold text-white active:scale-95 transition disabled:opacity-50"
+            style={{ background: PT.navy }}>
+            <Play size={13} /> {pending === 'create' ? '创建中…' : '开始新的祷告会'}
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  const current = s.items.find(i => i.id === s.currentItemId) ?? null;
+  const curIdx = s.items.findIndex(i => i.id === s.currentItemId);
+  const isLast = curIdx >= 0 && curIdx === s.items.length - 1;
+  const elapsed = elapsedText(s.startedAt, Date.now());
+  void clockTick;   // 依赖它触发每秒重渲染
+
+  return (
+    <div className="mt-6">
+      {/* ---------- 当前祷告卡 ---------- */}
+      {s.status === 'active' && current && (
+        <div style={{ ...prayerCard, padding: '16px 18px' }}>
+          <div className="flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: PT.online }} />
+            <span className="text-[11px] font-bold tracking-wide" style={{ color: PT.gold }}>当前祷告</span>
+            <span className="ml-auto font-mono text-[11px] tabular-nums" style={{ color: PT.muted }}>
+              已进行 {elapsed}
+            </span>
+          </div>
+
+          <div className="flex items-start gap-3 mt-3">
+            <span className="font-mono text-[15px] font-bold tabular-nums shrink-0" style={{ color: PT.gold }}>
+              {String(current.position).padStart(2, '0')}
+            </span>
+            <bdi dir="auto" className="block text-[16px] font-bold leading-[1.5]" style={{ color: PT.navy }}>
+              {current.title}
+            </bdi>
+          </div>
+
+          {s.facilitator && (
+            <p className="text-[12px] mt-2.5" style={{ color: PT.body }}>
+              <bdi dir="auto" className="font-bold">{s.facilitator.name}</bdi> 正在带领
+            </p>
+          )}
+
+          {current.scriptureText && (
+            <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${PT.divider}` }}>
+              <bdi dir="auto" className="block font-serif text-[13px] leading-[1.9]" style={{ color: PT.body }}>
+                「{current.scriptureText}」
+              </bdi>
+              {current.scriptureRef && (
+                <p className="text-[11px] mt-1.5 font-serif" style={{ color: PT.gold }}>{current.scriptureRef}</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {s.status === 'scheduled' && (
+        <div style={{ ...prayerCard, padding: '14px 18px' }}>
+          <p className="text-[13px]" style={{ color: PT.navy }}>祷告会已准备好，等待开始。</p>
+          <p className="text-[11px] mt-1" style={{ color: PT.muted }}>共 {s.items.length} 项祷告事项。</p>
+        </div>
+      )}
+
+      {/* ---------- 祷告次序 ---------- */}
+      <div className="mt-5">
+        <Head title="祷告次序" />
+        <div className="mt-3 px-1 space-y-2.5">
+          {s.items.map((it, i) => {
+            const passed = curIdx >= 0 && i < curIdx;
+            const isCur = it.id === s.currentItemId && s.status === 'active';
+            return (
+              <button key={it.id}
+                onClick={() => canManage && s.status === 'active' && act(() => ps.selectItem(it.id))}
+                disabled={!canManage || s.status !== 'active' || pending === `select:${it.id}`}
+                className="w-full flex items-start gap-3 text-left disabled:cursor-default">
+                <span className="w-4 shrink-0 pt-0.5 text-center">
+                  {passed
+                    ? <Check size={12} style={{ color: PT.sage }} />
+                    : isCur
+                      ? <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: PT.gold }} />
+                      : null}
+                </span>
+                <span className="text-[11px] font-bold font-mono tabular-nums shrink-0 pt-0.5"
+                  style={{ color: isCur ? PT.gold : PT.faint }}>
+                  {String(it.position).padStart(2, '0')}
+                </span>
+                <bdi dir="auto" className="block text-[13px] leading-[1.7] flex-1"
+                  style={{ color: isCur ? PT.navy : passed ? PT.faint : PT.body, fontWeight: isCur ? 700 : 400 }}>
+                  {it.title}
+                </bdi>
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-[10px] mt-3 px-1" style={{ color: PT.faint }}>
+          ✓ 表示已经经过该祷告事项。
+        </p>
+      </div>
+
+      {/* ---------- Manager 控制（普通成员完全看不到） ---------- */}
+      {canManage && (
+        <div className="mt-4 rounded-2xl p-3" style={{ background: PT.neutralWash }}>
+          <p className="text-[10px] font-bold mb-2.5" style={{ color: PT.muted }}>管理（仅房主与版主可见）</p>
+          <div className="flex flex-wrap gap-2">
+            {s.status === 'scheduled' && (
+              <button onClick={() => act(ps.start)} disabled={pending === 'start'}
+                className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[12px] font-bold text-white active:scale-95 disabled:opacity-50"
+                style={{ background: PT.navy }}>
+                <Play size={13} /> {pending === 'start' ? '开始中…' : '开始祷告会'}
+              </button>
+            )}
+            {s.status === 'active' && (
+              <>
+                <button onClick={() => act(ps.advance)} disabled={pending === 'advance' || isLast}
+                  className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[12px] font-bold active:scale-95 disabled:opacity-40"
+                  style={{ color: PT.navy, background: PT.card }}>
+                  <SkipForward size={13} /> {pending === 'advance' ? '切换中…' : isLast ? '已是最后一项' : '下一项'}
+                </button>
+                <button onClick={() => setPickFacilitator(v => !v)}
+                  className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[12px] font-bold active:scale-95"
+                  style={{ color: PT.navy, background: PT.card }}>
+                  <UserCheck size={13} /> 更换带领者
+                </button>
+              </>
+            )}
+            {s.status !== 'ended' && (
+              <button onClick={() => act(ps.end)} disabled={pending === 'end'}
+                className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[12px] font-bold active:scale-95 disabled:opacity-50"
+                style={{ color: '#9B2C2C', background: PT.card }}>
+                <Square size={12} /> {pending === 'end' ? '结束中…' : '结束祷告会'}
+              </button>
+            )}
+          </div>
+
+          {pickFacilitator && s.status === 'active' && (
+            <div className="mt-3 pt-3 flex flex-wrap gap-1.5" style={{ borderTop: `1px solid ${PT.divider}` }}>
+              {presence.length === 0 && <span className="text-[11px]" style={{ color: PT.faint }}>暂无在线成员可指定。</span>}
+              {presence.map(p => (
+                <button key={p.userId}
+                  onClick={async () => { await act(() => ps.assignFacilitator(p.userId)); setPickFacilitator(false); }}
+                  disabled={pending === 'facilitator'}
+                  className="text-[11.5px] rounded-full px-3 py-1.5 active:scale-95 disabled:opacity-50"
+                  style={s.facilitator?.userId === p.userId
+                    ? { color: PT.gold, background: PT.goldWash }
+                    : { color: PT.body, background: PT.card }}>
+                  <bdi dir="auto">{p.name}</bdi>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+
 const PrayerRoomPanel: React.FC<Props> = ({
   roomId, meName, meAvatar, fontSize, showToast,
   onViewParticipants, onViewProfile, onBack, onOpenInfo,
@@ -228,6 +427,15 @@ const PrayerRoomPanel: React.FC<Props> = ({
   const [ui, dispatch] = useReducer(uiReducer, initialUi);
   const backend = isPrayerBackendConfigured();
   const topicsRef = useRef<HTMLDivElement>(null);
+  /** 共享祷告会：**服务器唯一真相源**。currentItemId 等绝不复制进本地 reducer。 */
+  const ps = usePrayerSession(roomId, backend);
+  // 只用于「已进行 mm:ss」的视觉刷新；基准始终是 server 的 startedAt
+  const [clockTick, setClockTick] = useState(0);
+  useEffect(() => {
+    if (ps.session?.status !== 'active') return;
+    const t = window.setInterval(() => setClockTick(v => v + 1), 1000);
+    return () => window.clearInterval(t);
+  }, [ps.session?.status]);
 
   const refresh = useCallback(async () => {
     const s = await fetchPrayerRoom(roomId);
@@ -495,25 +703,8 @@ const PrayerRoomPanel: React.FC<Props> = ({
           )}
         </div>
 
-        {/* ===== 3. 祷告次序（只读；无 activeIndex / 无倒计时 / 无「正在带领」） ===== */}
-        {server.topics.length > 1 && (
-          <div className="mt-6">
-            <Head title="祷告次序" />
-            <div className="mt-3 px-1 space-y-2.5">
-              {server.topics.map(t => (
-                <div key={t.id} className="flex items-start gap-3">
-                  <span className="text-[11px] font-bold font-mono tabular-nums shrink-0 pt-0.5" style={{ color: PT.gold }}>
-                    {String(t.seq).padStart(2, '0')}
-                  </span>
-                  <p className="text-[13px] leading-[1.7] flex-1" style={{ color: PT.body }}>{t.text}</p>
-                </div>
-              ))}
-            </div>
-            <p className="text-[10px] mt-3 px-1" style={{ color: PT.faint }}>
-              这是本次祷告的主题顺序，由房主设置。
-            </p>
-          </div>
-        )}
+        {/* ===== 3. 共享祷告会（Phase 2）——全部来自服务器 ===== */}
+        <PrayerSessionBlock ps={ps} clockTick={clockTick} showToast={showToast} presence={online} />
 
         {/* ===== 4. 快捷功能（轻量三列，不再是厚卡） ===== */}
         <div className="mt-6">

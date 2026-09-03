@@ -85,6 +85,60 @@ db.exec(`
     created_at INTEGER NOT NULL
   );
 
+  -- ===== 共享祷告会（Phase 2）=====
+  --
+  -- 服务器是唯一真相源。客户端的 useState / localStorage 一律不得决定
+  -- 共享状态；current_item_id、started_at、facilitator 全部只存在这里。
+  CREATE TABLE IF NOT EXISTS prayer_sessions (
+    id TEXT PRIMARY KEY,
+    room_id TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('scheduled','active','ended')),
+    created_by TEXT NOT NULL,
+    facilitator_user_id TEXT,
+    started_at INTEGER,
+    ended_at INTEGER,
+    current_item_id TEXT,
+    -- 乐观并发控制：每次成功的 manager 命令 +1。
+    revision INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY (room_id) REFERENCES rooms(room_id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (facilitator_user_id) REFERENCES users(id) ON DELETE SET NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_sessions_room ON prayer_sessions(room_id, status);
+  -- 同一房间同一时刻只能有一个 active session。**数据库层保证**，
+  -- 不依赖「先 SELECT 再 INSERT」那种存在竞态的逻辑。
+  CREATE UNIQUE INDEX IF NOT EXISTS uniq_active_session_per_room
+    ON prayer_sessions(room_id) WHERE status = 'active';
+
+  CREATE TABLE IF NOT EXISTS prayer_session_items (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    scripture_ref TEXT,
+    scripture_text TEXT,
+    created_at INTEGER NOT NULL,
+    UNIQUE (session_id, position),
+    FOREIGN KEY (session_id) REFERENCES prayer_sessions(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_session_items ON prayer_session_items(session_id, position);
+
+  -- 轻量事件日志：调试 / 历史 / 未来审计。**不存代祷正文**。
+  CREATE TABLE IF NOT EXISTS prayer_session_events (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    actor_user_id TEXT NOT NULL,
+    event_type TEXT NOT NULL CHECK(event_type IN ('created','started','item_changed','facilitator_changed','ended')),
+    from_item_id TEXT,
+    to_item_id TEXT,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (session_id) REFERENCES prayer_sessions(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_session_events ON prayer_session_events(session_id, created_at);
+
   -- ===== 代祷举报（SEC-3）=====
   -- 最小可用设计，不做大型审核平台。
   -- UNIQUE(share_id, reporter_user_id) 防止同一用户对同一条反复举报。
@@ -459,6 +513,9 @@ export function resetDb(): void {
   db.exec(`
     DELETE FROM users;
     DELETE FROM refresh_jti;
+    DELETE FROM prayer_session_events;
+    DELETE FROM prayer_session_items;
+    DELETE FROM prayer_sessions;
     DELETE FROM prayer_share_reports;
     DELETE FROM room_members;
     DELETE FROM room_presence;

@@ -126,3 +126,16 @@ export const roomMembershipLimiter = rateLimit({
   keyGenerator: byUser('room_membership'),
   message: { error: 'Too many join/leave requests.' },
 });
+
+/**
+ * 祷告会 manager 命令（Phase 2 §26）：create / start / advance / select /
+ * facilitator / end。都是低频操作，阈值不需要高；按用户计数，不依赖 IP。
+ */
+export const sessionCommandLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: process.env.NODE_ENV === 'test' ? 10_000 : 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: byUser('session_command'),
+  message: { error: 'Too many session commands.', code: 'RATE_LIMITED' },
+});
