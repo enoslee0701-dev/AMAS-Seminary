@@ -23,11 +23,17 @@ import { db } from '../db.js';
 
 const uid = () => crypto.randomBytes(9).toString('hex');
 const now = () => Date.now();
-const MAX_ITEMS = 30;
+// Phase 2.5 §6 数量与长度限制（前后端都验证）
+const MIN_ITEMS = 1;
+const MAX_ITEMS = 12;
 const MAX_TITLE = 120;
+const MAX_DESC = 500;
+const MAX_SREF = 80;
+const MAX_STEXT = 500;
+const MAX_SESSION_TITLE = 120;
 
 interface SessionRow {
-  id: string; room_id: string; status: 'scheduled' | 'active' | 'ended';
+  id: string; room_id: string; title: string | null; status: 'scheduled' | 'active' | 'ended';
   created_by: string; facilitator_user_id: string | null;
   started_at: number | null; ended_at: number | null;
   current_item_id: string | null; revision: number;
@@ -46,10 +52,16 @@ const stmtById = db.prepare<[string], SessionRow>('SELECT * FROM prayer_sessions
 const stmtItems = db.prepare<[string], ItemRow>(
   'SELECT * FROM prayer_session_items WHERE session_id = ? ORDER BY position ASC',
 );
-const stmtInsertSession = db.prepare<[string, string, string, number, number]>(
-  `INSERT INTO prayer_sessions (id, room_id, status, created_by, revision, created_at, updated_at)
-   VALUES (?, ?, 'scheduled', ?, 1, ?, ?)`,
+const stmtInsertSession = db.prepare<[string, string, string | null, string, number, number]>(
+  `INSERT INTO prayer_sessions (id, room_id, title, status, created_by, revision, created_at, updated_at)
+   VALUES (?, ?, ?, 'scheduled', ?, 1, ?, ?)`,
 );
+/** 仅 scheduled 可结构性编辑；active 之后冻结（§8）。条件更新自带并发保护。 */
+const stmtUpdateScheduled = db.prepare<[string | null, number, string, number]>(
+  `UPDATE prayer_sessions SET title = ?, revision = revision + 1, updated_at = ?
+   WHERE id = ? AND status = 'scheduled' AND revision = ?`,
+);
+const stmtClearItems = db.prepare<[string]>('DELETE FROM prayer_session_items WHERE session_id = ?');
 const stmtInsertItem = db.prepare<[string, string, number, string, string | null, string | null, string | null, number]>(
   `INSERT INTO prayer_session_items (id, session_id, position, title, description, scripture_ref, scripture_text, created_at)
    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -81,6 +93,29 @@ const stmtEnd = db.prepare<[number, number, string, number]>(
    WHERE id = ? AND status IN ('scheduled','active') AND revision = ?`,
 );
 
+/**
+ * 校验并标准化 items（§6/§7）。
+ * - 数量必须在 MIN_ITEMS..MAX_ITEMS，否则返回 null（400）
+ * - **position 一律由服务器按数组顺序重新标准化为 1..n**，
+ *   客户端传来的 position 一概忽略，杜绝 1/4/8/12 这类残留
+ */
+function normalizeItems(raw: unknown): { title: string; description: string | null; scriptureRef: string | null; scriptureText: string | null }[] | null {
+  if (!Array.isArray(raw)) return null;
+  const items = raw
+    .map((it: Record<string, unknown>) => ({
+      title: String(it?.title ?? '').trim().slice(0, MAX_TITLE),
+      description: it?.description ? String(it.description).trim().slice(0, MAX_DESC) || null : null,
+      scriptureRef: it?.scriptureRef ? String(it.scriptureRef).trim().slice(0, MAX_SREF) || null : null,
+      scriptureText: it?.scriptureText ? String(it.scriptureText).trim().slice(0, MAX_STEXT) || null : null,
+    }))
+    .filter(it => it.title.length > 0);
+  if (items.length < MIN_ITEMS || items.length > MAX_ITEMS) return null;
+  return items;
+}
+
+const normTitle = (raw: unknown): string | null =>
+  raw ? (String(raw).trim().slice(0, MAX_SESSION_TITLE) || null) : null;
+
 const userOf = (req: Request) => {
   const p = req.principal;
   return p && p.kind === 'user' ? p.user : null;
@@ -92,6 +127,7 @@ function view(s: SessionRow, canManage: boolean) {
   return {
     session: {
       id: s.id,
+      title: s.title,
       status: s.status,
       startedAt: s.started_at,
       endedAt: s.ended_at,
@@ -104,6 +140,8 @@ function view(s: SessionRow, canManage: boolean) {
       })),
     },
     capabilities: { canManageSession: canManage },
+    // §1 客户端用它算 offset，消除设备时钟偏差；数据库 started_at 不变
+    serverNow: now(),
   };
 }
 
@@ -138,7 +176,8 @@ export function registerPrayerSessionRoutes(app: Express): void {
   app.get('/api/rooms/:roomId/prayer-session/current', ...guards, (req: Request, res: Response) => {
     const canManage = Boolean(req.room?.isManager);
     const s = stmtCurrent.get(req.params.roomId);
-    if (!s) return res.json({ session: null, capabilities: { canManageSession: canManage } });
+    // 即使没有 session 也要给 serverNow——客户端需要它算时钟 offset
+    if (!s) return res.json({ session: null, capabilities: { canManageSession: canManage }, serverNow: now() });
     res.json(view(s, canManage));
   });
 
@@ -151,24 +190,15 @@ export function registerPrayerSessionRoutes(app: Express): void {
     const me = userOf(req);
     if (!me) return res.status(401).json({ error: 'User token required.' });
     const { roomId } = req.params;
-    const raw = (req.body ?? {}).items;
-    if (!Array.isArray(raw) || raw.length === 0) {
-      return res.status(400).json({ error: 'items is required.', code: 'INVALID_ITEMS' });
-    }
-    const items = raw.slice(0, MAX_ITEMS)
-      .map((it: Record<string, unknown>) => ({
-        title: String(it?.title ?? '').trim().slice(0, MAX_TITLE),
-        description: it?.description ? String(it.description).slice(0, 500) : null,
-        scriptureRef: it?.scriptureRef ? String(it.scriptureRef).slice(0, 60) : null,
-        scriptureText: it?.scriptureText ? String(it.scriptureText).slice(0, 500) : null,
-      }))
-      .filter(it => it.title.length > 0);
-    if (!items.length) return res.status(400).json({ error: 'items is required.', code: 'INVALID_ITEMS' });
+    const items = normalizeItems((req.body ?? {}).items);
+    if (!items) return res.status(400).json({ error: `items must contain ${MIN_ITEMS}-${MAX_ITEMS} entries with a title.`, code: 'INVALID_ITEMS' });
+    const title = normTitle((req.body ?? {}).title);
 
     const sid = uid();
     const t = now();
     db.transaction(() => {
-      stmtInsertSession.run(sid, roomId, me.id, t, t);
+      stmtInsertSession.run(sid, roomId, title, me.id, t, t);
+      // position 由服务器重新标准化为 1..n，绝不采用客户端传来的 position
       items.forEach((it, i) =>
         stmtInsertItem.run(uid(), sid, i + 1, it.title, it.description, it.scriptureRef, it.scriptureText, t));
       stmtEvent.run(uid(), sid, me.id, 'created', null, null, t);
@@ -265,6 +295,68 @@ export function registerPrayerSessionRoutes(app: Express): void {
     const r = stmtSetFacilitator.run(target, t, s.id, Number(expectedRevision ?? -1));
     if (r.changes === 0) return conflict(res, s, true);
     stmtEvent.run(uid(), s.id, me.id, 'facilitator_changed', null, null, t);
+    res.json(view(stmtById.get(s.id)!, true));
+  });
+
+  /**
+   * PUT /api/rooms/:roomId/prayer-sessions/:sessionId
+   * 编辑 **scheduled** 祷告会：标题、事项内容、顺序、增删。
+   * Body: { title?, items: [...], expectedRevision }
+   *
+   * §8 结构冻结：session 一旦 active 就**禁止**任何结构编辑
+   * （新增/删除/改名/重排/改经文），避免不同设备看到结构突然变化。
+   * 这里的 UPDATE 带 `status='scheduled'`，active 时 changes===0 → 409。
+   *
+   * §27 整体替换而非 partial merge：避免「标题来自 A、排序来自 B」的半截版本。
+   */
+  app.put('/api/rooms/:roomId/prayer-sessions/:sessionId', ...managerGuards, (req: Request, res: Response) => {
+    const me = userOf(req);
+    if (!me) return res.status(401).json({ error: 'User token required.' });
+    const s = loadForCommand(req, res);
+    if (!s) return;
+    if (s.status !== 'scheduled') {
+      return res.status(409).json({
+        error: 'Structure is frozen once the session starts.',
+        code: 'SESSION_STRUCTURE_FROZEN', ...view(s, true),
+      });
+    }
+    const items = normalizeItems((req.body ?? {}).items);
+    if (!items) return res.status(400).json({ error: `items must contain ${MIN_ITEMS}-${MAX_ITEMS} entries with a title.`, code: 'INVALID_ITEMS' });
+    const expected = Number((req.body ?? {}).expectedRevision ?? -1);
+    const t = now();
+    let ok = false;
+    db.transaction(() => {
+      const r = stmtUpdateScheduled.run(normTitle((req.body ?? {}).title), t, s.id, expected);
+      if (r.changes === 0) return;                 // 冲突：事务内不做任何写入
+      stmtClearItems.run(s.id);
+      items.forEach((it, i) =>
+        stmtInsertItem.run(uid(), s.id, i + 1, it.title, it.description, it.scriptureRef, it.scriptureText, t));
+      ok = true;
+    })();
+    if (!ok) return conflict(res, s, true);
+    res.json(view(stmtById.get(s.id)!, true));
+  });
+
+  /**
+   * POST /.../:sessionId/previous
+   * 与 advance 完全对称：server command + expectedRevision + 冲突保护。
+   * 已经是第一项时返回 409 FIRST_ITEM，**不循环到最后一项**。
+   */
+  app.post('/api/rooms/:roomId/prayer-sessions/:sessionId/previous', ...managerGuards, (req: Request, res: Response) => {
+    const me = userOf(req);
+    if (!me) return res.status(401).json({ error: 'User token required.' });
+    const s = loadForCommand(req, res);
+    if (!s) return;
+    if (s.status !== 'active') return res.status(409).json({ error: 'Session is not active.', code: 'SESSION_NOT_ACTIVE' });
+    const expected = Number((req.body ?? {}).expectedRevision ?? -1);
+    const items = stmtItems.all(s.id);
+    const idx = items.findIndex(i => i.id === s.current_item_id);
+    const prev = idx > 0 ? items[idx - 1] : null;
+    if (!prev) return res.status(409).json({ error: 'Already at the first item.', code: 'FIRST_ITEM', ...view(s, true) });
+    const t = now();
+    const r = stmtSetItem.run(prev.id, t, s.id, expected);
+    if (r.changes === 0) return conflict(res, s, true);
+    stmtEvent.run(uid(), s.id, me.id, 'item_changed', s.current_item_id, prev.id, t);
     res.json(view(stmtById.get(s.id)!, true));
   });
 

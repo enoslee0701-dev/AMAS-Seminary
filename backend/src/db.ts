@@ -430,6 +430,11 @@ function hasColumn(table: string, column: string): boolean {
 }
 {
   const added: string[] = [];
+  // Phase 2.5：祷告会主题（可选）
+  if (!hasColumn('prayer_sessions', 'title')) {
+    db.exec(`ALTER TABLE prayer_sessions ADD COLUMN title TEXT`);
+    added.push('prayer_sessions.title');
+  }
   if (!hasColumn('room_members', 'role')) {
     db.exec(`ALTER TABLE room_members ADD COLUMN role TEXT NOT NULL DEFAULT 'member'`);
     added.push('room_members.role');

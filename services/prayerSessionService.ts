@@ -27,6 +27,8 @@ export interface SessionItem {
 
 export interface PrayerSession {
   id: string;
+  /** 祷告会主题（可选），如「周三晚间祷告会」 */
+  title: string | null;
   status: SessionStatus;
   startedAt: number | null;
   endedAt: number | null;
@@ -39,9 +41,26 @@ export interface PrayerSession {
 export interface SessionState {
   session: PrayerSession | null;
   capabilities: { canManageSession: boolean };
+  /** 服务器当前时间。客户端据此算 offset，消除设备时钟偏差（§1）。 */
+  serverNow?: number;
 }
 
 export const EMPTY_SESSION: SessionState = { session: null, capabilities: { canManageSession: false } };
+
+// ---------- §1/§2 时钟偏差修正 ----------
+
+/**
+ * 设备本地时间可能偏差数分钟。祷告会的「已进行 mm:ss」如果直接用
+ * `Date.now() - startedAt`，两台设备会显示相差好几分钟。
+ *
+ * 修正办法：每次 fetch 用服务端返回的 serverNow 算出 offset，
+ * 之后所有 elapsed 都基于 `Date.now() + offset`。
+ * **数据库的 started_at 不做任何改动。**
+ */
+export const serverOffsetOf = (serverNow: number | undefined): number =>
+  typeof serverNow === 'number' ? serverNow - Date.now() : 0;
+
+export const estimatedServerNow = (offsetMs: number): number => Date.now() + offsetMs;
 
 /** 轮询间隔（毫秒）。§29 */
 export const POLL_FOR = (s: PrayerSession | null): number =>
@@ -51,6 +70,7 @@ export const POLL_FOR = (s: PrayerSession | null): number =>
 export type SessionErrorCode =
   | 'SESSION_STATE_CONFLICT' | 'SESSION_ENDED' | 'SESSION_NOT_FOUND'
   | 'SESSION_NOT_ACTIVE' | 'SESSION_ALREADY_ACTIVE' | 'ROOM_HAS_ACTIVE_SESSION'
+  | 'SESSION_STRUCTURE_FROZEN' | 'FIRST_ITEM'
   | 'LAST_ITEM' | 'ITEM_NOT_FOUND' | 'NOT_A_MEMBER' | 'INVALID_ITEMS'
   | 'FORBIDDEN' | 'RATE_LIMITED' | 'NETWORK';
 
@@ -69,6 +89,8 @@ export const ERROR_TEXT: Record<SessionErrorCode, string> = {
   SESSION_ALREADY_ACTIVE: '祷告会已经在进行中了。',
   ROOM_HAS_ACTIVE_SESSION: '这个房间已经有一场祷告会正在进行。',
   LAST_ITEM: '已经是最后一项了。',
+  FIRST_ITEM: '已经是第一项了。',
+  SESSION_STRUCTURE_FROZEN: '祷告会已经开始，内容不能再修改了。',
   ITEM_NOT_FOUND: '找不到这条祷告事项。',
   NOT_A_MEMBER: '带领者必须是本房间的成员。',
   INVALID_ITEMS: '请至少填写一条祷告事项。',
@@ -103,8 +125,23 @@ const enc = encodeURIComponent;
 export const fetchCurrentSession = (roomId: string) =>
   call(`/api/rooms/${enc(roomId)}/prayer-session/current`);
 
-export const createSession = (roomId: string, items: { title: string; scriptureRef?: string; scriptureText?: string }[]) =>
-  call(`/api/rooms/${enc(roomId)}/prayer-sessions`, { method: 'POST', body: JSON.stringify({ items }) });
+export interface DraftItem {
+  title: string;
+  description?: string;
+  scriptureRef?: string;
+  scriptureText?: string;
+}
+
+/** §6 前后端都验证的限制。 */
+export const LIMITS = { minItems: 1, maxItems: 12, title: 120, description: 500, scriptureRef: 80, scriptureText: 500 };
+
+export const createSession = (roomId: string, items: DraftItem[], title?: string) =>
+  call(`/api/rooms/${enc(roomId)}/prayer-sessions`, { method: 'POST', body: JSON.stringify({ items, title }) });
+
+/** 编辑 **scheduled** 祷告会（整体替换，避免 partial merge）。active 后返回 409 FROZEN。 */
+export const updateSession = (roomId: string, sid: string, items: DraftItem[], title: string | null, expectedRevision: number) =>
+  call(`/api/rooms/${enc(roomId)}/prayer-sessions/${enc(sid)}`,
+    { method: 'PUT', body: JSON.stringify({ items, title, expectedRevision }) });
 
 const cmd = (roomId: string, sessionId: string, action: string, body: Record<string, unknown> = {}) =>
   call(`/api/rooms/${enc(roomId)}/prayer-sessions/${enc(sessionId)}/${action}`,
@@ -114,6 +151,8 @@ export const startSession = (roomId: string, sid: string, expectedRevision: numb
   cmd(roomId, sid, 'start', { expectedRevision });
 export const advanceSession = (roomId: string, sid: string, expectedRevision: number) =>
   cmd(roomId, sid, 'advance', { expectedRevision });
+export const previousSession = (roomId: string, sid: string, expectedRevision: number) =>
+  cmd(roomId, sid, 'previous', { expectedRevision });
 export const selectSessionItem = (roomId: string, sid: string, itemId: string, expectedRevision: number) =>
   cmd(roomId, sid, 'select-item', { itemId, expectedRevision });
 export const setFacilitator = (roomId: string, sid: string, userId: string | null, expectedRevision: number) =>
@@ -122,6 +161,14 @@ export const endSession = (roomId: string, sid: string, expectedRevision: number
   cmd(roomId, sid, 'end', { expectedRevision });
 
 /** 「祷告会已进行 18:32」。基准必须是 server 的 startedAt，刷新页面后仍正确。 */
+/** 前端推荐模板（§11）。**这是前端辅助，不是服务器默认 session 内容。** */
+export const RECOMMENDED_TEMPLATE: DraftItem[] = [
+  { title: '为世界和平祷告' },
+  { title: '为教会复兴祷告', scriptureRef: '西 4:2', scriptureText: '你们要恒切祷告，在此警醒感恩。' },
+  { title: '为软弱肢体代祷' },
+  { title: '求智慧与启示' },
+];
+
 export function elapsedText(startedAt: number | null, nowMs: number): string {
   if (!startedAt) return '';
   const s = Math.max(0, Math.floor((nowMs - startedAt) / 1000));

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } 
 import {
   ClipboardList, BookMarked, Leaf, ChevronRight, Crown, Shield, Lock,
   Users, Trash2, EyeOff, Check, X, Plus as PlusIcon, ChevronLeft, MoreHorizontal,
-  Flag, EyeOff as HideIcon, Eye, Play, SkipForward, Square, UserCheck,
+  Flag, EyeOff as HideIcon, Eye, Play, SkipForward, SkipBack, Square, UserCheck, Pencil,
 } from 'lucide-react';
 import {
   fetchPrayerRoom, savePrayerTopics, postPrayerShare, deletePrayerShare,
@@ -13,7 +13,8 @@ import {
 } from '../../services/prayerRoomService';
 import { PT, prayerCard } from './prayerTheme';
 import { usePrayerSession } from './usePrayerSession';
-import { elapsedText, ERROR_TEXT } from '../../services/prayerSessionService';
+import { elapsedText, ERROR_TEXT, type DraftItem } from '../../services/prayerSessionService';
+import PrayerSessionBuilder from './PrayerSessionBuilder';
 import PrayerRoomActionBar, { type PrayerAction } from './PrayerRoomActionBar';
 import PrayerBottomSheet from './PrayerBottomSheet';
 
@@ -235,12 +236,45 @@ const PrayerSessionBlock: React.FC<{
 }> = ({ ps, clockTick, showToast, presence }) => {
   const { session: s, canManage, pending } = ps;
   const [pickFacilitator, setPickFacilitator] = useState(false);
+  const [builder, setBuilder] = useState(false);
+  const [confirmEnd, setConfirmEnd] = useState(false);
 
   const act = async (fn: () => Promise<{ ok: boolean; code?: keyof typeof ERROR_TEXT }>) => {
     const r = await fn();
     // §31 必须按错误码区分提示，不能一律「操作失败」
     if (!r.ok && r.code) showToast(ERROR_TEXT[r.code]);
   };
+
+  /** 保存 Builder。andStart 时保存成功后再调 start——**绝不在客户端直接置 active**。 */
+  const saveFromBuilder = async (items: DraftItem[], title: string | null, andStart: boolean) => {
+    const r = s ? await ps.update(items, title) : await ps.create(items, title ?? undefined);
+    if (!r.ok) { if (r.code) showToast(ERROR_TEXT[r.code]); return; }
+    setBuilder(false);
+    if (andStart) {
+      const started = await ps.start();
+      if (!started.ok && started.code) showToast(ERROR_TEXT[started.code]);
+    }
+    await ps.refresh();     // start 之后重新读取服务器状态
+  };
+
+  if (builder) {
+    return (
+      <PrayerSessionBuilder
+        initialTitle={s?.title}
+        initialItems={s?.status === 'scheduled'
+          ? s.items.map(i => ({
+              title: i.title,
+              description: i.description ?? undefined,
+              scriptureRef: i.scriptureRef ?? undefined,
+              scriptureText: i.scriptureText ?? undefined,
+            }))
+          : undefined}
+        saving={pending === 'create' || pending === 'update' || pending === 'start'}
+        onCancel={() => setBuilder(false)}
+        onSave={saveFromBuilder}
+      />
+    );
+  }
 
   // ---------- 没有祷告会 ----------
   if (!s) {
@@ -251,17 +285,10 @@ const PrayerSessionBlock: React.FC<{
           目前没有正在进行的祷告会。你仍然可以浏览代祷墙、发布代祷、默想经文或安静等候。
         </p>
         {canManage && (
-          <button
-            onClick={() => act(() => ps.create([
-              { title: '为世界和平祷告' },
-              { title: '为教会复兴祷告', scriptureRef: '西 4:2', scriptureText: '你们要恒切祷告，在此警醒感恩。' },
-              { title: '为身心软弱的肢体代祷' },
-              { title: '求主赐下智慧与启示' },
-            ]))}
-            disabled={pending === 'create'}
-            className="mt-3 inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[12px] font-bold text-white active:scale-95 transition disabled:opacity-50"
+          <button onClick={() => setBuilder(true)}
+            className="mt-3 inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[12px] font-bold text-white active:scale-95 transition"
             style={{ background: PT.navy }}>
-            <Play size={13} /> {pending === 'create' ? '创建中…' : '开始新的祷告会'}
+            <Pencil size={13} /> 准备新的祷告会
           </button>
         )}
       </div>
@@ -271,7 +298,8 @@ const PrayerSessionBlock: React.FC<{
   const current = s.items.find(i => i.id === s.currentItemId) ?? null;
   const curIdx = s.items.findIndex(i => i.id === s.currentItemId);
   const isLast = curIdx >= 0 && curIdx === s.items.length - 1;
-  const elapsed = elapsedText(s.startedAt, Date.now());
+  // §1 用服务器时间的估算值，而不是裸 Date.now()——消除设备时钟偏差
+  const elapsed = elapsedText(s.startedAt, ps.serverNow());
   void clockTick;   // 依赖它触发每秒重渲染
 
   return (
@@ -282,6 +310,7 @@ const PrayerSessionBlock: React.FC<{
           <div className="flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: PT.online }} />
             <span className="text-[11px] font-bold tracking-wide" style={{ color: PT.gold }}>当前祷告</span>
+            {s.title && <bdi dir="auto" className="text-[11px] truncate" style={{ color: PT.muted }}>· {s.title}</bdi>}
             <span className="ml-auto font-mono text-[11px] tabular-nums" style={{ color: PT.muted }}>
               已进行 {elapsed}
             </span>
@@ -317,8 +346,16 @@ const PrayerSessionBlock: React.FC<{
 
       {s.status === 'scheduled' && (
         <div style={{ ...prayerCard, padding: '14px 18px' }}>
+          {s.title && <bdi dir="auto" className="block text-[15px] font-bold mb-1" style={{ color: PT.navy }}>{s.title}</bdi>}
           <p className="text-[13px]" style={{ color: PT.navy }}>祷告会已准备好，等待开始。</p>
           <p className="text-[11px] mt-1" style={{ color: PT.muted }}>共 {s.items.length} 项祷告事项。</p>
+          {canManage && (
+            <button onClick={() => setBuilder(true)}
+              className="mt-3 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11.5px] font-bold active:scale-95"
+              style={{ color: PT.gold, background: PT.goldWash }}>
+              <Pencil size={12} /> 编辑内容
+            </button>
+          )}
         </div>
       )}
 
@@ -372,6 +409,11 @@ const PrayerSessionBlock: React.FC<{
             )}
             {s.status === 'active' && (
               <>
+                <button onClick={() => act(ps.previous)} disabled={pending === 'previous' || curIdx <= 0}
+                  className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[12px] font-bold active:scale-95 disabled:opacity-40"
+                  style={{ color: PT.navy, background: PT.card }}>
+                  <SkipBack size={13} /> {pending === 'previous' ? '切换中…' : '上一项'}
+                </button>
                 <button onClick={() => act(ps.advance)} disabled={pending === 'advance' || isLast}
                   className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[12px] font-bold active:scale-95 disabled:opacity-40"
                   style={{ color: PT.navy, background: PT.card }}>
@@ -385,13 +427,31 @@ const PrayerSessionBlock: React.FC<{
               </>
             )}
             {s.status !== 'ended' && (
-              <button onClick={() => act(ps.end)} disabled={pending === 'end'}
+              <button onClick={() => setConfirmEnd(true)} disabled={pending === 'end'}
                 className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[12px] font-bold active:scale-95 disabled:opacity-50"
                 style={{ color: '#9B2C2C', background: PT.card }}>
                 <Square size={12} /> {pending === 'end' ? '结束中…' : '结束祷告会'}
               </button>
             )}
           </div>
+
+          {/* §17 结束确认，避免误触 */}
+          {confirmEnd && (
+            <div className="mt-3 rounded-xl p-3" style={{ background: PT.card }}>
+              <p className="text-[13px] font-bold" style={{ color: PT.navy }}>确定结束本次祷告会？</p>
+              <p className="text-[11.5px] mt-1" style={{ color: PT.muted }}>结束后仍可查看本次祷告记录。</p>
+              <div className="flex gap-2 mt-3">
+                <button onClick={() => setConfirmEnd(false)}
+                  className="flex-1 h-9 rounded-full text-[12px] font-bold" style={{ color: PT.body, background: PT.neutralWash }}>
+                  继续祷告
+                </button>
+                <button onClick={async () => { setConfirmEnd(false); await act(ps.end); }}
+                  className="flex-1 h-9 rounded-full text-[12px] font-bold text-white" style={{ background: '#9B2C2C' }}>
+                  结束祷告会
+                </button>
+              </div>
+            </div>
+          )}
 
           {pickFacilitator && s.status === 'active' && (
             <div className="mt-3 pt-3 flex flex-wrap gap-1.5" style={{ borderTop: `1px solid ${PT.divider}` }}>

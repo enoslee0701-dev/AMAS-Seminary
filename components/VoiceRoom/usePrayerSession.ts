@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  fetchCurrentSession, startSession, advanceSession, selectSessionItem,
-  setFacilitator, endSession, createSession, POLL_FOR, EMPTY_SESSION,
-  type SessionState, type CommandResult,
+  fetchCurrentSession, startSession, advanceSession, previousSession, selectSessionItem,
+  setFacilitator, endSession, createSession, updateSession, POLL_FOR, EMPTY_SESSION,
+  serverOffsetOf, estimatedServerNow,
+  type SessionState, type CommandResult, type DraftItem,
 } from '../../services/prayerSessionService';
 
 /**
@@ -22,13 +23,18 @@ export function usePrayerSession(roomId: string, enabled: boolean) {
   const [state, setState] = useState<SessionState>(EMPTY_SESSION);
   const [loaded, setLoaded] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
+  /** 服务器时间与本机的差值。所有 elapsed 都基于它，消除设备时钟偏差（§1）。 */
+  const [serverOffset, setServerOffset] = useState(0);
   const timer = useRef<number>(0);
   const alive = useRef(true);
 
   const refresh = useCallback(async () => {
     const r = await fetchCurrentSession(roomId);
     if (!alive.current) return;
-    if (r.ok && r.state) setState(r.state);
+    if (r.ok && r.state) {
+      setState(r.state);
+      setServerOffset(serverOffsetOf(r.state.serverNow));
+    }
     setLoaded(true);
   }, [roomId]);
 
@@ -57,8 +63,10 @@ export function usePrayerSession(roomId: string, enabled: boolean) {
     setPending(key);
     const r = await fn();
     if (alive.current) {
-      if (r.state) setState(r.state);       // 409 冲突时后端也带回最新状态
-      else void refresh();
+      if (r.state) {
+        setState(r.state);                  // 409 冲突时后端也带回最新状态
+        setServerOffset(serverOffsetOf(r.state.serverNow));
+      } else void refresh();
       setPending(null);
     }
     return r;
@@ -74,10 +82,15 @@ export function usePrayerSession(roomId: string, enabled: boolean) {
     loaded,
     pending,
     refresh,
-    create: (items: { title: string; scriptureRef?: string; scriptureText?: string }[]) =>
-      run('create', () => createSession(roomId, items)),
+    /** 服务器时间的估算值。UI 用它算「已进行 mm:ss」，而不是裸 Date.now()。 */
+    serverNow: () => estimatedServerNow(serverOffset),
+    serverOffset,
+    create: (items: DraftItem[], title?: string) => run('create', () => createSession(roomId, items, title)),
+    update: (items: DraftItem[], title: string | null) =>
+      run('update', () => updateSession(roomId, s!.id, items, title, rev)),
     start: () => run('start', () => startSession(roomId, s!.id, rev)),
     advance: () => run('advance', () => advanceSession(roomId, s!.id, rev)),
+    previous: () => run('previous', () => previousSession(roomId, s!.id, rev)),
     selectItem: (itemId: string) => run(`select:${itemId}`, () => selectSessionItem(roomId, s!.id, itemId, rev)),
     assignFacilitator: (userId: string | null) => run('facilitator', () => setFacilitator(roomId, s!.id, userId, rev)),
     end: () => run('end', () => endSession(roomId, s!.id, rev)),
