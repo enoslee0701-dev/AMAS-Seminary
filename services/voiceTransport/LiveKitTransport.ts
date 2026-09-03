@@ -24,6 +24,7 @@ import type {
   VoiceTransportEvents,
 } from './types';
 import { initialAvatar } from '../imageFallback';
+import { fetchAuthed } from '../authService';
 
 interface TokenResponse {
   url: string;
@@ -37,15 +38,23 @@ function backendBase(): string {
   return (base ?? '').replace(/\/$/, '');
 }
 
-async function fetchToken(roomId: string, userId: string, userName: string): Promise<TokenResponse> {
+/**
+ * 取 LiveKit 短期 token（Phase 4 §3/§4/§5）。
+ *
+ * - 走 `fetchAuthed`，凭据在 **Authorization 头**，不进 URL / history / Referer
+ * - 路径带 roomId，服务端以 requireRoomExists + requireRoomMember 校验成员资格
+ * - **不再传 identity / name**：服务器从 JWT 与 users 表派生，客户端无法冒充他人
+ * - token 只在内存里用完即弃，不写 localStorage
+ */
+async function fetchToken(roomId: string): Promise<TokenResponse> {
   const base = backendBase();
   if (!base) {
     throw new Error('VITE_API_BASE_URL is not set — cannot fetch LiveKit token.');
   }
-  const res = await fetch(`${base}/api/voice/token`, {
+  const res = await fetchAuthed(`${base}/api/rooms/${encodeURIComponent(roomId)}/voice/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ roomName: roomId, identity: userId, name: userName }),
+    body: '{}',
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
@@ -93,7 +102,8 @@ export class LiveKitTransport implements VoiceTransport {
 
   async join(roomId: string, userId: string, userName: string): Promise<void> {
     if (this.connected) return;
-    const { url, token } = await fetchToken(roomId, userId, userName);
+    void userId; void userName;   // identity 由服务器决定，客户端参数仅保留接口兼容
+    const { url, token } = await fetchToken(roomId);
 
     // Lazy-load livekit-client only when the LiveKit transport is actually used.
     if (!LK) LK = await import('livekit-client');

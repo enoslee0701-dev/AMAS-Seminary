@@ -4,12 +4,29 @@ import { AccessToken } from 'livekit-server-sdk';
 import agoraTokenPkg from 'agora-token';
 const { RtcRole, RtcTokenBuilder } = agoraTokenPkg as unknown as typeof import('agora-token');
 import { assertConfigured, config } from '../config.js';
+import { requireRoomExists, requireRoomMember } from '../middleware/roomAuth.js';
+import { db } from '../db.js';
 
+/**
+ * Phase 4 §3/§4/§5 安全收紧。
+ *
+ * 旧实现从 body 拿 roomName + identity，且只有 requireAuth：
+ *   - 任何登录用户都能为**任意房间**取 token（没有 membership 校验）；
+ *   - identity 由客户端指定 → 用户 C 可以把自己连接成「王牧师」。
+ *
+ * 现在：roomId 走 URL 参数并经 requireRoomExists + requireRoomMember，
+ * identity 与显示名一律由服务器从 JWT + users 表派生，body 里的
+ * identity / name / role 全部忽略。
+ */
 interface TokenRequestBody {
-  roomName?: string;
-  identity?: string;
-  name?: string;
+  /** @deprecated 客户端不再决定 identity/roomName；保留仅为兼容旧请求体解析 */
+  _ignored?: never;
 }
+
+/** 可信显示名只从 users 表取，绝不采用客户端传入。 */
+const stmtVoiceUser = db.prepare<[string], { name: string }>(
+  'SELECT name FROM users WHERE id = ? LIMIT 1',
+);
 
 interface AgoraTokenRequestBody {
   channelName?: string;
@@ -27,16 +44,22 @@ interface AgoraTokenRequestBody {
  * Response: { url: string, token: string, identity: string, expiresAt: number }
  */
 export function registerVoiceRoutes(app: Express): void {
-  app.post('/api/voice/token', async (req: Request, res: Response) => {
+  /**
+   * POST /api/rooms/:roomId/voice/token
+   * 守卫链与 prayer API 一致：auth → roomExists → roomMember。
+   * 非成员、其他房间成员、已 Leave 的用户一律 403。
+   */
+  app.post('/api/rooms/:roomId/voice/token', requireRoomExists, requireRoomMember,
+    async (req: Request, res: Response) => {
     try {
       assertConfigured('liveKit');
-      const { roomName, identity, name } = (req.body ?? {}) as TokenRequestBody;
-      if (!roomName || !identity) {
-        return res.status(400).json({ error: 'roomName and identity are required.' });
-      }
-      // Basic sanitization — LiveKit room names must be URL-safe-ish.
-      const safeRoom = roomName.replace(/[^A-Za-z0-9_\-:.]/g, '_').slice(0, 64);
-      const safeIdentity = identity.slice(0, 64);
+      const p = req.principal;
+      if (!p || p.kind !== 'user') return res.status(401).json({ error: 'User token required.' });
+      // roomName 来自已校验 membership 的 URL 参数，不是 body
+      const safeRoom = req.params.roomId.replace(/[^A-Za-z0-9_\-:.]/g, '_').slice(0, 64);
+      // identity 由服务器派生，body 传什么都无效——防止冒充他人
+      const safeIdentity = p.user.id.slice(0, 64);
+      const name = stmtVoiceUser.get(p.user.id)?.name;
 
       const ttlSeconds = 60 * 60; // 1h
       const at = new AccessToken(config.liveKit.apiKey, config.liveKit.apiSecret, {

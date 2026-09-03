@@ -44,7 +44,7 @@ app.use(express.json({ limit: '128kb' }));
 // auth middleware so that unauthenticated abusers also count against the
 // rate-limit window.
 app.use('/api/', generalApiLimiter);
-app.use(['/api/voice/token', '/api/voice/agora-token'], tokenLimiter);
+app.use(['/api/rooms/:roomId/voice/token', '/api/voice/agora-token'], tokenLimiter);
 
 // Auth routes are registered BEFORE the bearer middleware so signup/login
 // are public. They have their own rate limit applied internally.
@@ -52,7 +52,10 @@ registerAuthRoutes(app);
 
 // Bearer auth on privileged endpoints: accepts either the service APP_SECRET
 // (machine clients) OR a valid user access JWT. /api/health stays open.
-app.post('/api/voice/token', requireAuth);
+// Phase 4：LiveKit token 路径改为 /api/rooms/:roomId/voice/token，
+// 守卫在 voice.ts 内以 requireRoomExists + requireRoomMember 明确声明。
+// 这里补上 requireAuth（它必须最先运行），Agora 旧路径保持原样。
+app.post('/api/rooms/:roomId/voice/token', requireAuth);
 app.post('/api/voice/agora-token', requireAuth);
 app.post('/api/rooms', requireAuth);
 app.post('/api/rooms/validate', requireAuth);

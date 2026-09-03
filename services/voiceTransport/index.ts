@@ -28,11 +28,15 @@ export type TransportKind = 'none' | 'mock' | 'livekit' | 'agora';
  * not set or not running under Vite.
  */
 function readEnvKind(): TransportKind | undefined {
-  // `import.meta.env` is defined by Vite at build time. Guarded so the
-  // module is also safe to import from non-Vite tooling (e.g. node-based
-  // unit tests).
-  const meta = import.meta as unknown as { env?: Record<string, string | undefined> };
-  const raw = meta.env?.VITE_VOICE_TRANSPORT;
+  // 必须写成**直接的** `import.meta.env` 成员表达式。
+  //
+  // 之前这里先做了 `const meta = import.meta`，再读 `meta.env` —— Vite 的
+  // define 只替换字面量 `import.meta.env`，一旦把 import.meta 存进变量，
+  // 拿到的就是浏览器原生对象（只有 url，没有 env），于是
+  // VITE_VOICE_TRANSPORT **永远读不到**，transport 恒为 'none'。
+  // services/prayerRoomService.ts 用的就是下面这种直接写法，一直正常。
+  const raw = (import.meta as unknown as { env?: Record<string, string | undefined> })
+    .env?.VITE_VOICE_TRANSPORT;
   if (raw === 'none' || raw === 'mock' || raw === 'livekit' || raw === 'agora') return raw;
   return undefined;
 }
@@ -78,3 +82,4 @@ export type {
 export { MockTransport } from './MockTransport';
 export { LiveKitTransport } from './LiveKitTransport';
 export { AgoraTransport } from './AgoraTransport';
+

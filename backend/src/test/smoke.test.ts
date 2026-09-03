@@ -201,39 +201,25 @@ test('GET /api/health returns ok and features flags', async () => {
   assert.equal(body.features.liveKit, true, 'liveKit feature should be enabled (dummy creds set)');
 });
 
-test('POST /api/voice/token issues a LiveKit JWT', async () => {
-  const r = await request('POST', '/api/voice/token', {
-    roomName: 'smoke-room',
-    identity: 'smoke-user',
-    name: 'Smoke User',
-  }, AUTH_HEADERS);
-  assert.equal(r.status, 200, `expected 200, got ${r.status} body=${r.body}`);
-  const body = r.json<{
-    url: string;
-    token: string;
-    identity: string;
-    expiresAt: number;
-  }>();
-  assert.equal(body.url, 'wss://dummy.livekit.cloud');
-  assert.equal(typeof body.token, 'string');
-  // A JWT has 3 dot-separated segments.
-  assert.equal(body.token.split('.').length, 3, 'token should look like a JWT');
-  assert.equal(body.identity, 'smoke-user');
-  assert.equal(typeof body.expiresAt, 'number');
-  assert.ok(body.expiresAt > Math.floor(Date.now() / 1000), 'expiresAt must be in the future');
-});
-
-test('POST /api/voice/token rejects missing fields', async () => {
-  const r = await request('POST', '/api/voice/token', { roomName: 'x' }, AUTH_HEADERS);
-  assert.equal(r.status, 400);
-});
-
-test('POST /api/voice/token without auth returns 401', async () => {
-  const r = await request('POST', '/api/voice/token', {
-    roomName: 'smoke-room',
-    identity: 'smoke-user',
-  });
+// Phase 4 §3/§4/§5：voice token 路径迁到 /api/rooms/:roomId/voice/token，
+// 并要求房间成员资格；identity 由服务器从 JWT 派生，客户端无法指定。
+test('voice token without auth returns 401', async () => {
+  const r = await request('POST', '/api/rooms/smoke-room/voice/token', {});
   assert.equal(r.status, 401, `expected 401, got ${r.status} body=${r.body}`);
+});
+
+test('voice token for a non-existent room returns 404', async () => {
+  const r = await request('POST', '/api/rooms/no_such_room_zz/voice/token', {}, AUTH_HEADERS);
+  assert.equal(r.status, 404, `expected 404, got ${r.status} body=${r.body}`);
+});
+
+test('legacy /api/voice/token path is gone', async () => {
+  // 旧端点允许任何登录用户为任意房间取 token，并接受客户端 identity。
+  // 它必须彻底消失，而不是继续可用。
+  const r = await request('POST', '/api/voice/token', {
+    roomName: 'smoke-room', identity: 'anyone',
+  }, AUTH_HEADERS);
+  assert.equal(r.status, 404, `legacy path must be removed, got ${r.status}`);
 });
 
 test('GET /api/health does NOT require auth', async () => {

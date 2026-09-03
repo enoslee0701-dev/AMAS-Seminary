@@ -14,6 +14,7 @@ import {
 import { PT, prayerCard } from './prayerTheme';
 import { usePrayerSession } from './usePrayerSession';
 import { usePrayerRoomRealtime } from './usePrayerRoomRealtime';
+import { useRoomVoice } from './useRoomVoice';
 import { elapsedText, ERROR_TEXT, type DraftItem } from '../../services/prayerSessionService';
 import PrayerSessionBuilder from './PrayerSessionBuilder';
 import PrayerRoomActionBar, { type PrayerAction } from './PrayerRoomActionBar';
@@ -37,6 +38,7 @@ import PrayerBottomSheet from './PrayerBottomSheet';
 
 interface Props {
   roomId: string;
+  meId: string;
   meName: string;
   meAvatar: string;
   fontSize: number;
@@ -149,8 +151,8 @@ const verseOfToday = () => {
  * Hero：约 160px 的晨光带。窗、十字架、烛光全部 CSS/SVG 绘制，零外部图片。
  * 只显示真实可得的状态（在线人数）；不显示「已祷告 XX 分钟」。
  */
-const Hero: React.FC<{ online: number; onBack?: () => void; onOpenInfo?: () => void }> =
-  ({ online, onBack, onOpenInfo }) => (
+const Hero: React.FC<{ online: number; voiceCount?: number; onBack?: () => void; onOpenInfo?: () => void }> =
+  ({ online, voiceCount = 0, onBack, onOpenInfo }) => (
     <div className="relative shrink-0 overflow-hidden" style={{ height: 164 }}>
       <div className="absolute inset-0" style={{ background: 'linear-gradient(168deg, #FDF4E7 0%, #FBEFE1 48%, #FAF7F0 100%)' }} />
       <div className="absolute" style={{
@@ -216,6 +218,10 @@ const Hero: React.FC<{ online: number; onBack?: () => void; onOpenInfo?: () => v
           style={{ background: 'rgba(255,255,255,.7)' }}>
           <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: PT.online }} />
           <span className="text-[11px] font-medium" style={{ color: PT.body }}>{online} 人在线</span>
+          {/* §2 presence 与 voice participants 是两个数字，刻意不合并成一个 */}
+          {voiceCount > 0 && (
+            <span className="text-[11px]" style={{ color: PT.muted }}>· {voiceCount} 人已连接语音</span>
+          )}
         </div>
       </div>
     </div>
@@ -478,7 +484,7 @@ const PrayerSessionBlock: React.FC<{
 
 
 const PrayerRoomPanel: React.FC<Props> = ({
-  roomId, meName, meAvatar, fontSize, showToast,
+  roomId, meId, meName, meAvatar, fontSize, showToast,
   onViewParticipants, onViewProfile, onBack, onOpenInfo,
 }) => {
   const [server, setServer] = useState<PrayerRoomState>(EMPTY_STATE);
@@ -493,6 +499,11 @@ const PrayerRoomPanel: React.FC<Props> = ({
     * realtime 健康时 polling 自动降频（30s/60s），断开时回到快档（3s/10s/15s）。
     */
   const [rtHealthy, setRtHealthy] = useState(false);
+  /**
+   * 语音（Phase 4）。**它不产出成员列表**——在线成员永远来自 presence。
+   * voice.peers 只表示「在线成员中当前连着音频的那部分」，是另一个数字。
+   */
+  const voice = useRoomVoice(roomId, meId, meName);
   /** 共享祷告会：**服务器唯一真相源**。currentItemId 等绝不复制进本地 reducer。 */
   const ps = usePrayerSession(roomId, backend, rtHealthy);
   // 只用于「已进行 mm:ss」的视觉刷新；基准始终是 server 的 startedAt
@@ -595,13 +606,29 @@ const PrayerRoomPanel: React.FC<Props> = ({
     if (a === 'write') dispatch({ t: 'sheet', v: 'write' });
     else if (a === 'quiet') dispatch({ t: 'page', v: ui.subPage === 'quiet' ? null : 'quiet' });
     else if (a === 'verse') dispatch({ t: 'page', v: ui.subPage === 'verse' ? null : 'verse' });
+    else if (a === 'voice') void voice.joinVoice();
+    else if (a === 'mic') void voice.toggleMic();
     else onOpenInfo?.();
   };
+
+  // §14/§23 语音出错只提示一行，绝不让祷告室其余功能失效
+  useEffect(() => {
+    if (!voice.error) return;
+    showToast(voice.error);
+    voice.clearError();
+  }, [voice.error]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const shell = (children: React.ReactNode) => (
     <div className="flex-1 flex flex-col min-h-0" style={{ background: PT.page }}>
       {children}
-      <PrayerRoomActionBar onAction={onAction} active={ui.subPage} />
+      <PrayerRoomActionBar
+        onAction={onAction}
+        active={ui.subPage}
+        voiceAvailable={voice.available}
+        voiceConnected={voice.state === 'connected'}
+        voiceBusy={voice.state === 'connecting' || voice.state === 'requesting_permission'}
+        micOn={voice.micOn}
+      />
       <PrayerBottomSheet
         open={ui.activeBottomSheet === 'write'}
         onClose={() => dispatch({ t: 'sheet', v: null })}
@@ -661,7 +688,8 @@ const PrayerRoomPanel: React.FC<Props> = ({
   // ---------- 主页面 ----------
   return shell(
     <div className="flex-1 overflow-y-auto scrollbar-hide">
-      <Hero online={online.length} onBack={onBack} onOpenInfo={onOpenInfo} />
+      <Hero online={online.length} voiceCount={voice.state === 'connected' ? voice.peers.length : 0}
+        onBack={onBack} onOpenInfo={onOpenInfo} />
 
       <div className="px-4 pb-5">
 

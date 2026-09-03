@@ -1203,6 +1203,7 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
                    属读经室专用路径，不再服务祷告室。 */
                 <PrayerRoomPanel
                     roomId={activeVoiceRoom.id}
+                    meId={me?.id ?? 'me'}
                     meName={me?.name ?? '我'}
                     meAvatar={me?.avatar ?? ''}
                     fontSize={fontSize}
