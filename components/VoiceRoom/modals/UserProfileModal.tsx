@@ -14,7 +14,7 @@ const UserProfileModal: React.FC<{
   const isMe = user.id === 'me' || user.id === 'u1' && user.name === MOCK_USER.name;
 
   return (
-    <div className="fixed inset-0 z-[10000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 animate-fade-in" onClick={onClose}>
+    <div className="fixed inset-0 z-[10000] max-w-md mx-auto bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 animate-fade-in" onClick={onClose}>
       <div className="bg-white w-full max-sm rounded-3xl p-6 animate-scale-in relative shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
             <X size={20}/>

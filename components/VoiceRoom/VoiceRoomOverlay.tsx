@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import PrayerRoomPanel from './PrayerRoomPanel';
+import { VARIANT, MODAL_WIDTH, type RoomVariant } from './prayerTheme';
 import {
   Heart, MessageCircle, Share2, MoreHorizontal,
   HandHeart, Music, BookOpen, UserPlus, Check, Mic,
@@ -184,6 +185,9 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
     const chatContainerRef = useRef<HTMLDivElement>(null);
     const currentType = activeVoiceRoom.type;
     const isPrayerRoom = currentType === 'prayer';
+    /** 共用弹窗的主题变体：祷告室走浅色，其余四种房间保持原深色。 */
+    const roomVariant: RoomVariant = isPrayerRoom ? 'prayer' : 'default';
+    const V = VARIANT[roomVariant];
     const isPraiseRoom = currentType === 'praise';
     const isBibleRoom = currentType === 'bible';
     const isPreachingRoom = currentType === 'preaching';
@@ -744,20 +748,22 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
         const filtered = participants.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
         return (
-            <div className="fixed inset-0 z-[120] bg-[#12121e] flex flex-col animate-slide-up h-[100dvh]">
+            <div className={`fixed inset-0 z-[120] ${MODAL_WIDTH} flex flex-col animate-slide-up h-[100dvh]`}
+                 style={{ background: V.pageBg, color: V.text }}>
                 {/* Header - 移除英文标注 */}
                 <div className="px-5 pt-safe-top pb-4 flex items-center justify-between shrink-0">
                     <div className="flex items-center">
-                        <div className="w-9 h-9 flex items-center justify-center text-[#4dabf7] mr-3">
+                        <div className="w-9 h-9 flex items-center justify-center mr-3" style={{ color: V.accent }}>
                             <Users size={26} />
                         </div>
                         <div>
-                            <h3 className="text-white font-black text-lg leading-none tracking-tight">房间成员</h3>
+                            <h3 className="font-black text-lg leading-none tracking-tight" style={{ color: V.text }}>房间成员</h3>
                         </div>
                     </div>
                     <button
                         onClick={() => setShowParticipantsList(false)}
-                        className="bg-white/5 p-1.5 rounded-full text-white/40 hover:bg-white/10 transition-all active:scale-90"
+                        className="p-1.5 rounded-full transition-all active:scale-90"
+                        style={{ background: V.itemHover, color: V.subText }}
                     >
                         <X size={18} />
                     </button>
@@ -765,14 +771,16 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
 
                 {/* Search Bar - 翻译占位符 */}
                 <div className="px-5 mb-4 shrink-0">
-                    <div className="bg-[#1a1a2e] border border-white/[0.05] rounded-xl flex items-center px-3.5 h-10 focus-within:ring-1 focus-within:ring-[#3b82f6]/40 transition-all shadow-inner">
-                        <Search size={16} className="text-slate-500 mr-2.5" />
+                    <div className="rounded-xl flex items-center px-3.5 h-10 transition-all"
+                         style={{ background: V.inputBg, border: `1px solid ${V.divider}` }}>
+                        <Search size={16} className="mr-2.5" style={{ color: V.subText }} />
                         <input
                             type="text"
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                             placeholder="搜寻成员姓名..."
-                            className="bg-transparent border-none outline-none text-xs text-white placeholder-slate-600 w-full font-bold"
+                            className="bg-transparent border-none outline-none text-xs w-full font-bold"
+                            style={{ color: V.text }}
                         />
                     </div>
                 </div>
@@ -807,7 +815,8 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
                                             role: p.role
                                         });
                                     }}
-                                    className="bg-[#1a1a2e]/60 border border-white/[0.02] rounded-2xl p-2.5 flex items-center justify-between group active:bg-white/5 transition-all cursor-pointer shadow-md"
+                                    className="rounded-2xl p-2.5 flex items-center justify-between group transition-all cursor-pointer"
+                                    style={{ background: V.sheetBg, border: `1px solid ${V.divider}` }}
                                 >
                                     <div className="flex items-center flex-1 min-w-0">
                                         <div className="relative shrink-0">
@@ -820,18 +829,18 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
                                         </div>
                                         <div className="flex-1 min-w-0 ml-3.5">
                                             <div className="flex items-center space-x-1.5 mb-0.5">
-                                                <span className="text-white font-bold text-[14px] truncate tracking-tight">{p.id === 'me' ? '我' : p.name}</span>
+                                                <span className="font-bold text-[14px] truncate tracking-tight" style={{ color: V.text }}>{p.id === 'me' ? '我' : p.name}</span>
                                                 <div className={`flex items-center px-1.5 py-0.5 rounded-md text-[8px] font-black tracking-wider ${badgeColor}`}>
                                                     {icon}
                                                     {roleName}
                                                 </div>
                                             </div>
                                             {/* 显示学位信息，取代英文 Stage Member */}
-                                            <p className="text-[8px] text-[#4dabf7] font-black uppercase tracking-[0.12em]">{p.degree || '校友'}</p>
+                                            <p className="text-[8px] font-black uppercase tracking-[0.12em]" style={{ color: V.accent }}>{p.degree || '校友'}</p>
                                         </div>
                                     </div>
                                     <div className="pl-2 pr-1">
-                                        <ChevronRight size={16} className="text-slate-600 group-hover:text-slate-400 transition-colors" />
+                                        <ChevronRight size={16} className="transition-colors" style={{ color: V.subText }} />
                                     </div>
                                 </div>
                             );
@@ -1198,10 +1207,9 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
                     meAvatar={me?.avatar ?? ''}
                     fontSize={fontSize}
                     showToast={showToast}
-                    localParticipants={participants}
                     onViewParticipants={() => setShowParticipantsList(true)}
                     onViewProfile={handleUserClick}
-                    onMinimize={() => setIsRoomMinimized(true)}
+                    onBack={() => setIsRoomMinimized(true)}
                     onOpenInfo={() => setShowRoomInfo(true)}
                 />
             ) : isBibleRoom ? (
@@ -1522,7 +1530,7 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
              </div>
           </div>
 
-        <div className={`border-none p-2 pb-[calc(env(safe-area-inset-bottom)+8px)] shrink-0 z-50 relative transition-all ${isPrayerRoom ? 'bg-white/85 backdrop-blur-xl border-t border-black/[.06]' : 'bg-transparent'}`}>
+        {!isPrayerRoom && <div className="bg-transparent border-none p-2 pb-[calc(env(safe-area-inset-bottom)+8px)] shrink-0 z-50 relative transition-all">
            {showMenu && (
              <div className="absolute bottom-full left-4 mb-2 w-48 bg-[#1a1a2e] backdrop-blur-xl rounded-2xl border border-white/10 shadow-2xl overflow-hidden animate-scale-in origin-bottom-left z-50">
                 {isHost && (<button onClick={() => { setShowMenu(false); setShowThemeSwitcher(true); }} className="w-full text-left px-5 py-4 hover:bg-white/5 flex items-center text-sm text-blue-300 border-b border-white/5"><Palette size={18} className="mr-3"/> 切换主题</button>)}
@@ -1584,7 +1592,7 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
                 </button>
               </div>
            </div>
-        </div>
+        </div>}
         </div>
 
         {showRoomInfo && (
