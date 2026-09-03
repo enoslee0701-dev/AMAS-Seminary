@@ -189,8 +189,8 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
     const isPreachingRoom = currentType === 'preaching';
     const getBgGradient = () => {
        switch(currentType) {
-          // 祷告室底色与 PrayerRoomPanel 的调色板配套（换主题时两处一起改）
-          case 'prayer': return 'bg-gradient-to-b from-[#16264f] via-[#0b1430] to-black';
+          // 祷告室为浅色晨光版，底色与 PrayerRoomPanel 的 C.page 一致
+          case 'prayer': return 'bg-[#FAF6F0]';
           case 'praise': return 'bg-gradient-to-b from-amber-950 via-slate-900 to-black';
           case 'bible': return 'bg-gradient-to-b from-[#0f172a] via-[#1a1a2e] to-black';
           case 'fellowship': return 'bg-gradient-to-b from-emerald-950 via-slate-900 to-black';
@@ -1103,7 +1103,7 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
 
     // max-w-md mx-auto：与 App 其余全屏视图一致。此前缺这一条，桌面宽度下
     // 整个房间被拉成 1200px+，卡片横摊、比例全垮（设计稿是手机竖屏）。
-    const containerClass = `fixed inset-0 z-[9999] max-w-md mx-auto ${bgGradient} animate-fade-in flex flex-col text-white h-[100dvh]`;
+    const containerClass = `fixed inset-0 z-[9999] max-w-md mx-auto ${bgGradient} animate-fade-in flex flex-col ${isPrayerRoom ? '' : 'text-white'} h-[100dvh]`;
 
     const overlayContent = (
       <div className={containerClass}>
@@ -1145,7 +1145,8 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
 
         <GiftAnimationLayer activeEffects={activeGiftEffects} />
 
-        {/* Top Room Header */}
+        {/* Top Room Header —— 祷告室由 PrayerRoomPanel 的 hero 接管（含最小化/设置），此处隐藏 */}
+        {!isPrayerRoom && <>
         {/* pt-safe-top clears the status bar / Dynamic Island; the inner row
             holds the actual controls with extra breathing room below it so
             nothing crowds the island. */}
@@ -1184,6 +1185,7 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
           </div>
         </div>
         </div>
+        </>}
 
         <div className="flex-1 relative w-full overflow-hidden flex flex-col">
             {isPrayerRoom ? (
@@ -1199,6 +1201,8 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
                     localParticipants={participants}
                     onViewParticipants={() => setShowParticipantsList(true)}
                     onViewProfile={handleUserClick}
+                    onMinimize={() => setIsRoomMinimized(true)}
+                    onOpenInfo={() => setShowRoomInfo(true)}
                 />
             ) : isBibleRoom ? (
                 <div className="flex-1 flex flex-col pt-0 overflow-y-auto scrollbar-hide px-4">
@@ -1518,7 +1522,7 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
              </div>
           </div>
 
-        <div className="bg-transparent border-none p-2 pb-[calc(env(safe-area-inset-bottom)+8px)] shrink-0 z-50 relative transition-all">
+        <div className={`border-none p-2 pb-[calc(env(safe-area-inset-bottom)+8px)] shrink-0 z-50 relative transition-all ${isPrayerRoom ? 'bg-white/85 backdrop-blur-xl border-t border-black/[.06]' : 'bg-transparent'}`}>
            {showMenu && (
              <div className="absolute bottom-full left-4 mb-2 w-48 bg-[#1a1a2e] backdrop-blur-xl rounded-2xl border border-white/10 shadow-2xl overflow-hidden animate-scale-in origin-bottom-left z-50">
                 {isHost && (<button onClick={() => { setShowMenu(false); setShowThemeSwitcher(true); }} className="w-full text-left px-5 py-4 hover:bg-white/5 flex items-center text-sm text-blue-300 border-b border-white/5"><Palette size={18} className="mr-3"/> 切换主题</button>)}
@@ -1542,7 +1546,7 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
            )}
 
            <div className="flex items-center space-x-1.5 max-w-full px-1">
-              <button onClick={() => setShowMenu(!showMenu)} className="shrink-0 w-8 h-8 rounded-full bg-[#1a1a2e] text-white border border-white/10 flex items-center justify-center hover:bg-[#252542] active:scale-90 transition-transform"><Plus size={18} /></button>
+              <button onClick={() => setShowMenu(!showMenu)} className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-transform ${isPrayerRoom ? 'bg-[#F1F3F7] text-[#5A6472]' : 'bg-[#1a1a2e] text-white border border-white/10 hover:bg-[#252542]'}`}><Plus size={18} /></button>
 
               {isPrayerRoom ? <div className="flex-1" /> : <div className="flex-1 bg-[#1a1a2e]/80 backdrop-blur-md rounded-full px-2.5 h-9 flex items-center border border-white/10 focus-within:border-white/20 transition-all">
                 <input
@@ -1562,20 +1566,20 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
 
               <div className="flex items-center space-x-1 shrink-0">
                 {isOnStage ? (
-                  <button onClick={toggleMic} aria-label={isMicOn ? t('voiceRoom.mic.turnOff') : t('voiceRoom.mic.turnOn')} aria-pressed={isMicOn} className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${isMicOn ? 'bg-blue-600 shadow-[0_0_15px_rgba(37,99,235,0.4)]' : 'bg-[#1a1a2e] border border-white/10 text-slate-400'}`}>
+                  <button onClick={toggleMic} aria-label={isMicOn ? t('voiceRoom.mic.turnOff') : t('voiceRoom.mic.turnOn')} aria-pressed={isMicOn} className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${isMicOn ? 'bg-[#3E6BC4] shadow-[0_0_15px_rgba(62,107,196,0.35)]' : (isPrayerRoom ? 'bg-[#F1F3F7] text-[#8A93A3]' : 'bg-[#1a1a2e] border border-white/10 text-slate-400')}`}>
                       {isMicOn ? <Mic size={16} className="text-white" /> : <MicOff size={16} />}
                   </button>
                 ) : (
-                  <button onClick={handleRaiseHand} aria-label={t('voiceRoom.mic.raiseHand')} className="w-8 h-8 rounded-full bg-[#1a1a2e] border border-white/10 text-slate-400 flex items-center justify-center active:scale-90">
+                  <button onClick={handleRaiseHand} aria-label={t('voiceRoom.mic.raiseHand')} className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-90 ${isPrayerRoom ? 'bg-[#F1F3F7] text-[#8A93A3]' : 'bg-[#1a1a2e] border border-white/10 text-slate-400'}`}>
                       <Hand size={16} />
                   </button>
                 )}
 
-                <button onClick={() => setShowGiftPanel(!showGiftPanel)} aria-label="送出礼物" className={`w-8 h-8 rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-transform ${isPrayerRoom ? 'bg-gradient-to-b from-[#F4D796] to-[#DDAE55] text-[#4A2E05]' : 'bg-gradient-to-br from-amber-500 to-orange-600 text-white'}`}>
+                <button onClick={() => setShowGiftPanel(!showGiftPanel)} aria-label="送出礼物" className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-transform ${isPrayerRoom ? 'bg-[#FCF6EA] text-[#C99A45]' : 'bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-lg'}`}>
                   <Gift size={16} />
                 </button>
 
-                <button onClick={() => { if(isPreachingRoom || isPrayerRoom) { setShowResponsePanel(!showResponsePanel); } else { triggerReaction(); } }} aria-label={isPreachingRoom || isPrayerRoom ? '快速回应' : '送出爱心'} className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${isPreachingRoom || isPrayerRoom ? (showResponsePanel ? 'bg-purple-600 text-white' : 'bg-[#1a1a2e] text-purple-400 border border-purple-50/20') : 'bg-[#1a1a2e] text-rose-500 border border-rose-500/20'}`}>
+                <button onClick={() => { if(isPreachingRoom || isPrayerRoom) { setShowResponsePanel(!showResponsePanel); } else { triggerReaction(); } }} aria-label={isPreachingRoom || isPrayerRoom ? '快速回应' : '送出爱心'} className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${isPrayerRoom ? (showResponsePanel ? 'bg-[#3E6BC4] text-white' : 'bg-[#E4ECFB] text-[#4A72C4]') : (isPreachingRoom ? (showResponsePanel ? 'bg-purple-600 text-white' : 'bg-[#1a1a2e] text-purple-400 border border-purple-50/20') : 'bg-[#1a1a2e] text-rose-500 border border-rose-500/20')}`}>
                     {isPreachingRoom || isPrayerRoom ? <MessageSquare size={16} /> : <Heart size={16} fill="currentColor"/>}
                 </button>
               </div>
