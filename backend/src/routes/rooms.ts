@@ -4,6 +4,7 @@ import { db } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireRoomExists, addMember, removeMember, memberCount } from '../middleware/roomAuth.js';
 import { roomMembershipLimiter } from '../middleware/rateLimit.js';
+import { evictVoiceParticipant } from '../realtime/voiceEviction.js';
 
 /**
  * Room password store, now persisted to SQLite (`rooms` table). The
@@ -144,6 +145,11 @@ export function registerRoomRoutes(app: Express): void {
       removeMember(roomId, p.user.id);
       db.prepare('DELETE FROM room_presence WHERE room_id = ? AND user_id = ?').run(roomId, p.user.id);
     })();
+    // §16 LiveKit token 是无状态 JWT，签发后无法撤销；已建立的语音连接不会
+    // 因为 membership 删除而自动断开。必须服务端主动踢出，否则会出现
+    // 「已退出房间但人还在语音里能听能说」。
+    // 失败不阻塞 Leave Room —— 用 void 调用，异常在函数内部吞掉。
+    void evictVoiceParticipant(roomId, p.user.id);
     res.json({ ok: true, roomId });
   });
 

@@ -111,9 +111,17 @@ export function useRoomVoice(roomId: string, meId: string, meName: string): Room
       await teardown();
       if (!alive.current) return;
       const msg = e instanceof Error ? e.message : String(e);
-      // §14 权限被拒不是房间失败——祷告室其余功能继续可用
-      const denied = /permission|NotAllowed|denied/i.test(msg);
-      setError(denied ? '无法使用麦克风。你仍然可以参与祷告和代祷。' : `语音连接失败：${msg}`);
+      // §1/§14 按原因给不同文案，都不能表现为「系统错误」，
+      // 也都不能让祷告室其余功能失效。
+      if (msg === 'VOICE_SERVICE_UNAVAILABLE') {
+        setError('语音功能暂未启用。你仍然可以参与祷告和代祷。');
+      } else if (msg === 'VOICE_FORBIDDEN') {
+        setError('你已不在这个房间，无法加入语音。');
+      } else if (/permission|NotAllowed|denied/i.test(msg)) {
+        setError('无法使用麦克风。你仍然可以参与祷告和代祷。');
+      } else {
+        setError('语音连接失败，可以稍后重试。你仍然可以参与祷告和代祷。');
+      }
       setState('failed');
     } finally {
       joining.current = false;

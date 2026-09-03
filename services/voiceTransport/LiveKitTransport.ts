@@ -57,6 +57,10 @@ async function fetchToken(roomId: string): Promise<TokenResponse> {
     body: '{}',
   });
   if (!res.ok) {
+    // §1 503 = 语音服务未启用，不是系统错误。抛一个可识别的标记，
+    // 由 useRoomVoice 转成「语音功能暂未启用」这类平静文案。
+    if (res.status === 503) throw new Error('VOICE_SERVICE_UNAVAILABLE');
+    if (res.status === 403) throw new Error('VOICE_FORBIDDEN');
     const body = await res.text().catch(() => '');
     throw new Error(`Token fetch failed (${res.status}): ${body}`);
   }
