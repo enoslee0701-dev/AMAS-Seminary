@@ -12,6 +12,11 @@ export interface Room {
   desc: string;
   announcement?: string;
   action: 'voice' | 'filter';
+  /**
+   * 曾经用于房间卡片的「N 人在听」。该显示已移除——数值是写死的，
+   * 与 room_presence 毫无关系。字段保留但**不要再用它渲染人数**：
+   * 真实在线人数只能来自 presence。
+   */
   participants?: number;
   isCustom?: boolean;
   hostId?: string;

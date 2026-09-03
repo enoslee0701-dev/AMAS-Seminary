@@ -3,6 +3,7 @@ import {
   ClipboardList, BookMarked, Leaf, ChevronRight, Crown, Shield, Lock,
   Users, Trash2, EyeOff, Check, X, Plus as PlusIcon, ChevronLeft, MoreHorizontal,
   Flag, EyeOff as HideIcon, Eye, Play, SkipForward, SkipBack, Square, UserCheck, Pencil,
+  History,
 } from 'lucide-react';
 import {
   fetchPrayerRoom, savePrayerTopics, postPrayerShare, deletePrayerShare,
@@ -20,6 +21,8 @@ import { elapsedText, ERROR_TEXT, type DraftItem } from '../../services/prayerSe
 import PrayerSessionBuilder from './PrayerSessionBuilder';
 import PrayerRoomActionBar, { type PrayerAction } from './PrayerRoomActionBar';
 import PrayerBottomSheet from './PrayerBottomSheet';
+import PrayerSessionSummary from './PrayerSessionSummary';
+import PrayerSessionHistory from './PrayerSessionHistory';
 
 /**
  * 祷告室主面板（Phase 1）。只服务 `prayer` 房间。
@@ -236,12 +239,24 @@ const Hero: React.FC<{ online: number; voiceCount?: number; onBack?: () => void;
  *
  * 次序里的 ✓ 只表示「已经经过该祷告事项」，不是「已完成属灵任务」。
  */
+/** 历次祷告会入口。文字动作用古金，与其它可点击文字保持一致。 */
+const HistoryLink: React.FC<{ onClick: () => void }> = ({ onClick }) => (
+  <button onClick={onClick}
+    className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[12px] font-bold active:scale-95"
+    style={{ color: PT.gold, background: PT.card }}>
+    <History size={13} /> 历次祷告会
+  </button>
+);
+
 const PrayerSessionBlock: React.FC<{
   ps: ReturnType<typeof usePrayerSession>;
   clockTick: number;
   showToast: (m: string) => void;
   presence: { userId: string; name: string; role: string }[];
-}> = ({ ps, clockTick, showToast, presence }) => {
+  /** Phase 5：结束成功后带着刚结束那场的 id 打开纪要。 */
+  onSessionEnded: (sessionId: string) => void;
+  onOpenHistory: () => void;
+}> = ({ ps, clockTick, showToast, presence, onSessionEnded, onOpenHistory }) => {
   const { session: s, canManage, pending } = ps;
   const [pickFacilitator, setPickFacilitator] = useState(false);
   const [builder, setBuilder] = useState(false);
@@ -292,13 +307,16 @@ const PrayerSessionBlock: React.FC<{
         <p className="text-[12px] mt-2.5 px-1 leading-relaxed" style={{ color: PT.muted }}>
           目前没有正在进行的祷告会。你仍然可以浏览代祷墙、发布代祷、默想经文或安静等候。
         </p>
-        {canManage && (
-          <button onClick={() => setBuilder(true)}
-            className="mt-3 inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[12px] font-bold text-white active:scale-95 transition"
-            style={{ background: PT.navy }}>
-            <Pencil size={13} /> 准备新的祷告会
-          </button>
-        )}
+        <div className="flex flex-wrap items-center gap-2 mt-3">
+          {canManage && (
+            <button onClick={() => setBuilder(true)}
+              className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[12px] font-bold text-white active:scale-95 transition"
+              style={{ background: PT.navy }}>
+              <Pencil size={13} /> 准备新的祷告会
+            </button>
+          )}
+          <HistoryLink onClick={onOpenHistory} />
+        </div>
       </div>
     );
   }
@@ -441,6 +459,7 @@ const PrayerSessionBlock: React.FC<{
                 <Square size={12} /> {pending === 'end' ? '结束中…' : '结束祷告会'}
               </button>
             )}
+            <HistoryLink onClick={onOpenHistory} />
           </div>
 
           {/* §17 结束确认，避免误触 */}
@@ -453,7 +472,14 @@ const PrayerSessionBlock: React.FC<{
                   className="flex-1 h-9 rounded-full text-[12px] font-bold" style={{ color: PT.body, background: PT.neutralWash }}>
                   继续祷告
                 </button>
-                <button onClick={async () => { setConfirmEnd(false); await act(ps.end); }}
+                <button onClick={async () => {
+                  setConfirmEnd(false);
+                  // 先记住 id——end 成功后 current 就返回 null，s 会变成 null
+                  const endedId = s.id;
+                  const r = await ps.end();
+                  if (!r.ok) { if (r.code) showToast(ERROR_TEXT[r.code]); return; }
+                  onSessionEnded(endedId);
+                }}
                   className="flex-1 h-9 rounded-full text-[12px] font-bold text-white" style={{ background: '#9B2C2C' }}>
                   结束祷告会
                 </button>
@@ -507,6 +533,13 @@ const PrayerRoomPanel: React.FC<Props> = ({
   const voice = useRoomVoice(roomId, meId, meName);
   // §4 诊断面板只在 ?voiceDebug=1 且（开发构建 或 显式 VITE_ALLOW_VOICE_DEBUG=1）时可用
   const [showDiag, setShowDiag] = useState(voiceDebugEnabled());
+  /**
+   * Phase 5 历史沉淀的两层覆盖：历次列表 → 单场纪要。
+   * 纪要可以从「刚结束」直接进（origin='just-ended'），也可以从历史进。
+   * 两者是同一个组件，只有标题文案不同。
+   */
+  const [showHistory, setShowHistory] = useState(false);
+  const [summary, setSummary] = useState<{ id: string; origin: 'just-ended' | 'history' } | null>(null);
   /** 共享祷告会：**服务器唯一真相源**。currentItemId 等绝不复制进本地 reducer。 */
   const ps = usePrayerSession(roomId, backend, rtHealthy);
   // 只用于「已进行 mm:ss」的视觉刷新；基准始终是 server 的 startedAt
@@ -635,6 +668,22 @@ const PrayerRoomPanel: React.FC<Props> = ({
         voiceBusy={voice.state === 'connecting' || voice.state === 'requesting_permission'}
         micOn={voice.micOn}
       />
+      {showHistory && (
+        <PrayerSessionHistory
+          roomId={roomId}
+          onOpenSummary={id => setSummary({ id, origin: 'history' })}
+          onClose={() => setShowHistory(false)}
+        />
+      )}
+      {/* 纪要在历史之上：从历史点进来时返回应回到列表，而不是直接回祷告室 */}
+      {summary && (
+        <PrayerSessionSummary
+          roomId={roomId}
+          sessionId={summary.id}
+          origin={summary.origin}
+          onClose={() => setSummary(null)}
+        />
+      )}
       <PrayerBottomSheet
         open={ui.activeBottomSheet === 'write'}
         onClose={() => dispatch({ t: 'sheet', v: null })}
@@ -814,7 +863,11 @@ const PrayerRoomPanel: React.FC<Props> = ({
         </div>
 
         {/* ===== 3. 共享祷告会（Phase 2）——全部来自服务器 ===== */}
-        <PrayerSessionBlock ps={ps} clockTick={clockTick} showToast={showToast} presence={online} />
+        <PrayerSessionBlock
+          ps={ps} clockTick={clockTick} showToast={showToast} presence={online}
+          onSessionEnded={id => setSummary({ id, origin: 'just-ended' })}
+          onOpenHistory={() => setShowHistory(true)}
+        />
 
         {/* ===== 4. 快捷功能（轻量三列，不再是厚卡） ===== */}
         <div className="mt-6">

@@ -1767,3 +1767,390 @@ test('WS /api/gemini/live accepts upgrade and emits error or closed', async () =
   // terminal event is a best-effort signal that the proxy is reachable.
   assert.ok(true, `WS upgrade succeeded; sawTerminal=${sawTerminal}`);
 });
+
+// ---------------------------------------------------------------------------
+// Prayer Room Phase 5 · 祷告会结束与历史沉淀
+//
+// 全部走真实 HTTP + 真实 SQLite。不 mock 任何东西。
+//
+// 守住的核心规矩：**没有真实数据，就不做看起来很真实的 UI。**
+// 所以下面有一整组测试专门断言「参与人数」这类字段**根本不存在**——
+// 不是等于 0，是 JSON 里没有这个 key。room_presence 在 leave 与超时清扫时
+// 都是 DELETE，只存当下不存历史，这些数字拿不回来，也就不许假装拿得回来。
+// ---------------------------------------------------------------------------
+
+async function p5User(suffix: string): Promise<AuthTokens> {
+  const r = await request('POST', '/api/auth/register', {
+    email: `p5-${suffix}@example.com`,
+    password: 'goodpassword1',
+    name: `p5-${suffix}`,
+  });
+  assert.equal(r.status, 200, `register failed: ${r.body}`);
+  return r.json<AuthTokens>();
+}
+
+const bearer = (t: AuthTokens) => ({ authorization: `Bearer ${t.accessToken}` });
+
+/** 建房 + 拉人进房。返回 roomId。 */
+async function p5Room(suffix: string, host: AuthTokens, members: AuthTokens[] = []): Promise<string> {
+  const roomId = `p5-room-${suffix}`;
+  const c = await request('POST', '/api/rooms', { roomId, hostId: host.user.id }, bearer(host));
+  assert.equal(c.status, 200, `create room failed: ${c.body}`);
+  for (const m of members) {
+    const j = await request('POST', `/api/rooms/${roomId}/join`, {}, bearer(m));
+    assert.equal(j.status, 200, `join failed: ${j.body}`);
+  }
+  return roomId;
+}
+
+interface SessionView {
+  session: { id: string; revision: number; status: string; items: { id: string; title: string }[] };
+}
+
+/** 建会 → 开始。返回 { sessionId, revision, itemIds }。 */
+async function p5StartSession(roomId: string, host: AuthTokens, titles: string[]) {
+  const c = await request('POST', `/api/rooms/${roomId}/prayer-sessions`,
+    { title: '晨祷', items: titles.map(t => ({ title: t })) }, bearer(host));
+  assert.ok(c.status === 200 || c.status === 201, `create session failed: ${c.status} ${c.body}`);
+  const created = c.json<SessionView>();
+  const s = await request('POST',
+    `/api/rooms/${roomId}/prayer-sessions/${created.session.id}/start`,
+    { expectedRevision: created.session.revision }, bearer(host));
+  assert.equal(s.status, 200, `start failed: ${s.body}`);
+  const started = s.json<SessionView>();
+  return {
+    sessionId: started.session.id,
+    revision: started.session.revision,
+    itemIds: started.session.items.map(i => i.id),
+  };
+}
+
+async function p5Command(roomId: string, sessionId: string, host: AuthTokens,
+  action: string, expectedRevision: number, extra: Record<string, unknown> = {}) {
+  const r = await request('POST',
+    `/api/rooms/${roomId}/prayer-sessions/${sessionId}/${action}`,
+    { expectedRevision, ...extra }, bearer(host));
+  assert.equal(r.status, 200, `${action} failed: ${r.body}`);
+  return r.json<SessionView>().session.revision;
+}
+
+interface Summary {
+  session: { id: string; title: string | null; startedAt: number; endedAt: number; durationMs: number };
+  journey: { itemId: string; title: string; enteredAt: number; durationMs: number | null }[];
+  notVisited: { itemId: string; title: string }[];
+  shares: { id: string; text: string; isAnonymous: boolean; userId: string | null; intercessions: number; didIntercede: boolean }[];
+  serverNow: number;
+}
+
+test('Phase 5 · 结束的祷告会不再凭空消失，可通过 summary 取回', async () => {
+  const host = await p5User('h1');
+  const roomId = await p5Room('basic', host);
+  const { sessionId, revision, itemIds } = await p5StartSession(roomId, host, ['为教会', '为家庭', '为宣教']);
+
+  let rev = revision;
+  rev = await p5Command(roomId, sessionId, host, 'advance', rev);   // → 第二项
+  rev = await p5Command(roomId, sessionId, host, 'end', rev);
+
+  // end 之后 current 确实返回 null——这正是 Phase 5 要补的洞
+  const cur = await request('GET', `/api/rooms/${roomId}/prayer-session/current`, undefined, bearer(host));
+  assert.equal(cur.status, 200);
+  assert.equal(cur.json<{ session: unknown }>().session, null);
+
+  // 但 summary 能完整取回
+  const r = await request('GET',
+    `/api/rooms/${roomId}/prayer-sessions/${sessionId}/summary`, undefined, bearer(host));
+  assert.equal(r.status, 200, r.body);
+  const sum = r.json<Summary>();
+  assert.equal(sum.session.id, sessionId);
+  assert.equal(sum.session.title, '晨祷');
+  assert.ok(sum.session.durationMs >= 0);
+  assert.equal(sum.journey.length, 2, '带领过两项');
+  assert.equal(sum.journey[0].itemId, itemIds[0]);
+  assert.equal(sum.journey[1].itemId, itemIds[1]);
+  assert.equal(sum.notVisited.length, 1, '第三项从未进行');
+  assert.equal(sum.notVisited[0].itemId, itemIds[2]);
+});
+
+test('Phase 5 · 计划过 != 进行过：未被切换到的项目不进 journey', async () => {
+  const host = await p5User('h2');
+  const roomId = await p5Room('novisit', host);
+  const { sessionId, revision, itemIds } = await p5StartSession(roomId, host, ['A', 'B', 'C', 'D']);
+  await p5Command(roomId, sessionId, host, 'end', revision);
+
+  const sum = (await request('GET',
+    `/api/rooms/${roomId}/prayer-sessions/${sessionId}/summary`, undefined, bearer(host))).json<Summary>();
+
+  // 只 start 没 advance：仅第一项进行过
+  assert.equal(sum.journey.length, 1);
+  assert.equal(sum.journey[0].itemId, itemIds[0]);
+  // 其余三项既不能静默丢弃（会歪曲计划），也不能混进 journey（会歪曲事实）
+  assert.equal(sum.notVisited.length, 3);
+  assert.deepEqual(sum.notVisited.map(n => n.itemId), itemIds.slice(1));
+});
+
+test('Phase 5 · 回头再祷告一次会记成两段，不被合并', async () => {
+  const host = await p5User('h3');
+  const roomId = await p5Room('revisit', host);
+  const { sessionId, revision, itemIds } = await p5StartSession(roomId, host, ['甲', '乙']);
+
+  let rev = revision;
+  rev = await p5Command(roomId, sessionId, host, 'advance', rev);    // 甲 → 乙
+  rev = await p5Command(roomId, sessionId, host, 'previous', rev);   // 乙 → 甲
+  rev = await p5Command(roomId, sessionId, host, 'end', rev);
+
+  const sum = (await request('GET',
+    `/api/rooms/${roomId}/prayer-sessions/${sessionId}/summary`, undefined, bearer(host))).json<Summary>();
+
+  assert.equal(sum.journey.length, 3, '甲 → 乙 → 甲 是三段');
+  assert.deepEqual(sum.journey.map(j => j.itemId), [itemIds[0], itemIds[1], itemIds[0]]);
+  assert.equal(sum.notVisited.length, 0);
+  // 每一段都闭合了，时长不为 null
+  for (const j of sum.journey) assert.equal(typeof j.durationMs, 'number');
+});
+
+test('Phase 5 · 时长由服务端时间戳算出，不接受客户端时钟', async () => {
+  const host = await p5User('h4');
+  const roomId = await p5Room('duration', host);
+  const { sessionId, revision } = await p5StartSession(roomId, host, ['一', '二']);
+  await new Promise(r => setTimeout(r, 120));
+  let rev = revision;
+  rev = await p5Command(roomId, sessionId, host, 'advance', rev);
+  rev = await p5Command(roomId, sessionId, host, 'end', rev);
+
+  const sum = (await request('GET',
+    `/api/rooms/${roomId}/prayer-sessions/${sessionId}/summary`, undefined, bearer(host))).json<Summary>();
+
+  assert.ok(sum.session.durationMs >= 120, `总时长应 >= 120ms，实际 ${sum.session.durationMs}`);
+  const first = sum.journey[0].durationMs;
+  assert.ok(first !== null && first >= 120, `第一项时长应 >= 120ms，实际 ${first}`);
+  // 各段之和不超过总时长
+  const total = sum.journey.reduce((a, j) => a + (j.durationMs ?? 0), 0);
+  assert.ok(total <= sum.session.durationMs + 5, `各段之和 ${total} 不应超过总时长 ${sum.session.durationMs}`);
+});
+
+test('Phase 5 · 会中分享按时间窗归属；会前会后的分享不算进这一场', async () => {
+  const host = await p5User('h5');
+  const guest = await p5User('h5g');
+  const roomId = await p5Room('window', host, [guest]);
+
+  const share = async (t: AuthTokens, text: string, isAnonymous = false) => {
+    const r = await request('POST', `/api/rooms/${roomId}/prayer/shares`,
+      { text, isAnonymous }, bearer(t));
+    assert.equal(r.status, 200, r.body);
+    return r.json<{ id: string }>().id;
+  };
+
+  await share(host, '会前的代祷');                       // start 之前
+  await new Promise(r => setTimeout(r, 20));
+  const { sessionId, revision } = await p5StartSession(roomId, host, ['同心']);
+  const during = await share(guest, '求主医治我母亲');    // 会中
+  await p5Command(roomId, sessionId, host, 'end', revision);
+  await new Promise(r => setTimeout(r, 20));
+  await share(host, '会后的代祷');                       // end 之后
+
+  const sum = (await request('GET',
+    `/api/rooms/${roomId}/prayer-sessions/${sessionId}/summary`, undefined, bearer(host))).json<Summary>();
+
+  assert.equal(sum.shares.length, 1, `只应有会中那一条，实际 ${JSON.stringify(sum.shares.map(s => s.text))}`);
+  assert.equal(sum.shares[0].id, during);
+  assert.equal(sum.shares[0].text, '求主医治我母亲');
+});
+
+test('Phase 5 · 历史不是治理后门：已删除与已隐藏的分享不得重现', async () => {
+  const host = await p5User('h6');
+  const guest = await p5User('h6g');
+  const roomId = await p5Room('governance', host, [guest]);
+  const { sessionId, revision } = await p5StartSession(roomId, host, ['守望']);
+
+  const mk = async (t: AuthTokens, text: string) => {
+    const r = await request('POST', `/api/rooms/${roomId}/prayer/shares`, { text }, bearer(t));
+    assert.equal(r.status, 200, r.body);
+    return r.json<{ id: string }>().id;
+  };
+  const keep = await mk(guest, '保留的');
+  const del = await mk(guest, '作者会删掉的');
+  const hide = await mk(guest, '管理员会隐藏的');
+
+  const d = await request('DELETE', `/api/rooms/${roomId}/prayer/shares/${del}`, undefined, bearer(guest));
+  assert.equal(d.status, 200, `作者删除失败: ${d.body}`);
+  const h = await request('POST', `/api/rooms/${roomId}/prayer/shares/${hide}/hide`,
+    { reason: 'privacy' }, bearer(host));
+  assert.equal(h.status, 200, `隐藏失败: ${h.body}`);
+
+  await p5Command(roomId, sessionId, host, 'end', revision);
+
+  // 房主（manager）来看历史——即使是权限最高的人，也看不到被删/被隐藏的内容
+  const sum = (await request('GET',
+    `/api/rooms/${roomId}/prayer-sessions/${sessionId}/summary`, undefined, bearer(host))).json<Summary>();
+  const ids = sum.shares.map(s => s.id);
+  assert.deepEqual(ids, [keep], `历史里只应剩保留的那条，实际 ${JSON.stringify(sum.shares.map(s => s.text))}`);
+  assert.ok(!sum.shares.some(s => s.text.includes('删掉')), '已删除内容不得重现');
+  assert.ok(!sum.shares.some(s => s.text.includes('隐藏')), '已隐藏内容不得重现');
+});
+
+test('Phase 5 · 匿名在历史里同样成立，连房主也拿不到作者身份', async () => {
+  const host = await p5User('h7');
+  const guest = await p5User('h7g');
+  const roomId = await p5Room('anon', host, [guest]);
+  const { sessionId, revision } = await p5StartSession(roomId, host, ['代求']);
+
+  const r = await request('POST', `/api/rooms/${roomId}/prayer/shares`,
+    { text: '匿名的挣扎', isAnonymous: true }, bearer(guest));
+  assert.equal(r.status, 200, r.body);
+  await p5Command(roomId, sessionId, host, 'end', revision);
+
+  const sum = (await request('GET',
+    `/api/rooms/${roomId}/prayer-sessions/${sessionId}/summary`, undefined, bearer(host))).json<Summary>();
+  const anon = sum.shares.find(s => s.text === '匿名的挣扎');
+  assert.ok(anon, '匿名分享应出现在历史里');
+  assert.equal(anon.isAnonymous, true);
+  assert.equal(anon.userId, null, '房主也不得拿到匿名作者的 user_id');
+  // 响应正文里不得出现该用户的 id
+  assert.ok(!JSON.stringify(sum).includes(guest.user.id),
+    'summary 响应中不得包含匿名作者的 user_id');
+});
+
+test('Phase 5 · 继续代祷复用 prayer_intercessions，历史里能看到自己的登记', async () => {
+  const host = await p5User('h8');
+  const guest = await p5User('h8g');
+  const roomId = await p5Room('intercede', host, [guest]);
+  const { sessionId, revision } = await p5StartSession(roomId, host, ['守望']);
+
+  const r = await request('POST', `/api/rooms/${roomId}/prayer/shares`,
+    { text: '求主保守出行' }, bearer(guest));
+  const shareId = r.json<{ id: string }>().id;
+  await p5Command(roomId, sessionId, host, 'end', revision);
+
+  // 结束之后仍可继续为这一项代祷
+  const i = await request('POST', `/api/rooms/${roomId}/prayer/shares/${shareId}/intercede`,
+    {}, bearer(host));
+  assert.equal(i.status, 200, `代祷登记失败: ${i.body}`);
+
+  const sum = (await request('GET',
+    `/api/rooms/${roomId}/prayer-sessions/${sessionId}/summary`, undefined, bearer(host))).json<Summary>();
+  const s = sum.shares.find(x => x.id === shareId);
+  assert.ok(s);
+  assert.equal(s.intercessions, 1);
+  assert.equal(s.didIntercede, true, '本人视角应显示已登记');
+
+  // 另一个人看同一条，didIntercede 必须是 false（这是「我」的状态，不是全局状态）
+  const other = (await request('GET',
+    `/api/rooms/${roomId}/prayer-sessions/${sessionId}/summary`, undefined, bearer(guest))).json<Summary>();
+  const s2 = other.shares.find(x => x.id === shareId);
+  assert.ok(s2);
+  assert.equal(s2.intercessions, 1);
+  assert.equal(s2.didIntercede, false);
+});
+
+test('Phase 5 · 不返回任何缺乏数据支撑的指标（字段必须不存在，不是 0）', async () => {
+  const host = await p5User('h9');
+  const guest = await p5User('h9g');
+  const roomId = await p5Room('nometrics', host, [guest]);
+  const { sessionId, revision } = await p5StartSession(roomId, host, ['同心']);
+  // 制造一点在场痕迹——即便如此也不该产生任何参与人数字段
+  await request('POST', `/api/rooms/${roomId}/prayer/heartbeat`, {}, bearer(guest));
+  await p5Command(roomId, sessionId, host, 'end', revision);
+
+  const summaryRaw = (await request('GET',
+    `/api/rooms/${roomId}/prayer-sessions/${sessionId}/summary`, undefined, bearer(host))).body;
+  const historyRaw = (await request('GET',
+    `/api/rooms/${roomId}/prayer-sessions/history`, undefined, bearer(host))).body;
+
+  // room_presence 在 leave 与超时清扫时都是 DELETE，只存当下不存历史。
+  // 参与人数这类数字拿不回来，因此**不许出现在响应里**——哪怕值是 0。
+  const forbidden = [
+    'participantCount', 'participants', 'attendeeCount', 'attendees',
+    'presenceCount', 'totalPrayers', 'prayerCount', 'peopleCount',
+    'uniqueParticipants', 'engagement',
+  ];
+  for (const key of forbidden) {
+    assert.ok(!summaryRaw.includes(key), `summary 不得包含字段 ${key}`);
+    assert.ok(!historyRaw.includes(key), `history 不得包含字段 ${key}`);
+  }
+});
+
+test('Phase 5 · history 列表倒序、分页，且只含已结束的场次', async () => {
+  const host = await p5User('h10');
+  const roomId = await p5Room('list', host);
+
+  const made: string[] = [];
+  for (const n of ['第一场', '第二场', '第三场']) {
+    const c = await request('POST', `/api/rooms/${roomId}/prayer-sessions`,
+      { title: n, items: [{ title: '祷告' }] }, bearer(host));
+    const v = c.json<SessionView>();
+    const s = await request('POST', `/api/rooms/${roomId}/prayer-sessions/${v.session.id}/start`,
+      { expectedRevision: v.session.revision }, bearer(host));
+    const sv = s.json<SessionView>();
+    await request('POST', `/api/rooms/${roomId}/prayer-sessions/${sv.session.id}/end`,
+      { expectedRevision: sv.session.revision }, bearer(host));
+    made.push(sv.session.id);
+    await new Promise(r => setTimeout(r, 5));
+  }
+  // 再建一场但不结束——它不该出现在历史里
+  const open = await request('POST', `/api/rooms/${roomId}/prayer-sessions`,
+    { title: '进行中', items: [{ title: '祷告' }] }, bearer(host));
+  assert.ok(open.status === 200 || open.status === 201, open.body);
+
+  interface History {
+    sessions: { id: string; title: string; visitedItemCount: number; durationMs: number }[];
+    nextBefore: number | null;
+  }
+  const all = (await request('GET', `/api/rooms/${roomId}/prayer-sessions/history`,
+    undefined, bearer(host))).json<History>();
+  assert.deepEqual(all.sessions.map(s => s.title), ['第三场', '第二场', '第一场'], '按结束时间倒序');
+  assert.equal(all.nextBefore, null, '一页装得下时不给游标');
+  for (const s of all.sessions) assert.equal(s.visitedItemCount, 1);
+
+  // 分页
+  const page1 = (await request('GET', `/api/rooms/${roomId}/prayer-sessions/history?limit=2`,
+    undefined, bearer(host))).json<History>();
+  assert.equal(page1.sessions.length, 2);
+  assert.ok(page1.nextBefore !== null, '还有下一页时必须给游标');
+  const page2 = (await request('GET',
+    `/api/rooms/${roomId}/prayer-sessions/history?limit=2&before=${page1.nextBefore}`,
+    undefined, bearer(host))).json<History>();
+  assert.equal(page2.sessions.length, 1);
+  assert.equal(page2.sessions[0].title, '第一场');
+  assert.equal(page2.nextBefore, null);
+});
+
+test('Phase 5 · 非成员拿不到历史与纪要；跨房间取 session 一律 404', async () => {
+  const host = await p5User('h11');
+  const outsider = await p5User('h11o');
+  const roomId = await p5Room('authz', host);
+  const otherRoomId = await p5Room('authz-other', outsider);
+  const { sessionId, revision } = await p5StartSession(roomId, host, ['守望']);
+  await p5Command(roomId, sessionId, host, 'end', revision);
+
+  // 无 token
+  assert.equal((await request('GET', `/api/rooms/${roomId}/prayer-sessions/history`)).status, 401);
+  assert.equal((await request('GET',
+    `/api/rooms/${roomId}/prayer-sessions/${sessionId}/summary`)).status, 401);
+
+  // 有 token 但不是成员
+  assert.equal((await request('GET', `/api/rooms/${roomId}/prayer-sessions/history`,
+    undefined, bearer(outsider))).status, 403);
+  assert.equal((await request('GET', `/api/rooms/${roomId}/prayer-sessions/${sessionId}/summary`,
+    undefined, bearer(outsider))).status, 403);
+
+  // IDOR：用自己房间的路径去取别人房间的 session，必须 404 而不是泄漏
+  const idor = await request('GET',
+    `/api/rooms/${otherRoomId}/prayer-sessions/${sessionId}/summary`, undefined, bearer(outsider));
+  assert.equal(idor.status, 404, idor.body);
+  assert.ok(!idor.body.includes('守望'), '404 响应不得泄漏别房间的内容');
+});
+
+test('Phase 5 · 未结束的场次不给 summary（409），不存在的给 404', async () => {
+  const host = await p5User('h12');
+  const roomId = await p5Room('notended', host);
+  const { sessionId } = await p5StartSession(roomId, host, ['进行中']);
+
+  const live = await request('GET',
+    `/api/rooms/${roomId}/prayer-sessions/${sessionId}/summary`, undefined, bearer(host));
+  assert.equal(live.status, 409, live.body);
+  assert.equal(live.json<{ code: string }>().code, 'SESSION_NOT_ENDED');
+
+  const missing = await request('GET',
+    `/api/rooms/${roomId}/prayer-sessions/does-not-exist/summary`, undefined, bearer(host));
+  assert.equal(missing.status, 404);
+});

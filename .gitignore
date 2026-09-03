@@ -30,3 +30,6 @@ backend/recordings/
 
 # Claude Code local permissions (per-machine)
 .claude/settings.local.json
+
+# Phase 5 验证脚本的一次性临时数据库
+.tmp-phase5/

@@ -437,10 +437,10 @@ const CommunityView: React.FC<CommunityViewProps> = ({
   setConversations
 }) => {
   const staticRooms: Room[] = [
-    { id: 'prayer_room', type: 'prayer', label: '祷告室', icon: HandHeart, color: 'text-rose-500', bg: 'bg-rose-50', desc: '早晨 6:00 - 7:00 | 每日晨更祷告会', action: 'voice', participants: 12 },
-    { id: 'praise_room', type: 'praise', label: '赞美室', icon: Music, color: 'text-amber-500', bg: 'bg-amber-50', desc: '全天开放 | 诗歌敬拜与分享', action: 'voice', participants: 8 },
-    { id: 'bible_reading', type: 'bible', label: '读经室', icon: BookOpen, color: 'text-blue-500', bg: 'bg-blue-50', desc: '研读《罗马书》 | 李教授带读', action: 'voice', participants: 25 },
-    { id: 'preaching_room', type: 'preaching', label: '讲道室', icon: Mic2, color: 'text-purple-500', bg: 'bg-purple-50', desc: '主日信息分享 | 讲员：张院长', action: 'voice', participants: 45 },
+    { id: 'prayer_room', type: 'prayer', label: '祷告室', icon: HandHeart, color: 'text-rose-500', bg: 'bg-rose-50', desc: '早晨 6:00 - 7:00 | 每日晨更祷告会', action: 'voice' },
+    { id: 'praise_room', type: 'praise', label: '赞美室', icon: Music, color: 'text-amber-500', bg: 'bg-amber-50', desc: '全天开放 | 诗歌敬拜与分享', action: 'voice' },
+    { id: 'bible_reading', type: 'bible', label: '读经室', icon: BookOpen, color: 'text-blue-500', bg: 'bg-blue-50', desc: '研读《罗马书》 | 李教授带读', action: 'voice' },
+    { id: 'preaching_room', type: 'preaching', label: '讲道室', icon: Mic2, color: 'text-purple-500', bg: 'bg-purple-50', desc: '主日信息分享 | 讲员：张院长', action: 'voice' },
     { id: 'fellowship_room', type: 'fellowship', label: '交通室', icon: Coffee, color: 'text-emerald-500', bg: 'bg-emerald-50', desc: '肢体交通，分享生活点滴与恩典。', action: 'voice' },
   ];
   
@@ -611,7 +611,7 @@ const CommunityView: React.FC<CommunityViewProps> = ({
     const newRoom: Room = {
       id: `custom-${Date.now()}`, type, label: name,
       icon: config.icon, color: config.color, bg: config.bg, desc: config.desc,
-      action: 'voice', participants: 1, isCustom: true, hostId: 'me',
+      action: 'voice', isCustom: true, hostId: 'me',
       password,
     };
     setMyRoom(newRoom);
@@ -1076,18 +1076,13 @@ const CommunityView: React.FC<CommunityViewProps> = ({
                                             </div>
                                             <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">{room.desc}</p>
                                             
-                                            <div className="flex items-center mt-3 space-x-3">
-                                                <div className="flex items-center">
-                                                    <div className="flex -space-x-2 mr-2">
-                                                        {[1,2,3].map(i => <img key={i} src={initialAvatar(`${room.id}-${i}`)} className="w-5 h-5 rounded-full border-2 border-white" />)}
-                                                    </div>
-                                                    <span className="text-[10px] text-slate-400 font-bold">{room.participants || 0} 人在听</span>
-                                                </div>
-                                                <div className="flex items-center text-emerald-500 font-bold text-[10px] space-x-1">
-                                                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                                                   <span className="uppercase tracking-widest">语音中</span>
-                                                </div>
-                                            </div>
+                                            {/*
+                                              这里曾经显示三个凭 room.id 生成的头像、一个写死的
+                                              「12 人在听」和一个恒亮的「语音中」。三样都是编造的：
+                                              那些人不存在，数字与 room_presence 无关，语音根本还没上线。
+                                              在拿到真实的在线人数之前，这一整块不显示——
+                                              没有真实数据，就不做看起来很真实的 UI。
+                                            */}
                                         </div>
                                         <div className="flex flex-col items-center justify-center">
                                             <div className="w-10 h-10 rounded-full bg-slate-50 text-blue-900 flex items-center justify-center group-hover:bg-blue-900 group-hover:text-white transition-all shadow-sm">
