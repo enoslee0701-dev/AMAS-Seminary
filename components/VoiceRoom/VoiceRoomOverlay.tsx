@@ -96,16 +96,6 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
     const [recordingUploadState, setRecordingUploadState] = useState<'idle' | 'uploading' | 'done' | 'failed'>('idle');
     const sermonRecorderRef = useRef<SermonRecorder | null>(null);
     if (!sermonRecorderRef.current) sermonRecorderRef.current = new SermonRecorder();
-    const DEFAULT_PRAYER_WALL = "1. 为世界和平祷告\n2. 为教会复兴祷告\n3. 为身心灵软弱的肢体代祷\n4. 求主赐下智慧与启示的灵";
-    const [prayerWallContent, setPrayerWallContent] = useState<string>(() => {
-      try {
-        const saved = localStorage.getItem(`amas_prayer_wall_${activeVoiceRoom.id}`);
-        return saved !== null ? saved : DEFAULT_PRAYER_WALL;
-      } catch {
-        return DEFAULT_PRAYER_WALL;
-      }
-    });
-    const [isEditingPrayerWall, setIsEditingPrayerWall] = useState(false);
     const [selectedParticipant, setSelectedParticipant] = useState<Participant | null>(null);
     const [showUserManageModal, setShowUserManageModal] = useState(false);
     const [showParticipantsList, setShowParticipantsList] = useState(false);
@@ -144,18 +134,6 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
       }, 500);
       return () => clearTimeout(handle);
     }, [sermonNotes, activeVoiceRoom.id]);
-
-    // Debounced persistence: prayer wall content keyed by roomId.
-    useEffect(() => {
-      const handle = setTimeout(() => {
-        try {
-          localStorage.setItem(`amas_prayer_wall_${activeVoiceRoom.id}`, prayerWallContent);
-        } catch (e) {
-          console.warn('[VoiceRoom] persist prayerWallContent failed', e);
-        }
-      }, 500);
-      return () => clearTimeout(handle);
-    }, [prayerWallContent, activeVoiceRoom.id]);
 
     // NOTE(realtime): The participant list below is local mock state. There is no real
     // multi-user voice transport yet — only the local user + Gemini AI pastor produce audio.
@@ -1255,43 +1233,12 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
 
                         {/* Middle Content */}
                         <div className="flex-1 px-3 flex flex-col justify-start pt-1">
-                             {isPrayerRoom ? (
-                                <div className="bg-[#3b0b1a]/90 border border-[#5c1a2e] rounded-2xl overflow-hidden shadow-2xl backdrop-blur-sm animate-fade-in-up">
-                                    <div className="bg-[#4d0f22] px-4 py-2 flex items-center justify-between border-b border-[#5c1a2e]">
-                                        <div className="flex items-center">
-                                            <HandHeart size={14} className="mr-2 text-rose-400"/>
-                                            <span className="text-[10px] font-bold text-rose-200 uppercase tracking-widest">祷告墙</span>
-                                        </div>
-                                        <div className="flex items-center bg-black/30 rounded-xl px-2 py-0.5">
-                                            <button onClick={() => setFontSize(Math.max(12, fontSize - 2))} className="p-1 hover:text-rose-300 transition-colors"><Minus size={12} /></button>
-                                            <span className="text-[11px] font-bold text-slate-400 w-5 text-center">{fontSize}</span>
-                                            <button onClick={() => setFontSize(Math.min(32, fontSize + 2))} className="p-1 hover:text-rose-300 transition-colors"><PlusIcon size={12} /></button>
-                                        </div>
-                                    </div>
-                                    <div className="p-4 min-h-[200px]">
-                                        {isEditingPrayerWall ? (
-                                            <div className="flex flex-col h-full">
-                                                <textarea
-                                                    value={prayerWallContent}
-                                                    onChange={(e) => setPrayerWallContent(e.target.value)}
-                                                    className="w-full h-32 bg-white/5 rounded-xl p-3 text-white outline-none resize-none font-serif leading-relaxed"
-                                                    style={{ fontSize: `${fontSize}px` }}
-                                                    autoFocus
-                                                />
-                                                <div className="flex justify-end mt-2">
-                                                    <button onClick={() => setIsEditingPrayerWall(false)} className="text-xs bg-rose-600 text-white px-4 py-1.5 rounded-lg font-bold">保存</button>
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <div onClick={() => isHost && setIsEditingPrayerWall(true)} className="text-rose-50/90 leading-relaxed space-y-2 font-serif" style={{ fontSize: `${fontSize}px` }}>
-                                                {prayerWallContent.split('\n').map((line, i) => (
-                                                    <p key={i}>{line}</p>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                             ) : (
+                             {/*
+                               这里曾经是 `{isPrayerRoom ? <深色祷告墙> : <读经内容>}`。
+                               但整段位于 isBibleRoom 分支内部，isPrayerRoom 恒为 false——
+                               那面深色祷告墙从祷告室改版之后就再没被渲染过。
+                               连同它的 prayerWallContent 状态与 localStorage 持久化一并删除。
+                             */}
                                 <div className="flex flex-col w-full h-full animate-fade-in-up">
                                     <div className="bg-[#12121e]/80 border border-white/10 rounded-2xl p-1 flex items-center justify-between shadow-2xl mb-2 backdrop-blur-md">
                                         <button
@@ -1329,7 +1276,6 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
                                         </div>
                                     </div>
                                 </div>
-                             )}
                         </div>
 
                         {/* Right Avatars */}

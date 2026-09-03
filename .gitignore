@@ -35,3 +35,4 @@ backend/recordings/
 .tmp-phase5/
 .tmp-sysroom/
 backend/.tmp-test/
+.tmp-rooms/
