@@ -73,8 +73,6 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
     const [showGuide, setShowGuide] = useState(false);
     const [showPlaylist, setShowPlaylist] = useState(false);
     const [showInvite, setShowInvite] = useState(false);
-    const [isPlaying, setIsPlaying] = useState(true);
-    const [currentSong, setCurrentSong] = useState(PRAISE_SONGS[0]);
     const [currentBibleChapter, setCurrentBibleChapter] = useState(INITIAL_BIBLE_DATA[0]);
     const [showBibleSelector, setShowBibleSelector] = useState(false);
     const [bibleViewMode, setBibleViewMode] = useState(true);
@@ -358,14 +356,19 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
       setShowResponsePanel(false);
     };
 
+    /**
+     * 举手申请上麦。
+     *
+     * 这里曾经是一段脚本：弹「已举手申请…」，等 1 秒，把自己的 role 本地改成
+     * speaker，再弹一句「主持人邀请您上麦」。没有请求、没有审批、没有主持人——
+     * 是自己邀请自己。
+     *
+     * 举手是一条需要对方看见的信号。在真实语音接入（Phase 4B，仍 BLOCKED）
+     * 之前，房间里没有任何其他人收得到它，所以这里如实说明，不做任何状态变更。
+     * 真实语音上线后，把这里换成向服务端发一条 raise-hand 请求即可。
+     */
     const handleRaiseHand = () => {
-        showToast('已举手申请发言任务...');
-        safeSetTimeout(() => {
-            setParticipants(prev => prev.map(p => p.id === 'me' ? { ...p, role: 'speaker' } : p));
-            setRoomChats(prev => [...prev, { id: `sys-${Date.now()}`, user: '系统', text: '我 上麦了', type: 'system' }]);
-            showToast('主持人邀请您上麦');
-            setIsMicOn(true);
-        }, 1000);
+        showToast('举手需要主持人看到并同意。实时语音尚未开放，暂时无法送达。');
     };
 
     const handleLeaveStage = () => {
@@ -452,7 +455,6 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
       if (currentType !== 'prayer' && newType === 'prayer') {
         connectToGemini();
       }
-      if (currentType === 'praise' && newType !== 'praise') setIsPlaying(false);
       if (currentType === 'preaching' && newType !== 'preaching') {
           setIsRecordingSermon(false);
       }
@@ -891,29 +893,26 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
       <div className="absolute inset-0 z-[80] bg-black/80 backdrop-blur-sm flex items-end animate-fade-in" onClick={() => setShowPlaylist(false)}>
         <div className="bg-slate-900 w-full rounded-t-3xl p-6 animate-slide-up border-t border-white/10 max-h-[70vh] flex flex-col" onClick={e => e.stopPropagation()}>
           <div className="flex justify-between items-center mb-6 shrink-0">
-            <h3 className="text-white font-bold flex items-center"><ListMusic className="mr-2" size={18}/> 敬拜歌单</h3>
+            <h3 className="text-white font-bold flex items-center"><ListMusic className="mr-2" size={18}/> 推荐诗歌</h3>
             <button onClick={() => setShowPlaylist(false)} className="p-2 bg-white/10 rounded-full text-white"><X size={20}/></button>
           </div>
           <div className="flex-1 overflow-y-auto space-y-2 custom-scrollbar">
-            {PRAISE_SONGS.map((song) => {
-              const isActive = currentSong.id === song.id;
-              return (
-                <div
-                  key={song.id}
-                  onClick={() => { setCurrentSong(song); setIsPlaying(true); }}
-                  className={`flex items-center p-4 rounded-xl border transition-all cursor-pointer ${isActive ? 'bg-amber-500/20 border-amber-500' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
-                >
-                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center mr-4 shrink-0 ${isActive ? 'bg-amber-500 text-white' : 'bg-slate-800 text-slate-400'}`}>
-                    {isActive && isPlaying ? <Pause size={18} fill="currentColor"/> : <Play size={18} fill="currentColor"/>}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h4 className={`text-sm font-bold truncate ${isActive ? 'text-amber-400' : 'text-white'}`}>{song.title}</h4>
-                    <p className="text-xs text-slate-400">{song.artist}</p>
-                  </div>
-                  <span className="text-xs text-slate-500">{song.duration}</span>
+            {/* 只是一份清单。没有播放按钮，因为点了也不会有声音。 */}
+            {PRAISE_SONGS.map((song) => (
+              <div key={song.id} className="flex items-center p-4 rounded-xl border bg-white/5 border-white/10">
+                <div className="w-10 h-10 rounded-lg flex items-center justify-center mr-4 shrink-0 bg-slate-800 text-slate-400">
+                  <Music size={18} />
                 </div>
-              );
-            })}
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-sm font-bold truncate text-white">{song.title}</h4>
+                  <p className="text-xs text-slate-400">{song.artist}</p>
+                </div>
+              </div>
+            ))}
+            <p className="text-[11px] text-slate-500 leading-relaxed pt-3 px-1">
+              这里目前只是一份推荐清单。App 内播放需要先取得诗歌的版权授权，
+              在那之前不提供播放功能，也不显示播放状态。
+            </p>
           </div>
         </div>
       </div>
@@ -1450,18 +1449,25 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
                     </div>
                     )}
 
+                    {/*
+                      这里曾经是一条「正在播放」音乐条：跳动的均衡器动画、歌名、
+                      可以按的暂停键。全都是假的——项目里没有任何音频播放代码
+                      （搜不到 <audio>、new Audio()），PRAISE_SONGS 也只是三条
+                      没有音频文件的元数据。用户看到「正在播放」，实际一片安静。
+
+                      在拿到真实音频（以及相应的版权授权）之前，这里只提供一份
+                      诚实的推荐诗歌清单，不显示任何播放状态。
+                    */}
                     {isPraiseRoom && (
                     <div className="mx-2 mb-4 bg-white/10 backdrop-blur-md rounded-xl p-3 flex items-center border border-white/10 shadow-lg cursor-pointer hover:bg-white/15 transition" onClick={() => setShowPlaylist(true)}>
-                        <div className="w-12 h-12 bg-amber-50 rounded-lg flex items-center justify-center mr-3 shrink-0 shadow-md">
-                            {isPlaying ? <div className="flex space-x-1 items-end h-4"><span className="w-1 h-4 bg-white animate-pulse"></span><span className="w-1 h-3 bg-white animate-pulse delay-75"></span><span className="w-1 h-4 bg-white animate-pulse delay-150"></span></div> : <Music size={24} className="text-white"/>}
+                        <div className="w-12 h-12 bg-white/10 rounded-lg flex items-center justify-center mr-3 shrink-0">
+                            <ListMusic size={22} className="text-amber-200"/>
                         </div>
                         <div className="flex-1 min-w-0 mr-2">
-                            <h3 className="text-sm font-bold text-white truncate">{currentSong.title}</h3>
-                            <p className="text-[10px] text-amber-200">{currentSong.artist}</p>
+                            <h3 className="text-sm font-bold text-white truncate">推荐诗歌</h3>
+                            <p className="text-[10px] text-amber-200/80">共 {PRAISE_SONGS.length} 首 · 点击查看</p>
                         </div>
-                        <div className="flex items-center space-x-2" onClick={e => e.stopPropagation()}>
-                            <button onClick={() => setIsPlaying(!isPlaying)} className="p-2 rounded-full bg-white text-amber-600 hover:scale-105 transition shadow-sm">{isPlaying ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" />}</button>
-                        </div>
+                        <ChevronRight size={18} className="text-white/40 shrink-0" />
                     </div>
                     )}
 
