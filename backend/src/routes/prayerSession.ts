@@ -4,6 +4,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { requireRoomExists, requireRoomMember, requireRoomManager, isMember } from '../middleware/roomAuth.js';
 import { sessionCommandLimiter } from '../middleware/rateLimit.js';
 import { db } from '../db.js';
+import { emitRoomEvent } from '../realtime/roomEvents.js';
 
 /**
  * 共享祷告会（Phase 2）。
@@ -203,6 +204,8 @@ export function registerPrayerSessionRoutes(app: Express): void {
         stmtInsertItem.run(uid(), sid, i + 1, it.title, it.description, it.scriptureRef, it.scriptureText, t));
       stmtEvent.run(uid(), sid, me.id, 'created', null, null, t);
     })();
+    // §6 事务提交成功之后才发事件——绝不会出现「已通知客户端、数据库随后回滚」
+     emitRoomEvent(roomId, 'session.changed', sid, 1);
     res.status(201).json(view(stmtById.get(sid)!, true));
   });
 
@@ -229,7 +232,9 @@ export function registerPrayerSessionRoutes(app: Express): void {
       // partial unique index 命中：本房已有另一个 active session
       return res.status(409).json({ error: 'Another session is already active in this room.', code: 'ROOM_HAS_ACTIVE_SESSION' });
     }
-    res.json(view(stmtById.get(s.id)!, true));
+    const fresh = stmtById.get(s.id)!;
+    emitRoomEvent(s.room_id, 'session.changed', s.id, fresh.revision);
+    res.json(view(fresh, true));
   });
 
   /**
@@ -251,7 +256,9 @@ export function registerPrayerSessionRoutes(app: Express): void {
     const r = stmtSetItem.run(next.id, t, s.id, expected);
     if (r.changes === 0) return conflict(res, s, true);
     stmtEvent.run(uid(), s.id, me.id, 'item_changed', s.current_item_id, next.id, t);
-    res.json(view(stmtById.get(s.id)!, true));
+    const fresh = stmtById.get(s.id)!;
+    emitRoomEvent(s.room_id, 'session.changed', s.id, fresh.revision);
+    res.json(view(fresh, true));
   });
 
   /** POST /.../:sessionId/select-item   Body: { itemId, expectedRevision } */
@@ -269,7 +276,9 @@ export function registerPrayerSessionRoutes(app: Express): void {
     const r = stmtSetItem.run(item.id, t, s.id, Number(expectedRevision ?? -1));
     if (r.changes === 0) return conflict(res, s, true);
     stmtEvent.run(uid(), s.id, me.id, 'item_changed', s.current_item_id, item.id, t);
-    res.json(view(stmtById.get(s.id)!, true));
+    const fresh = stmtById.get(s.id)!;
+    emitRoomEvent(s.room_id, 'session.changed', s.id, fresh.revision);
+    res.json(view(fresh, true));
   });
 
   /**
@@ -295,7 +304,9 @@ export function registerPrayerSessionRoutes(app: Express): void {
     const r = stmtSetFacilitator.run(target, t, s.id, Number(expectedRevision ?? -1));
     if (r.changes === 0) return conflict(res, s, true);
     stmtEvent.run(uid(), s.id, me.id, 'facilitator_changed', null, null, t);
-    res.json(view(stmtById.get(s.id)!, true));
+    const fresh = stmtById.get(s.id)!;
+    emitRoomEvent(s.room_id, 'session.changed', s.id, fresh.revision);
+    res.json(view(fresh, true));
   });
 
   /**
@@ -334,7 +345,9 @@ export function registerPrayerSessionRoutes(app: Express): void {
       ok = true;
     })();
     if (!ok) return conflict(res, s, true);
-    res.json(view(stmtById.get(s.id)!, true));
+    const fresh = stmtById.get(s.id)!;
+    emitRoomEvent(s.room_id, 'session.changed', s.id, fresh.revision);
+    res.json(view(fresh, true));
   });
 
   /**
@@ -357,7 +370,9 @@ export function registerPrayerSessionRoutes(app: Express): void {
     const r = stmtSetItem.run(prev.id, t, s.id, expected);
     if (r.changes === 0) return conflict(res, s, true);
     stmtEvent.run(uid(), s.id, me.id, 'item_changed', s.current_item_id, prev.id, t);
-    res.json(view(stmtById.get(s.id)!, true));
+    const fresh = stmtById.get(s.id)!;
+    emitRoomEvent(s.room_id, 'session.changed', s.id, fresh.revision);
+    res.json(view(fresh, true));
   });
 
   /** POST /.../:sessionId/end   保留 current_item_id 供历史记录，不清空。 */
@@ -370,6 +385,8 @@ export function registerPrayerSessionRoutes(app: Express): void {
     const r = stmtEnd.run(t, t, s.id, Number((req.body ?? {}).expectedRevision ?? -1));
     if (r.changes === 0) return conflict(res, s, true);
     stmtEvent.run(uid(), s.id, me.id, 'ended', s.current_item_id, null, t);
-    res.json(view(stmtById.get(s.id)!, true));
+    const fresh = stmtById.get(s.id)!;
+    emitRoomEvent(s.room_id, 'session.changed', s.id, fresh.revision);
+    res.json(view(fresh, true));
   });
 }

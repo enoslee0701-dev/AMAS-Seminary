@@ -85,6 +85,26 @@ db.exec(`
     created_at INTEGER NOT NULL
   );
 
+  -- ===== Realtime 事件（Phase 3）=====
+  --
+  -- **这是 transport 基础设施，不是业务审计日志。**
+  -- 业务历史在 prayer_session_events；这张表只用于「告诉客户端有东西变了」，
+  -- 因此只保留最小信息，可定期裁剪（见 sweepRealtimeEvents）。
+  --
+  -- 刻意**不存**：代祷正文、匿名作者、姓名、email、举报人、hidden_by。
+  -- 事件只是失效通知，客户端收到后回 REST 拿 canonical state。
+  --
+  -- 自增 id 作为单调递增 cursor，客户端用 lastEventId 断线续传。
+  CREATE TABLE IF NOT EXISTS room_realtime_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    room_id TEXT NOT NULL,
+    event_type TEXT NOT NULL CHECK(event_type IN ('session.changed','prayer.changed','theme.changed','moderation.changed')),
+    entity_id TEXT,
+    entity_revision INTEGER,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_rt_events_room ON room_realtime_events(room_id, id);
+
   -- ===== 共享祷告会（Phase 2）=====
   --
   -- 服务器是唯一真相源。客户端的 useState / localStorage 一律不得决定
@@ -518,6 +538,7 @@ export function resetDb(): void {
   db.exec(`
     DELETE FROM users;
     DELETE FROM refresh_jti;
+    DELETE FROM room_realtime_events;
     DELETE FROM prayer_session_events;
     DELETE FROM prayer_session_items;
     DELETE FROM prayer_sessions;

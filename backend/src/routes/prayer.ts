@@ -5,6 +5,7 @@ import { requireRoomExists, requireRoomMember, requireRoomManager } from '../mid
 import { sanitizeDisplayName, inspectPrayerText } from '../middleware/textSafety.js';
 import { prayerWriteLimiter, prayerHeartbeatLimiter } from '../middleware/rateLimit.js';
 import { db } from '../db.js';
+import { emitRoomEvent } from '../realtime/roomEvents.js';
 
 /**
  * 祷告室（Prayer Room）后端。
@@ -196,6 +197,7 @@ export function registerPrayerRoutes(app: Express): void {
       stmtClearTopics.run(roomId);
       topics.forEach((text, i) => stmtInsertTopic.run(uid(), roomId, i + 1, text, me.id, t));
     })();
+    emitRoomEvent(roomId, 'theme.changed');
     res.json({ ok: true, topics: stmtTopics.all(roomId) });
   });
 
@@ -227,6 +229,7 @@ export function registerPrayerRoutes(app: Express): void {
       if (existing) return res.status(200).json({ ok: true, id: existing.id, idempotentReplay: true });
       throw new Error('insert failed');
     }
+    emitRoomEvent(roomId, 'prayer.changed', id);
     res.status(cid ? 201 : 200).json({ ok: true, id, idempotentReplay: false });
   });
 
@@ -244,6 +247,7 @@ export function registerPrayerRoutes(app: Express): void {
       return res.status(403).json({ error: 'Only the author or host can delete.' });
     }
     stmtSoftDelete.run(now(), shareId);
+    emitRoomEvent(roomId, 'prayer.changed', shareId);
     res.json({ ok: true });
   });
 
@@ -261,6 +265,7 @@ export function registerPrayerRoutes(app: Express): void {
     if (add) stmtIntercede.run(shareId, me.id, now());
     else stmtUnintercede.run(shareId, me.id);
     const n = stmtCounts.all(roomId).find(c => c.share_id === shareId)?.n ?? 0;
+    emitRoomEvent(roomId, 'prayer.changed', shareId, n);
     res.json({ ok: true, intercessions: n, didIntercede: add });
   };
   app.post('/api/rooms/:roomId/prayer/shares/:shareId/intercede',
@@ -286,6 +291,7 @@ export function registerPrayerRoutes(app: Express): void {
       if (!row || row.room_id !== roomId) return res.status(404).json({ error: 'Share not found.' });
       const reason = String((req.body ?? {}).reason ?? 'other').slice(0, 200);
       stmtHide.run(now(), me.id, reason, shareId);
+      emitRoomEvent(roomId, 'moderation.changed', shareId);
       res.json({ ok: true, hidden: true });
     });
 
@@ -296,6 +302,7 @@ export function registerPrayerRoutes(app: Express): void {
       const row = stmtGetShare.get(shareId);
       if (!row || row.room_id !== roomId) return res.status(404).json({ error: 'Share not found.' });
       stmtUnhide.run(shareId);
+      emitRoomEvent(roomId, 'moderation.changed', shareId);
       res.json({ ok: true, hidden: false });
     });
 
@@ -316,6 +323,8 @@ export function registerPrayerRoutes(app: Express): void {
       const reason = String((req.body ?? {}).reason ?? 'other');
       if (!REPORT_REASONS.includes(reason)) return res.status(400).json({ error: 'Invalid reason.' });
       const r = stmtReport.run(uid(), shareId, me.id, reason, now());
+      // 只通知「有举报状态变化」，**不含举报人身份**
+      if (r.changes > 0) emitRoomEvent(roomId, 'moderation.changed', shareId);
       res.json({ ok: true, created: r.changes > 0 });
     });
 

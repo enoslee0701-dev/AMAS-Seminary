@@ -8,6 +8,8 @@ import { registerVoiceRoutes } from './routes/voice.js';
 import { registerRoomRoutes } from './routes/rooms.js';
 import { registerPrayerRoutes } from './routes/prayer.js';
 import { registerPrayerSessionRoutes } from './routes/prayerSession.js';
+import { registerRoomStreamRoutes } from './routes/roomStream.js';
+import { startEventPoller, sweepRealtimeEvents, realtimeDeploymentNote } from './realtime/roomEvents.js';
 import { registerGeminiProxy } from './routes/gemini.js';
 import { registerRecordingRoutes } from './routes/recordings.js';
 import { registerImageRoutes } from './routes/images.js';
@@ -72,6 +74,7 @@ registerVoiceRoutes(app);
 registerRoomRoutes(app);
 registerPrayerRoutes(app);
 registerPrayerSessionRoutes(app);
+registerRoomStreamRoutes(app);
 registerRecordingRoutes(app);
 registerImageRoutes(app);
 registerCooperationRoutes(app);
@@ -98,6 +101,11 @@ server.listen(config.port, () => {
   console.log(`[amas-backend] livekit configured: ${Boolean(config.liveKit.apiKey && config.liveKit.url)}`);
   warnIfNoAppSecret();
   warnIfJwtDerived();
+  // Realtime：全局一个事件轮询器（跨实例可见性 + 兜底），不是每连接一个
+  startEventPoller();
+  console.log(realtimeDeploymentNote(process.env.DB_PATH?.trim() || '<backend>/data/amas.sqlite'));
+  const swept = sweepRealtimeEvents();
+  if (swept > 0) console.log(`[amas-backend] realtime: swept ${swept} expired event(s)`);
 });
 
 /**

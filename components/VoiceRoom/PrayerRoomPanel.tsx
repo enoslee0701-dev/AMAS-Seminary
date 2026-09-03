@@ -13,6 +13,7 @@ import {
 } from '../../services/prayerRoomService';
 import { PT, prayerCard } from './prayerTheme';
 import { usePrayerSession } from './usePrayerSession';
+import { usePrayerRoomRealtime } from './usePrayerRoomRealtime';
 import { elapsedText, ERROR_TEXT, type DraftItem } from '../../services/prayerSessionService';
 import PrayerSessionBuilder from './PrayerSessionBuilder';
 import PrayerRoomActionBar, { type PrayerAction } from './PrayerRoomActionBar';
@@ -487,8 +488,13 @@ const PrayerRoomPanel: React.FC<Props> = ({
   const [ui, dispatch] = useReducer(uiReducer, initialUi);
   const backend = isPrayerBackendConfigured();
   const topicsRef = useRef<HTMLDivElement>(null);
+  /**
+    * Phase 3 Realtime：事件只做失效通知，收到后回 REST 拿 canonical state。
+    * realtime 健康时 polling 自动降频（30s/60s），断开时回到快档（3s/10s/15s）。
+    */
+  const [rtHealthy, setRtHealthy] = useState(false);
   /** 共享祷告会：**服务器唯一真相源**。currentItemId 等绝不复制进本地 reducer。 */
-  const ps = usePrayerSession(roomId, backend);
+  const ps = usePrayerSession(roomId, backend, rtHealthy);
   // 只用于「已进行 mm:ss」的视觉刷新；基准始终是 server 的 startedAt
   const [clockTick, setClockTick] = useState(0);
   useEffect(() => {
@@ -521,6 +527,16 @@ const PrayerRoomPanel: React.FC<Props> = ({
       void leavePresence(roomId);
     };
   }, [backend, roomId, refresh]);
+
+  // Realtime：连接就绪 / 重新可见时全量刷新；事件到达时按类型失效对应资源
+  const rt = usePrayerRoomRealtime(roomId, backend, {
+    onSession: () => { void ps.refresh(); },
+    onPrayer: () => { void refresh(); },
+    onTheme: () => { void refresh(); },
+    onModeration: () => { void refresh(); },
+    onFullRefresh: () => { void refresh(); void ps.refresh(); },
+  });
+  useEffect(() => { setRtHealthy(rt.healthy); }, [rt.healthy]);
 
   useEffect(() => {
     if (ui.subPage !== 'quiet') return;

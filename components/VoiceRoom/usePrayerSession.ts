@@ -19,7 +19,7 @@ import {
  * 轮询：active 3s / scheduled 10s / 无 session 15s；
  * 页面隐藏时暂停，重新可见立即 fetch（§29）。
  */
-export function usePrayerSession(roomId: string, enabled: boolean) {
+export function usePrayerSession(roomId: string, enabled: boolean, realtimeHealthy = false) {
   const [state, setState] = useState<SessionState>(EMPTY_SESSION);
   const [loaded, setLoaded] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
@@ -45,7 +45,8 @@ export function usePrayerSession(roomId: string, enabled: boolean) {
     const tick = async () => {
       if (document.visibilityState === 'visible') await refresh();
       if (!alive.current) return;
-      timer.current = window.setTimeout(tick, POLL_FOR(state.session));
+      timer.current = window.setTimeout(tick,
+        POLL_FOR(state.session, realtimeHealthy, document.visibilityState !== 'visible'));
     };
     void tick();
     const onVisible = () => { if (document.visibilityState === 'visible') void refresh(); };
@@ -56,7 +57,7 @@ export function usePrayerSession(roomId: string, enabled: boolean) {
       document.removeEventListener('visibilitychange', onVisible);
     };
     // state.session?.status 变化时重排间隔；不依赖整个 session 对象避免每轮重建
-  }, [enabled, refresh, state.session?.status]);
+  }, [enabled, refresh, state.session?.status, realtimeHealthy]);
 
   /** 统一的命令执行：进 loading → 调服务器 → 用返回的 state 更新（成功或 409 都用）。 */
   const run = useCallback(async (key: string, fn: () => Promise<CommandResult>): Promise<CommandResult> => {

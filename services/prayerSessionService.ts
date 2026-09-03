@@ -62,9 +62,19 @@ export const serverOffsetOf = (serverNow: number | undefined): number =>
 
 export const estimatedServerNow = (offsetMs: number): number => Date.now() + offsetMs;
 
-/** 轮询间隔（毫秒）。§29 */
-export const POLL_FOR = (s: PrayerSession | null): number =>
-  s?.status === 'active' ? 3_000 : s?.status === 'scheduled' ? 10_000 : 15_000;
+/**
+ * 轮询间隔（毫秒）。Phase 3 起 polling 是**自愈通道**，不再是主通道。
+ *
+ * realtime 健康时大幅降频（30s/60s/60s）——它只负责兜住漏掉的事件；
+ * realtime 断开时回到 Phase 2 的快档（3s/10s/15s），保证功能不退化。
+ * 页面隐藏时进一步降频。
+ */
+export const POLL_FOR = (s: PrayerSession | null, realtimeHealthy = false, hidden = false): number => {
+  const base = realtimeHealthy
+    ? (s?.status === 'active' ? 30_000 : 60_000)
+    : (s?.status === 'active' ? 3_000 : s?.status === 'scheduled' ? 10_000 : 15_000);
+  return hidden ? Math.max(base, 60_000) : base;
+};
 
 /** 服务端返回的业务错误码。前端必须区分展示，不能一律「操作失败」。§31 */
 export type SessionErrorCode =
