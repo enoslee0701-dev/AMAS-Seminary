@@ -10,6 +10,7 @@ import { registerPrayerRoutes } from './routes/prayer.js';
 import { registerPrayerSessionRoutes } from './routes/prayerSession.js';
 import { registerPrayerHistoryRoutes } from './routes/prayerHistory.js';
 import { registerRoomPresenceRoutes } from './routes/roomPresence.js';
+import { registerRoomReadingRoutes, reportScriptureCanon } from './routes/roomReading.js';
 import { reportSystemRoomModerators } from './diagnostics/systemRooms.js';
 import { registerRoomStreamRoutes } from './routes/roomStream.js';
 import { startEventPoller, sweepRealtimeEvents, realtimeDeploymentNote } from './realtime/roomEvents.js';
@@ -82,6 +83,7 @@ registerPrayerRoutes(app);
 registerPrayerSessionRoutes(app);
 registerPrayerHistoryRoutes(app);
 registerRoomPresenceRoutes(app);
+registerRoomReadingRoutes(app);
 registerRoomStreamRoutes(app);
 registerRecordingRoutes(app);
 registerImageRoutes(app);
@@ -126,6 +128,8 @@ server.listen(config.port, () => {
   // 内置公共房间没有真人房主，治理全靠 moderator。缺人只写服务端日志，
   // 不影响启动，也**绝不**把 SYSTEM_ROOM_HAS_NO_MODERATOR 这类码发给客户端。
   reportSystemRoomModerators();
+  // 经文数据集缺失时共享阅读位置写不进去，启动就要说清楚
+  reportScriptureCanon();
   // Realtime：全局一个事件轮询器（跨实例可见性 + 兜底），不是每连接一个
   startEventPoller();
   console.log(realtimeDeploymentNote(process.env.DB_PATH?.trim() || '<backend>/data/amas.sqlite'));

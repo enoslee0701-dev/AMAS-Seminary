@@ -3,6 +3,9 @@ import { createPortal } from 'react-dom';
 import PrayerRoomPanel from './PrayerRoomPanel';
 import RoomMembers from './RoomMembers';
 import { useRoomPresence } from './useRoomPresence';
+import { useSharedReading } from './useSharedReading';
+import { formatLocation } from '../../services/roomReadingService';
+import SharedReadingBar from './SharedReadingBar';
 import { getCurrentUser } from '../../services/authService';
 import { VARIANT, MODAL_WIDTH, type RoomVariant } from './prayerTheme';
 import {
@@ -77,6 +80,15 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
     const [showPlaylist, setShowPlaylist] = useState(false);
     const [showInvite, setShowInvite] = useState(false);
     const [currentBibleChapter, setCurrentBibleChapter] = useState(INITIAL_BIBLE_DATA[0]);
+    /**
+     * 我自己翻到了哪里。**纯本地状态，永远不写服务器。**
+     * 用 ref 是为了让「带领大家读这里」的回调随时读到最新值，
+     * 而不必把它塞进依赖数组导致轮询重建。
+     */
+    const localBrowseRef = useRef({ book: INITIAL_BIBLE_DATA[0].book, chapter: INITIAL_BIBLE_DATA[0].chapter });
+    const [publishingReading, setPublishingReading] = useState(false);
+    /** 跟随房间位置时调用的加载函数。定义在下方，这里先占位。 */
+    const applyScriptureRef = useRef<((book: string, chapter: number, silent?: boolean) => Promise<void>) | null>(null);
     const [showBibleSelector, setShowBibleSelector] = useState(false);
     const [bibleViewMode, setBibleViewMode] = useState(true);
     const [bibleSelectionStep, setBibleSelectionStep] = useState<'books' | 'chapters'>('books');
@@ -176,6 +188,19 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
      * isSpeaking 恒为 false —— 没有实时语音，没有人在说话，
      * 这个字段只是为了兼容既有的 Participant 类型，不驱动任何「正在讲话」显示。
      */
+    /**
+     * P1-2 共享阅读位置。只在读经室启用；其它房间该接口返回 404。
+     * onFollow 只在「跟随中」时被调用，用来把阅读器带到房间位置。
+     */
+    const reading = useSharedReading(
+      activeVoiceRoom.id,
+      activeVoiceRoom.type === 'bible',
+      // 走 ref：真正的加载函数在下面才定义，这里不能直接引用。
+      React.useCallback((p: { book: string; chapter: number }) => {
+        void applyScriptureRef.current?.(p.book, p.chapter, true);
+      }, []),
+    );
+
     const roster: Participant[] = React.useMemo(() => presence.members.map(m => ({
       id: m.userId,
       name: m.userId === authUser?.id ? '我' : m.name,
@@ -529,7 +554,16 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
         showToast("房间标题已更新");
     };
 
-    const handleSelectScripture = async (book: string, chapter: number) => {
+    /**
+     * 加载并显示某章。
+     *
+     * `silent` 用于「跟随房间进度」自动跳转：跟随时不该刷 toast，
+     * 更不该在讲道室把经文重新播报进聊天。
+     *
+     * **这个函数只改本地阅读器，永远不写服务器。**
+     * 发布房间位置是另一条显式路径（publishReading）。
+     */
+    const handleSelectScripture = async (book: string, chapter: number, silent = false) => {
       setShowBibleSelector(false);
       const local = INITIAL_BIBLE_DATA.find(b => b.book === book && b.chapter === chapter);
       let scriptureContent: string[] = [];
@@ -549,6 +583,10 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
       }
       const newChapterData: BibleChapter = { book, chapter, content: scriptureContent };
       setCurrentBibleChapter(newChapterData);
+      // 记录「我自己主动翻到了哪里」。这只是本地状态，绝不写服务器——
+      // 普通成员浏览别处不该把整个房间拖走。
+      localBrowseRef.current = { book, chapter };
+      if (silent) return;
       if (isPreachingRoom) {
          setRoomChats(prev => [...prev, {
             id: `sys-${Date.now()}`,
@@ -567,6 +605,26 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
       } else {
          showToast(`已切换至 ${book} 第${chapter}章`);
       }
+    };
+
+    // 让 useSharedReading 的 onFollow 能调到上面的加载函数
+    useEffect(() => { applyScriptureRef.current = handleSelectScripture; });
+
+    /**
+     * 主持人显式发布房间共同阅读位置。
+     * **只有点击才会触发**——翻页、搜索、跟随都不会调用它。
+     */
+    const publishReading = async () => {
+      const { book, chapter } = localBrowseRef.current;
+      setPublishingReading(true);
+      const r = await reading.publish(book, chapter);
+      setPublishingReading(false);
+      if (r.ok) { showToast(`已带领大家读 ${book} 第${chapter}章`); return; }
+      // 失败绝不显示「已同步」
+      if (r.code === 'CONFLICT') showToast('另一位主持人刚刚更新了位置，已为你刷新');
+      else if (r.code === 'FORBIDDEN') showToast('只有房间主持人可以设置共同阅读位置');
+      else if (r.code === 'INVALID') showToast('这个经文位置无效');
+      else showToast('同步失败，房间阅读进度未改变');
     };
 
     const handleUserClick = (participant: Participant) => {
@@ -1237,6 +1295,21 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
                     {/* P1-1 真实在线成员。每一项都对应后端 room_presence 的一行记录。 */}
                     <div className="mb-3">
                         <RoomMembers presence={presence} meId={authUser?.id} />
+                    </div>
+
+                    {/* P1-2 共享阅读位置。房间进度与我自己的位置同时可见。 */}
+                    <div className="mb-3">
+                        <SharedReadingBar
+                            reading={reading}
+                            localBook={currentBibleChapter.book}
+                            localChapter={currentBibleChapter.chapter}
+                            publishing={publishingReading}
+                            onGoToRoom={() => {
+                                const p = reading.position;
+                                if (p) void handleSelectScripture(p.book, p.chapter, true);
+                            }}
+                            onPublish={() => { void publishReading(); }}
+                        />
                     </div>
 
                     <div className="flex flex-row items-stretch justify-between flex-1">

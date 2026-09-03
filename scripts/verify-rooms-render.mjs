@@ -8,7 +8,7 @@
  * 运行：node scripts/verify-rooms-render.mjs
  */
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import net from 'node:net';
 import puppeteer from 'puppeteer-core';
@@ -21,6 +21,9 @@ if (!CHROME) { console.error('找不到 Chrome'); process.exit(1); }
 
 /** MockTransport 的虚拟成员。这些人不存在，绝不能出现在正式成员列表里。 */
 const MOCK_NAMES = ['王牧师', '李姊妹', 'Daniel', 'Mary', '张弟兄', 'Grace'];
+
+/** 共享阅读位置条的源码。用于断言那些「无共享状态时不显示」的入口确实实现了。 */
+const READING_BAR = readFileSync('components/VoiceRoom/SharedReadingBar.tsx', 'utf8');
 
 const ROOMS = [
   { name: '祷告室', sentinel: '本次祷告主题' },
@@ -170,6 +173,30 @@ for (const room of ROOMS) {
     check(`${room.name}：无正在讲话 / 正在听 / 正在敬拜等措辞`,
       !/正在讲话|人正在听|正在敬拜|正在交通|正在听道|实时发言/.test(body));
   }
+
+  // ── §18 读经室共享阅读位置（P1-2）──
+  if (room.name === '读经室') {
+    check('读经室：存在共享阅读 UI',
+      /房间正在阅读|尚未设置共同阅读位置|正在获取房间阅读进度|房间阅读进度暂时无法同步/.test(body),
+      '');
+    // 本次是全新的一次性数据库，没有人设过位置 —— 必须如实说「尚未设置」
+    check('读经室：无共享状态时不显示假经文位置',
+      body.includes('尚未设置共同阅读位置'));
+    check('读经室：不存在写死的 John 3:16',
+      !/John\s*3[:：]16/i.test(body) && !body.includes('约翰福音 3:16'));
+    check('读经室：不存在写死的 Genesis 1:1',
+      !/Genesis\s*1[:：]1/i.test(body) && !body.includes('创世记 1:1'));
+    // 该用户不是 moderator，不该看到发布入口
+    check('读经室：普通成员没有主持同步按钮',
+      !body.includes('带领大家读'));
+    // 跟随相关状态存在于源码（无共享位置时按钮尚不显示）
+    check('读经室：follow / 回到房间进度 状态已实现',
+      READING_BAR.includes('跟随阅读') && READING_BAR.includes('暂停跟随')
+      && READING_BAR.includes('回到房间进度'));
+    check('读经室：moderator 有明确同步入口',
+      READING_BAR.includes('带领大家读') && READING_BAR.includes('canPublish'));
+    check('读经室：圣经正文仍正常显示', body.includes('起初') || body.includes('创世记'));
+  }
   if (room.name === '赞美室') {
     check('赞美室：不再显示写死的歌名与播放态',
       !body.includes('这一生最美的祝福') || !/正在播放/.test(body));
@@ -212,6 +239,12 @@ console.log('');
     body.includes('成员状态暂时无法更新') ? '已显示轻量提示' : '(无提示)');
   check('presence 失败后不出现任何虚构成员',
     !MOCK_NAMES.some(n => body.includes(n)));
+  // §14 共享阅读同步失败也必须如实说明，不显示假位置
+  check('backend 失败后不显示虚构共享阅读位置',
+    !/房间正在阅读\s*\S/.test(body) || body.includes('暂时无法同步'),
+    body.includes('房间阅读进度暂时无法同步') ? '已如实提示' : '(未显示房间位置)');
+  check('backend 失败后本地翻章仍可用（章节选择器仍在）',
+    body.includes('创世记') || body.includes('起初'));
   await page.screenshot({ path: 'screenshots/rooms/读经室-presence-failure.png' });
 }
 

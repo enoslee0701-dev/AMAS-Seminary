@@ -37,3 +37,4 @@ backend/recordings/
 backend/.tmp-test/
 .tmp-rooms/
 .tmp-presence/
+.tmp-reading/

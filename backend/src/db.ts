@@ -241,6 +241,34 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_room_presence_seen ON room_presence(room_id, last_seen_at);
 
+  -- ===== 房间共享阅读位置（P1-2）=====
+  --
+  -- 只存**位置**，不存经文正文。正文由各客户端用自己的阅读器加载
+  -- （public/scripture/cuv.json），避免内容漂移、数据重复与多译本状态混乱。
+  --
+  -- book 存的是**中文书名**（「约翰福音」），与 cuv.json 的键、
+  -- constants.ts 的 BIBLE_STRUCTURE、以及 loadScripture(book, chapter) 完全同一套标识。
+  -- 刻意不引入数字 book id —— 那会凭空造出第三套映射需要人工维护。
+  --
+  -- verse 可为 NULL：当前阅读器按「章」显示，没有按节定位的入口。
+  -- 字段留着是因为 API 已支持精确到节，UI 具备该能力时无需再改 schema。
+  --
+  -- 每个房间至多一行（room_id 为主键）。没有行 = 尚未设置共同阅读位置，
+  -- 这是合法状态，接口返回 null，**不伪造成创世记 1:1**。
+  --
+  -- revision 沿用祷告会那套乐观并发：PUT 必须带 expectedRevision，
+  -- 条件更新 changes===0 即冲突 409。不另造一套锁。
+  CREATE TABLE IF NOT EXISTS room_reading_state (
+    room_id TEXT PRIMARY KEY,
+    book TEXT NOT NULL,
+    chapter INTEGER NOT NULL,
+    verse INTEGER,
+    revision INTEGER NOT NULL DEFAULT 1,
+    updated_by TEXT NOT NULL,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY (room_id) REFERENCES rooms(room_id) ON DELETE CASCADE
+  );
+
   CREATE TABLE IF NOT EXISTS push_tokens (
     user_id TEXT NOT NULL,
     token TEXT NOT NULL,
