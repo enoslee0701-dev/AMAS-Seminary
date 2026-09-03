@@ -158,4 +158,16 @@ baseline 复跑结果见 §8（在本 worktree 中重新取得）。
 
 ## 8. Auth 分支 baseline 复跑结果
 
-*（由 worktree 中的复跑填写，见下方"baseline 记录"段）*
+在独立 worktree `amas-auth-worktree`（独立目录、独立 node_modules）复跑：
+
+| 套件 | 结果 |
+|---|---|
+| 前端 `npx vitest run` | **106/106 PASS**（15 个测试文件） |
+| 后端 `npm test`（smoke） | **88/88 PASS** |
+| `backend/src/test/supabase-auth.test.ts` | **9/9 PASS**（AUTH-M3 后扩至 14/14） |
+
+**这是 `auth/supabase-unification` 分支的正式 baseline。**
+§5 中混合 commit 上的结果仅作历史记录，不再被引用。
+
+自此之后的 AUTH 改动（`_promote` 移除、AUTH-M6 dry-run 工具等）
+均为独立 AUTH commit，不与任何其他工作流混合。
