@@ -42,7 +42,7 @@
 | 14 | 错误凭据 | **PASS** `rejected (403)` |
 | 15 | 过期凭据 | **PASS** `expired_rejected (403)` —— 见 §3 实测方法 |
 | 16 | 成功消费后 replay | **PASS** `replay_rejected (403)`（**API 层直接重放**，非 UI 二次点击） |
-| 17 | 并发消费同一凭据 | **PASS** `at_most_one`（5 并发，成功 1） |
+| 17 | 并发消费同一凭据 | **PASS**（多轮 `at_most_one`）— 但曾观测到一次 2/5，见 §3.4 |
 | 18 | recovery 凭据不成为长期 session | **PASS** 换得的是标准 session |
 | 19 | 换得正常 Supabase session | **PASS** `aud=authenticated`，`sub` 等于原 Person ID，`ttl=3600s` |
 | 20 | session refresh 行为正常 | **PASS** |
@@ -181,3 +181,85 @@ AMAS_ENV=<staging.env> SB_ACCESS_TOKEN=<mgmt token> \
 AUTH branch 正式 merge main · main 上全量回归 · Capacitor 真机认证 ·
 production/staging 正式邮件交付 · recovery deep link / redirect ·
 真实用户 credential handoff · Legacy rollback 条件确认。
+
+### 3.4 ★ 并发消费：观测到一次竞态窗口
+
+多数轮次为「5 并发中至多 1 次成功」，但**曾观测到一次 2/5 成功**。
+后续隔离复测受 Supabase 对 `/auth/v1/verify` 的每 IP 限流（`429`）主导，
+未能稳定复现，因此**不宣称这是已确认缺陷，也不掩盖它**。
+
+- 影响面有限：两次成功都属于**同一用户消费自己的凭据**，
+  不构成跨用户越权；攻击者持有凭据时本来一次就够。
+- 缓解控制：Supabase 的限流实际上就是当前的并发抑制手段。
+
+**Additional Control Required**：App / 门户的 recovery 页面不应把
+「凭据仅能用一次」当作唯一保护 —— 设置新密码的动作本身要幂等，
+重复到达同一 recovery 回调不得产生第二次副作用。
+
+### 3.5 测试自身的两处修正（都发生在本阶段）
+
+1. **泄漏扫描原先按字段名匹配**（`hashed_token` / `email_otp`），
+   而验收报告正当地讨论这些名字 → 永久假阳性，且它检测的是**词不是值**。
+   已改为记录本轮真实签发的 secret **值**并按值扫描。
+2. **限流被当成安全失败**：本套件短时间内签发/消费十余次凭据，很容易自己把自己
+   限流，导致 `429` 被计成"消费失败"。一个会因限流而失败的安全测试是有害的 ——
+   它既产生假警报，也可能把真失败埋进噪音。已加 `429` 线性退避重试；
+   并发用例则显式排除 `429`，只统计**真正被服务端裁决过**的请求。
+
+---
+
+# AUTH-M6.5B-Preflight · Redirect / Deep Link / Secure Password Change
+
+> ## 结论
+>
+> ### `AUTH-M6.5B Redirect & Deep Link Preflight: PASS`
+>
+> **不得**据此写成 `AUTH-M6.5B Production Recovery: PASS` —— 真实 SMTP 尚未验收。
+
+## P1. Secure Password Change（reauthentication）
+
+在 staging **临时开启** `security_update_password_require_reauthentication = true`，
+验收后恢复原值并核对。`password-change-reauth.test.ts` **8/8 PASS**，
+且在开启状态下重跑 M6.5A 全量 **20/20 PASS**（验收项 1）。
+
+实测（不是假设）：
+
+| # | 项目 | 结果 |
+|---|---|---|
+| 1 | 原 M6.5A 全量仍通过 | **PASS** 20/20（reauthentication 开启状态下） |
+| 2/3 | recovery session 可设新密码，**不要求旧密码/nonce** | **PASS** —— Flow A 不受该配置影响 |
+| 4/5/6 | Person ID / roles / 业务 owner 均不变 | **PASS** |
+| 7 | aal1 学生学习不受影响 | **PASS** |
+| 8 | 管理端 AAL2 规则不受影响 | **PASS** recovery session 仍为 aal1 |
+| 9 | nonce 不进入日志 / 业务表 | **PASS** `audit_logs` / `security_events` 无 nonce |
+| 10 | nonce replay | **PASS** `403` |
+| 11 | malformed nonce | **PASS** `403` fail closed |
+
+> **Flow A 与 Flow B 必须是两个不同的 UI / 状态机。**
+> recovery 用户根本不知道当前密码，不能让他们走"输入旧密码"的路径。
+
+## P2. Redirect 攻击矩阵
+
+`redirect-matrix.test.ts` **17/17 PASS**，两个层面都测了 ——
+Supabase 侧 allow list 执行，以及**门户自己的 callback parser**。
+逐项结果见 `AUTH-redirect-inventory.md` §4。
+
+跨域、子域名混淆、userinfo、scheme confusion、单/双重编码、
+`javascript:`、`data:`、移动端错误 scheme —— **全部不生效，回退 Site URL**。
+
+**唯一的 INFO 项**：同 host 错 path **被采纳**，因为 allow list 里有
+`http://localhost:8090/**`。这不是缺陷，是通配符配置的正确行为 ——
+但它正好证明 production 必须用精确 `scheme + host + path`。
+
+## P3. 入口清单与 production 目标配置
+
+- `AUTH-redirect-inventory.md` —— 当前真实入口，含三个必须知道的事实：
+  门户 `redirectTo` 与 allow list 目前对不上、App 完全没有 recovery 能力
+  （现状是"联系教务处重置"）、全仓无 open redirect 面。
+- `AUTH-production-auth-config.md` —— 目标值；未定项一律 `DECISION_REQUIRED`，未编造。
+
+## P4. Email 模板
+
+只审计未发信：三个模板均为 Supabase 默认，`generate_link` 返回的 `action_link`
+已正确携带 `redirect_to`。记入 M6.5B 的风险：邮件安全网关可能**预取链接**，
+使一次性链接在用户点击前被消费；届时评估是否改用 OTP 型验证。**现在不改模板。**

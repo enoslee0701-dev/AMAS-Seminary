@@ -34,3 +34,4 @@ backend/recordings/
 # AUTH-M6.5 测试产物：可能含判定明细，不入库
 backend/credential-recovery-findings.json
 backend/data/amas-auth-migration.sqlite*
+backend/redirect-matrix-findings.json
