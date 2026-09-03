@@ -143,21 +143,56 @@ export async function cleanupRecoveryState(): Promise<void> {
 }
 
 /**
- * 注册监听。返回取消函数。
- * Capacitor 的 appUrlOpen 在 Android 与 iOS 上都会触发，因此实现不是 Android-only。
+ * 注册 deep link 处理。返回取消函数。
+ *
+ * ★ 必须同时处理两种入口，只做一种是不够的：
+ *   - **warm start**：App 已在运行 → `App.addListener('appUrlOpen', …)`
+ *   - **cold start**：App 完全关闭时点击恢复邮件 → `App.getLaunchUrl()`
+ *   只实现 appUrlOpen 的话，用户在 App 未运行时点链接会打开 App 却**丢失 recovery URL**。
+ *
+ * ★ 两条入口与 Web 的 /auth/recovery 走**同一个 parser**（parseRecoveryUrl）
+ *   与同一个 handler（handleRecoveryUrl），因此 warm / cold / Web 产出完全相同的
+ *   normalized recovery input，攻击矩阵只需针对一处。
+ *
+ * ★ 幂等：同一 URL 连续到达多次也只会有一个 active flow ——
+ *   start_recovery_flow 复用现有 flow，且 DB 唯一索引兜底。
+ *   这里再加一层本地去重，避免无谓的重复往返。
+ *
+ * Capacitor 的 appUrlOpen 在 Android 与 iOS 上都会触发，实现不是 Android-only。
  */
 export async function registerRecoveryDeepLink(
   onResult: (r: RecoveryLinkResult) => void,
 ): Promise<() => void> {
+  let disposed = false;
+  /** 本次进程内已处理过的 URL，避免重复事件造成重复往返（幂等最终仍由服务端保证）。 */
+  const seen = new Set<string>();
+
+  const process = async (url: string | null | undefined) => {
+    if (disposed || !url) return;
+    if (seen.has(url)) return;
+    seen.add(url);
+    const r = await handleRecoveryUrl(url);
+    if (r.kind !== 'not_recovery') onResult(r);
+  };
+
   try {
     const { App } = await import('@capacitor/app');
-    const handle = await App.addListener('appUrlOpen', async (event: { url: string }) => {
-      const r = await handleRecoveryUrl(event.url);
-      if (r.kind !== 'not_recovery') onResult(r);
+
+    // cold start：App 被 deep link 拉起时，事件可能早于监听注册，必须主动取
+    try {
+      const launch = await App.getLaunchUrl();
+      await process(launch?.url);
+    } catch {
+      /* 某些平台/版本不提供 launch url，忽略即可 */
+    }
+
+    // warm start：App 已在运行时收到新的 deep link
+    const handle = await App.addListener('appUrlOpen', (event: { url: string }) => {
+      void process(event.url);
     });
-    return () => { void handle.remove(); };
+    return () => { disposed = true; void handle.remove(); };
   } catch {
     // 非原生环境（纯 Web）：不注册，Web 侧走 /auth/recovery 页面
-    return () => { /* noop */ };
+    return () => { disposed = true; };
   }
 }
