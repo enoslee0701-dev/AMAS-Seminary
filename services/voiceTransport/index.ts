@@ -46,6 +46,22 @@ function readEnvKind(): TransportKind | undefined {
 const isProdBuild = (): boolean =>
   Boolean((import.meta as unknown as { env?: Record<string, unknown> }).env?.PROD);
 
+/**
+ * 语音演示构建标记。
+ *
+ * `npm run build:voice-demo` 也是一次 vite production 构建，所以 `env.PROD`
+ * 同样为 true。若不把它排除，演示包一进祷告室就会被下面的运行时守卫抛错，
+ * 演示构建等于不可用——这是真机验证时发现的。
+ *
+ * 这不会削弱护栏：本标记要生效，构建期必须同时有 VITE_VOICE_TRANSPORT=mock，
+ * 而 `npm run build` 见到 mock 一律拒绝（scripts/check-voice-config.mjs），
+ * 且该守卫只认 `--demo-build` 命令行参数，环境变量注入不了。
+ * 演示包还会常驻不可关闭的 DEMO 标识。
+ */
+const isVoiceDemoBuild = (): boolean =>
+  String((import.meta as unknown as { env?: Record<string, unknown> })
+    .env?.VITE_VOICE_DEMO_BUILD ?? '') === '1';
+
 export const MOCK_IN_PROD_ERROR = 'MOCK_VOICE_TRANSPORT_FORBIDDEN_IN_PRODUCTION';
 
 /**
@@ -57,13 +73,14 @@ export const MOCK_IN_PROD_ERROR = 'MOCK_VOICE_TRANSPORT_FORBIDDEN_IN_PRODUCTION'
  *   production  + none    ✅
  *   production  + livekit ✅
  *   production  + mock    ❌ 抛错
+ *   voice-demo  + mock    ✅（dist-voice-demo/，页面常驻 DEMO 标识，禁止部署）
  *
  * mock 会凭空生成虚拟成员并随机翻转 isSpeaking。它出现在生产里意味着
  * 真实用户会看到不存在的人「在说话」——必须响亮地失败，而不是等用户
  * 进了祷告室才发现。构建期还有 scripts/check-voice-config.mjs 提前拦一道。
  */
 export function assertVoiceTransportAllowed(kind: TransportKind): void {
-  if (kind === 'mock' && isProdBuild()) {
+  if (kind === 'mock' && isProdBuild() && !isVoiceDemoBuild()) {
     throw new Error(MOCK_IN_PROD_ERROR);
   }
 }

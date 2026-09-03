@@ -10,6 +10,7 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+dist-voice-demo
 *.local
 
 # Backend on-disk uploads (binary content; metadata lives in process memory)

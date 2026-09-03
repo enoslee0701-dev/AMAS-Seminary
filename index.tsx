@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import './i18n';
 import App from './App';
 import ErrorBoundary from './components/ErrorBoundary';
+import DemoBuildBadge from './components/DemoBuildBadge';
 
 // A lazily-loaded chunk can fail to load when the page still holds a module graph
 // from before a dev-server hot update or a production deploy. Reload once so the
@@ -25,6 +26,9 @@ if (!rootElement) {
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
+    {/* 挂在 ErrorBoundary 之外：演示构建的标识连应用崩溃时也必须还在。
+        正式构建里 DemoBuildBadge 恒为 null，不产生任何 DOM。 */}
+    <DemoBuildBadge />
     <ErrorBoundary>
       <App />
     </ErrorBoundary>
