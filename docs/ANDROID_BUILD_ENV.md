@@ -103,8 +103,9 @@ OK 无 pathPrefix
 
 环境已就绪，插上真机即可执行：
 
-**Launch state**：App 完全关闭 / 后台 / 前台三态点击 recovery deep link，
-必须进入**相同**的 normalized recovery flow。
+**Launch state**：App 完全关闭 / 后台 / 前台三态**从真实邮件点击** recovery deep link，
+三者必须进入**相同**的 canonical handler 与 normalized recovery flow。
+（路由本身的 wrong scheme/host/path 用上面 (a) 的非秘密占位值验证。）
 
 **Credential**：设置新密码 · password mutation 恰好一次 · Person ID 不变 ·
 roles 不变 · application / student / CP / learning owner 均不变。
@@ -121,10 +122,38 @@ wrong scheme / host / path · malformed credential。
 **Secret exposure**：Android logcat · console · WebView URL · recent navigation state ·
 crash/error output —— 均不得出现 recovery credential 或密码明文。
 
-安装命令：
+### 两类验证必须分开，不能混用
+
+**(a) Routing-only —— 只验 intent 路由，禁止使用真实凭据**
 
 ```bash
 adb install -r android/app/build/outputs/apk/debug/app-debug.apk
-# 路由级验证（真机上同样适用）
-adb shell am start -a android.intent.action.VIEW -d "amas-seminary://auth/recovery#access_token=..."
+
+# ★ 只用**明确的非秘密占位值**。这条命令仅用于验证 Android intent routing，
+#   **不用于真实 credential recovery**。
+adb shell am start -a android.intent.action.VIEW -d "amas-seminary://auth/recovery#access_token=TEST_ONLY_NON_SECRET"
+
+# 反例路由（应当不唤起 / 不进入 recovery）
+adb shell am start -a android.intent.action.VIEW -d "amasapp://auth/recovery#access_token=TEST_ONLY_NON_SECRET"
+adb shell am start -a android.intent.action.VIEW -d "amas-seminary://evil/recovery#access_token=TEST_ONLY_NON_SECRET"
+adb shell am start -a android.intent.action.VIEW -d "amas-seminary://auth/login#access_token=TEST_ONLY_NON_SECRET"
 ```
+
+> **绝不要把真实 `access_token` / `refresh_token` / recovery token 写进 adb 命令行。**
+> 命令行会进入 shell history、terminal capture、调试输出、CI 日志与排障记录，
+> 那等于给一次性凭据做了多份持久副本。
+
+**(b) 真实 recovery 验收 —— 必须走完整邮件链路**
+
+```
+测试/正式邮箱收到 Supabase recovery mail
+  → 在 Android 真机的邮件客户端里**点击**
+  → 系统唤起 AMAS App
+  → canonical recovery handler
+  → Supabase credential validation
+  → AMAS recovery flow
+  → password finalization
+```
+
+> **不要**从真实邮件里把 token 复制出来再塞进 `adb am start`。
+> 那既制造了凭据副本，也绕过了真正要验的东西 —— 邮件客户端到 App 的唤起链路。

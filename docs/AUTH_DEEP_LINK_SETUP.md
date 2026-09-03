@@ -91,7 +91,8 @@ production Web 侧的精确 URL 见 `AUTH-production-auth-config.md`（域名待
 
 平台生成后逐条验证：
 
-- [ ] `amas-seminary://auth/recovery#access_token=…` 能唤起 App
+- [ ] `amas-seminary://auth/recovery#access_token=TEST_ONLY_NON_SECRET` 能唤起 App
+      （占位值仅验路由；真实凭据只能经邮件点击进入，见 `ANDROID_BUILD_ENV.md` §6）
 - [ ] `amas-seminary://auth/login` **不**进入 recovery 流程（wrong_path）
 - [ ] `amas-seminary://evil/recovery` **不**进入（wrong_host）
 - [ ] `amasapp://auth/recovery` **不**被本 App 处理（wrong_scheme）
@@ -102,3 +103,7 @@ production Web 侧的精确 URL 见 `AUTH-production-auth-config.md`（域名待
 
 路由层的前 5 条已有自动化覆盖：`tests/services/recoveryDeepLink.test.ts`。
 其余需真机验收（D-AUTH-R1）。
+
+> ★ 本清单中所有手工 URI 一律使用**非秘密占位值**。
+> 真实 `access_token` / `refresh_token` / recovery token **绝不写入命令行或本文档** ——
+> 命令行会留存在 shell history、terminal capture、CI 日志与排障记录里。
