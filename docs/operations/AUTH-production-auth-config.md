@@ -12,7 +12,7 @@
 | 配置项 | staging 现状 | production 目标 | 状态 |
 |---|---|---|---|
 | `mailer_autoconfirm` | `true` | **`false`** | 已定；production blocker |
-| `security_update_password_require_reauthentication` | `false` | **`true`** | 已定（见 §2） |
+| `security_update_password_require_reauthentication` | `false` | **`true`** | **Decision Closed**（D-AUTH-R5） |
 | `mailer_otp_exp`（recovery TTL） | `3600s` | **`3600s`**（沿用；已实测过期生效） | 已定 |
 | `jwt_exp` | `3600s` | `3600s` | 已定 |
 | `password_min_length` | `8` | `8`（下限；是否提高属产品决策） | 已定 |
@@ -20,7 +20,7 @@
 | `smtp_admin_email` / 发信域 | `None` | `DECISION_REQUIRED` | 依赖正式域名 |
 | Site URL | `http://localhost:8090` | `DECISION_REQUIRED` | 依赖正式域名 |
 | Web redirect URLs | `http://localhost:8090/**` 等通配 | **精确 URL**，见 §3 | `DECISION_REQUIRED` |
-| Mobile deep-link redirect | 无 | 单一 canonical scheme + 单一 path | `DECISION_REQUIRED` |
+| Mobile deep-link redirect | 无 | **`amas-seminary://auth/recovery`**（精确，不用 `scheme://**`） | **已定**（D-AUTH-R3） |
 | MFA / AAL 策略 | TOTP 已启用；管理动作强制 aal2 | **不变**：普通 student 全程 aal1 即可学习；仅敏感管理动作要求 aal2 | 已定 |
 | Allowed origins（CORS） | `http://localhost:5173` | `DECISION_REQUIRED` | 依赖正式域名 |
 | `service_role` key | 仅后端环境变量 | **永不进前端、永不进 Git** | 已定 |
@@ -62,10 +62,14 @@
 目标形态（域名待定，故标 `DECISION_REQUIRED`）：
 
 ```
-Site URL:      https://<DECISION_REQUIRED>/
-Redirect URLs: https://<DECISION_REQUIRED>/auth/callback/
-               https://<DECISION_REQUIRED>/auth/callback/?type=recovery
+Site URL:      https://<PRODUCTION_DOMAIN>/
+Redirect URLs: https://<PRODUCTION_DOMAIN>/auth/recovery
+               amas-seminary://auth/recovery
 ```
+
+`<PRODUCTION_DOMAIN>` 仍是 `DECISION_REQUIRED`：**GitHub Pages URL 不作为 production
+Auth canonical origin**，production 必须使用 AMAS 实际拥有/控制的自定义域名。
+代码与配置模板已按 `/auth/recovery` 写好，但 **placeholder 不得当作真实配置部署**。
 
 开发环境可保留必要的 localhost 条目，但**不得带入 production 配置**。
 
@@ -82,16 +86,17 @@ Redirect URLs: https://<DECISION_REQUIRED>/auth/callback/
 当前 App **未注册任何 URL scheme、未监听 deep link、没有 recovery 页面**
 （见 `AUTH-redirect-inventory.md` §1）。因此这不是"配置待改"，而是"功能待建"。
 
-目标形态：
+**已定（D-AUTH-R3）**：
 
 ```
-一个 canonical scheme：<DECISION_REQUIRED>
-一个 recovery path：   <DECISION_REQUIRED>
-Redirect URL 条目：    <scheme>://<recovery-path>   （精确，不用 scheme://**）
+canonical scheme：amas-seminary
+recovery path：   auth/recovery
+Redirect URL 条目：amas-seminary://auth/recovery   （精确，不用 scheme://**）
 ```
 
-已知可复用的事实：`appId` / iOS bundle id 均为 `com.amas.seminary`。
-scheme 取值本身仍须批准后再注册——**不自行发明**。
+原生注册片段与自检清单见 `docs/AUTH_DEEP_LINK_SETUP.md`。
+Android 用 `android:path`（精确）而非 `pathPrefix` —— 前缀会让 `/recovery-anything` 也命中。
+仓库当前尚无 `android/` 目录，平台生成后按该文档配置。
 
 若最终框架约束确实需要 `scheme://**`，须单独做安全评估并记录理由。
 
@@ -123,11 +128,12 @@ Incoming URL
 - [ ] 配置自有 SMTP 并验证真实投递
 - [ ] `security_update_password_require_reauthentication = true`
 - [ ] Site URL 改为正式域名
-- [ ] Redirect URLs 改为**精确 URL**，移除全部 localhost 与 `/**`
+- [ ] Redirect URLs 改为**精确 URL**（`https://<域名>/auth/recovery` + `amas-seminary://auth/recovery`），移除全部 localhost 与 `/**`
 - [ ] 注册并加入 mobile canonical deep-link redirect
 - [ ] CORS allowed origins 改为正式域名
 - [ ] 确认 `service_role` 不在任何前端产物 / Git 中
-- [ ] 门户 `redirectTo` 与 allow list 同时对齐
+- [ ] 门户 `redirectTo`（已迁至 `/auth/recovery`）与 allow list 同时对齐
+- [ ] 加入 `amas-seminary://auth/recovery` 到 Redirect URLs
 - [ ] 重跑 M6.5A + M6.5B-Preflight 全量
 - [ ] 完成 M6.5B 正式邮件验收（见 §7）
 
