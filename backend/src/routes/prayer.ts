@@ -1,6 +1,8 @@
 import type { Express, Request, Response } from 'express';
 import crypto from 'node:crypto';
 import { requireAuth } from '../middleware/auth.js';
+import { requireRoomExists, requireRoomMember, requireRoomHost } from '../middleware/roomAuth.js';
+import { prayerWriteLimiter, prayerHeartbeatLimiter } from '../middleware/rateLimit.js';
 import { db } from '../db.js';
 
 /**
@@ -30,8 +32,9 @@ const stmtClearTopics = db.prepare<[string]>('DELETE FROM room_prayer_topics WHE
 const stmtInsertTopic = db.prepare<[string, string, number, string, string, number]>(
   'INSERT INTO room_prayer_topics (id, room_id, seq, text, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)',
 );
-const stmtRoomHost = db.prepare<[string], { host_id: string }>(
-  'SELECT host_id FROM rooms WHERE room_id = ? LIMIT 1',
+/** 显示名的可信来源：users 表。**绝不采用客户端传入的 name/avatar**（SEC-1 P2-1）。 */
+const stmtUserProfile = db.prepare<[string], { name: string; avatar: string | null }>(
+  'SELECT name, avatar FROM users WHERE id = ? LIMIT 1',
 );
 
 // ---- 分享 ----
@@ -89,10 +92,8 @@ function userOf(req: Request) {
   return p && p.kind === 'user' ? p.user : null;
 }
 
-/** 房主判定：rooms 表登记的 host_id。房间未登记时无人是房主。 */
-function isHost(roomId: string, userId: string): boolean {
-  return stmtRoomHost.get(roomId)?.host_id === userId;
-}
+/** 房主判定统一走 roomAuth 中间件解析出的 req.room，避免两处实现漂移。 */
+const isHostReq = (req: Request): boolean => Boolean(req.room?.isHost);
 
 export function registerPrayerRoutes(app: Express): void {
   /**
@@ -100,7 +101,7 @@ export function registerPrayerRoutes(app: Express): void {
    * 一次取回整个祷告室状态（主题 + 在线成员 + 分享 + 我的代祷）。
    * 客户端 10 秒轮询这一个接口即可，避免打 4 个请求。
    */
-  app.get('/api/rooms/:roomId/prayer', requireAuth, (req: Request, res: Response) => {
+  app.get('/api/rooms/:roomId/prayer', requireAuth, requireRoomExists, requireRoomMember, (req: Request, res: Response) => {
     const me = userOf(req);
     if (!me) return res.status(401).json({ error: 'User token required.' });
     const { roomId } = req.params;
@@ -127,7 +128,7 @@ export function registerPrayerRoutes(app: Express): void {
         userId: p.user_id, name: p.name, avatar: p.avatar, role: p.role,
       })),
       shares,
-      isHost: isHost(roomId, me.id),
+      isHost: isHostReq(req),
       serverTime: now(),
     });
   });
@@ -136,13 +137,10 @@ export function registerPrayerRoutes(app: Express): void {
    * PUT /api/rooms/:roomId/prayer/topics
    * 房主整体替换本次祷告主题。Body: { topics: string[] }
    */
-  app.put('/api/rooms/:roomId/prayer/topics', requireAuth, (req: Request, res: Response) => {
+  app.put('/api/rooms/:roomId/prayer/topics', requireAuth, requireRoomExists, requireRoomMember, requireRoomHost, (req: Request, res: Response) => {
     const me = userOf(req);
     if (!me) return res.status(401).json({ error: 'User token required.' });
     const { roomId } = req.params;
-    if (!isHost(roomId, me.id)) {
-      return res.status(403).json({ error: 'Only the host can edit prayer topics.' });
-    }
     const raw = (req.body ?? {}).topics;
     if (!Array.isArray(raw)) return res.status(400).json({ error: 'topics must be an array.' });
     const topics = raw
@@ -163,7 +161,7 @@ export function registerPrayerRoutes(app: Express): void {
    * POST /api/rooms/:roomId/prayer/shares
    * Body: { text, isAnonymous? }
    */
-  app.post('/api/rooms/:roomId/prayer/shares', requireAuth, (req: Request, res: Response) => {
+  app.post('/api/rooms/:roomId/prayer/shares', requireAuth, requireRoomExists, requireRoomMember, prayerWriteLimiter, (req: Request, res: Response) => {
     const me = userOf(req);
     if (!me) return res.status(401).json({ error: 'User token required.' });
     const { roomId } = req.params;
@@ -179,13 +177,13 @@ export function registerPrayerRoutes(app: Express): void {
    * DELETE /api/rooms/:roomId/prayer/shares/:shareId
    * 只有发布者本人或房主可以删（软删除，内容不再返回）。
    */
-  app.delete('/api/rooms/:roomId/prayer/shares/:shareId', requireAuth, (req: Request, res: Response) => {
+  app.delete('/api/rooms/:roomId/prayer/shares/:shareId', requireAuth, requireRoomExists, requireRoomMember, prayerWriteLimiter, (req: Request, res: Response) => {
     const me = userOf(req);
     if (!me) return res.status(401).json({ error: 'User token required.' });
     const { roomId, shareId } = req.params;
     const row = stmtGetShare.get(shareId);
     if (!row || row.room_id !== roomId) return res.status(404).json({ error: 'Share not found.' });
-    if (row.user_id !== me.id && !isHost(roomId, me.id)) {
+    if (row.user_id !== me.id && !isHostReq(req)) {
       return res.status(403).json({ error: 'Only the author or host can delete.' });
     }
     stmtSoftDelete.run(now(), shareId);
@@ -208,26 +206,29 @@ export function registerPrayerRoutes(app: Express): void {
     const n = stmtCounts.all(roomId).find(c => c.share_id === shareId)?.n ?? 0;
     res.json({ ok: true, intercessions: n, didIntercede: add });
   };
-  app.post('/api/rooms/:roomId/prayer/shares/:shareId/intercede', requireAuth, setIntercede(true));
-  app.delete('/api/rooms/:roomId/prayer/shares/:shareId/intercede', requireAuth, setIntercede(false));
+  app.post('/api/rooms/:roomId/prayer/shares/:shareId/intercede',
+    requireAuth, requireRoomExists, requireRoomMember, prayerWriteLimiter, setIntercede(true));
+  app.delete('/api/rooms/:roomId/prayer/shares/:shareId/intercede',
+    requireAuth, requireRoomExists, requireRoomMember, prayerWriteLimiter, setIntercede(false));
 
   /**
    * POST   /api/rooms/:roomId/prayer/heartbeat   Body: { name, avatar?, role? }
    * DELETE /api/rooms/:roomId/prayer/presence    离开房间
    */
-  app.post('/api/rooms/:roomId/prayer/heartbeat', requireAuth, (req: Request, res: Response) => {
+  app.post('/api/rooms/:roomId/prayer/heartbeat', requireAuth, requireRoomExists, requireRoomMember, prayerHeartbeatLimiter, (req: Request, res: Response) => {
     const me = userOf(req);
     if (!me) return res.status(401).json({ error: 'User token required.' });
     const { roomId } = req.params;
-    const b = (req.body ?? {}) as { name?: string; avatar?: string; role?: string };
-    const role = isHost(roomId, me.id)
-      ? 'host'
-      : (b.role === 'admin' || b.role === 'speaker' ? b.role : 'listener');
-    stmtHeartbeat.run(roomId, me.id, String(b.name ?? me.id).slice(0, 40), b.avatar ?? null, role, now());
+    // SEC-2 §7：显示名与头像**只从服务器读取**，不再信任 body 里的
+    // name / displayName / avatar / role —— 否则 C 可以把自己显示成「王牧师」。
+    const profile = stmtUserProfile.get(me.id);
+    const name = (profile?.name ?? me.id).slice(0, 40);
+    const role = isHostReq(req) ? 'host' : 'listener';
+    stmtHeartbeat.run(roomId, me.id, name, profile?.avatar ?? null, role, now());
     res.json({ ok: true });
   });
 
-  app.delete('/api/rooms/:roomId/prayer/presence', requireAuth, (req: Request, res: Response) => {
+  app.delete('/api/rooms/:roomId/prayer/presence', requireAuth, requireRoomExists, requireRoomMember, (req: Request, res: Response) => {
     const me = userOf(req);
     if (!me) return res.status(401).json({ error: 'User token required.' });
     stmtLeave.run(req.params.roomId, me.id);

@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import {
   fetchPrayerRoom, savePrayerTopics, postPrayerShare, deletePrayerShare,
-  setIntercession, sendHeartbeat, leavePresence, relativeTime,
+  setIntercession, sendHeartbeat, leavePresence, relativeTime, joinRoom,
   isPrayerBackendConfigured, EMPTY_STATE, POLL_MS, HEARTBEAT_MS,
   type PrayerRoomState, type PrayerShare,
 } from '../../services/prayerRoomService';
@@ -233,15 +233,22 @@ const PrayerRoomPanel: React.FC<Props> = ({
 
   useEffect(() => {
     if (!backend) { setLoaded(true); return; }
-    void sendHeartbeat(roomId, meName, meAvatar);
-    void refresh();
-    const poll = window.setInterval(() => { void refresh(); }, POLL_MS);
-    const beat = window.setInterval(() => { void sendHeartbeat(roomId, meName, meAvatar); }, HEARTBEAT_MS);
+    let poll = 0, beat = 0;
+    // SEC-2：先建立 membership，再心跳与轮询。没有 membership 时后续接口一律 403。
+    void (async () => {
+      await joinRoom(roomId);
+      await sendHeartbeat(roomId);
+      await refresh();
+      poll = window.setInterval(() => { void refresh(); }, POLL_MS);
+      beat = window.setInterval(() => { void sendHeartbeat(roomId); }, HEARTBEAT_MS);
+    })();
     return () => {
       window.clearInterval(poll); window.clearInterval(beat);
+      // 只清在线状态，**不解除成员关系**——收起房间/切后台/断网都不该丢授权。
+      // 解除成员关系只发生在用户显式「离开房间」时（见 VoiceRoomOverlay 的结束房间）。
       void leavePresence(roomId);
     };
-  }, [backend, roomId, meName, meAvatar, refresh]);
+  }, [backend, roomId, refresh]);
 
   useEffect(() => {
     if (ui.subPage !== 'quiet') return;
@@ -587,7 +594,8 @@ const PrayerRoomPanel: React.FC<Props> = ({
           </div>
 
           <p className="text-[10px] leading-relaxed mt-3 px-1 text-center" style={{ color: PT.faint }}>
-            代祷墙仅本房间成员可见，发布者可随时删除。请勿填写他人的病历、住址等敏感信息。
+            代祷墙仅本房间成员可见，发布者可随时删除。请勿填写他人的病历、住址等敏感信息。<br />
+            匿名后，房内其他成员及房主不会看到你的身份；系统仍会保留账号关联，用于内容管理与安全保护。
           </p>
         </div>
       </div>

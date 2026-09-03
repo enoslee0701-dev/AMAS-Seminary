@@ -1,6 +1,8 @@
 import type { Express, Request, Response } from 'express';
 import crypto from 'node:crypto';
 import { db } from '../db.js';
+import { requireAuth } from '../middleware/auth.js';
+import { requireRoomExists, addMember, removeMember, memberCount } from '../middleware/roomAuth.js';
 
 /**
  * Room password store, now persisted to SQLite (`rooms` table). The
@@ -60,13 +62,17 @@ export function registerRoomRoutes(app: Express): void {
       return res.status(403).json({ error: 'Only the host can update this room.' });
     }
     const createdAt = existing?.created_at ?? Date.now();
-    if (!password) {
-      stmtUpsertRoom.run(roomId, hostId, null, null, createdAt);
-    } else {
-      const salt = crypto.randomBytes(16).toString('hex');
-      const passwordHash = hashPassword(password, salt);
-      stmtUpsertRoom.run(roomId, hostId, passwordHash, salt, createdAt);
-    }
+    // SEC-2 §16：建房与房主 membership 必须原子，否则会留下房主进不去的半成品房间。
+    db.transaction(() => {
+      if (!password) {
+        stmtUpsertRoom.run(roomId, hostId, null, null, createdAt);
+      } else {
+        const salt = crypto.randomBytes(16).toString('hex');
+        const passwordHash = hashPassword(password, salt);
+        stmtUpsertRoom.run(roomId, hostId, passwordHash, salt, createdAt);
+      }
+      addMember(roomId, hostId, createdAt);
+    })();
     res.json({ ok: true, hasPassword: Boolean(password) });
   });
 
@@ -94,6 +100,50 @@ export function registerRoomRoutes(app: Express): void {
       return res.status(401).json({ error: 'Wrong password.' });
     }
     res.json({ ok: true, public: false });
+  });
+
+  /**
+   * POST /api/rooms/:roomId/join
+   * 通过进入条件（公开房间，或密码正确）后建立成员关系。
+   * Body: { password? }
+   *
+   * 身份**只**来自 JWT——客户端无法指定要给谁建立 membership。
+   * 重复 join 幂等（UPSERT）。
+   */
+  app.post('/api/rooms/:roomId/join', requireAuth, requireRoomExists, (req: Request, res: Response) => {
+    const p = req.principal;
+    if (!p || p.kind !== 'user') return res.status(401).json({ error: 'User token required.' });
+    const { roomId } = req.params;
+    const rec = stmtGetRoom.get(roomId)!;
+    const { password } = (req.body ?? {}) as { password?: string };
+
+    if (rec.password_hash) {
+      if (!password) return res.status(401).json({ error: 'Password required.' });
+      const candidate = hashPassword(password, rec.salt!);
+      if (!timingSafeEqual(candidate, rec.password_hash)) {
+        return res.status(401).json({ error: 'Wrong password.' });
+      }
+    }
+    addMember(roomId, p.user.id);
+    res.json({ ok: true, roomId, memberCount: memberCount(roomId) });
+  });
+
+  /**
+   * POST /api/rooms/:roomId/leave
+   * **显式**离开：解除成员关系并清除在线状态。之后访问该房间 prayer API 返回 403。
+   *
+   * 注意：断网 / 切后台 / 心跳超时**不会**走到这里，那些只影响 room_presence。
+   * 这是刻意的——否则网络波动会导致授权状态异常。
+   */
+  app.post('/api/rooms/:roomId/leave', requireAuth, requireRoomExists, (req: Request, res: Response) => {
+    const p = req.principal;
+    if (!p || p.kind !== 'user') return res.status(401).json({ error: 'User token required.' });
+    const { roomId } = req.params;
+    db.transaction(() => {
+      removeMember(roomId, p.user.id);
+      db.prepare('DELETE FROM room_presence WHERE room_id = ? AND user_id = ?').run(roomId, p.user.id);
+    })();
+    res.json({ ok: true, roomId });
   });
 
   /**

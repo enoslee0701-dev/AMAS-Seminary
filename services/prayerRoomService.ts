@@ -70,6 +70,26 @@ async function call<T>(path: string, init?: RequestInit): Promise<T | null> {
   }
 }
 
+/**
+ * 加入房间：建立成员关系（SEC-2）。进入祷告室时必须先调它，否则后续接口 403。
+ * 幂等，重复调用只刷新 updated_at。
+ */
+export const joinRoom = (roomId: string, password?: string) =>
+  call<{ ok: boolean; roomId: string; memberCount: number }>(
+    `/api/rooms/${encodeURIComponent(roomId)}/join`,
+    { method: 'POST', body: JSON.stringify(password ? { password } : {}) },
+  );
+
+/**
+ * **显式**离开房间：解除成员关系并清除在线状态。
+ * 只在用户主动退出时调用——断网、切后台、心跳超时都不能走这里，
+ * 那些情况只应让 presence 自然超时，membership 必须保留。
+ */
+export const leaveRoom = (roomId: string) =>
+  call<{ ok: boolean; roomId: string }>(
+    `/api/rooms/${encodeURIComponent(roomId)}/leave`, { method: 'POST' },
+  );
+
 /** 一次取回整个祷告室状态。轮询就调这一个。 */
 export const fetchPrayerRoom = (roomId: string) =>
   call<PrayerRoomState>(`/api/rooms/${encodeURIComponent(roomId)}/prayer`);
@@ -100,10 +120,13 @@ export const setIntercession = (roomId: string, shareId: string, on: boolean) =>
     { method: on ? 'POST' : 'DELETE' },
   );
 
-export const sendHeartbeat = (roomId: string, name: string, avatar?: string, role?: string) =>
+/**
+ * 在线心跳。**不再传 name / avatar / role**——SEC-2 起服务端只从 users 表
+ * 读取权威显示名，客户端传了也会被忽略（防止把自己显示成「王牧师」）。
+ */
+export const sendHeartbeat = (roomId: string) =>
   call<{ ok: boolean }>(
-    `/api/rooms/${encodeURIComponent(roomId)}/prayer/heartbeat`,
-    { method: 'POST', body: JSON.stringify({ name, avatar, role }) },
+    `/api/rooms/${encodeURIComponent(roomId)}/prayer/heartbeat`, { method: 'POST' },
   );
 
 export const leavePresence = (roomId: string) =>

@@ -87,6 +87,12 @@ const PrayerBottomSheet: React.FC<Props> = ({ open, onClose, onSubmit, disabled,
           <p className="text-[10.5px] leading-relaxed mt-3" style={{ color: PT.faint }}>
             仅本房间成员可见。涉及他人的内容请先征得对方同意，请勿填写他人的病历、住址等敏感信息。
           </p>
+          {anon && (
+            <p className="text-[10.5px] leading-relaxed mt-2 rounded-xl px-3 py-2"
+               style={{ color: PT.body, background: PT.goldWash }}>
+              匿名后，房内其他成员及房主不会看到你的身份；系统仍会保留账号关联，用于内容管理与安全保护。
+            </p>
+          )}
 
           <div className="flex items-center gap-2.5 mt-4">
             <button onClick={onClose}

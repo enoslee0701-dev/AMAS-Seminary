@@ -85,6 +85,25 @@ db.exec(`
     created_at INTEGER NOT NULL
   );
 
+  -- ===== 房间成员（SEC-2 授权模型）=====
+  --
+  -- room_members 是**授权**的唯一依据；room_presence 只是**在线状态**。
+  -- 两者严格分离：断网 / 切后台 / 心跳超时只影响 presence，绝不影响 membership；
+  -- 只有用户显式 Leave 才解除成员关系。
+  --
+  -- 房主权限的唯一真相源仍是 rooms.host_id——这里刻意不放 role 字段，
+  -- 避免出现两个 host source of truth。
+  CREATE TABLE IF NOT EXISTS room_members (
+    room_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    joined_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (room_id, user_id),
+    FOREIGN KEY (room_id) REFERENCES rooms(room_id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_room_members_user ON room_members(user_id);
+
   -- ===== 祷告室（Prayer Room）=====
   -- 本次祷告主题：取代原先只存在 localStorage 的「祷告墙」纯文本，
   -- 让房主编辑的内容对全房可见。只有房主/管理员可写。
@@ -325,6 +344,53 @@ db.exec(`
 `);
 
 /**
+ * SEC-2 种子：App 内置的 5 个公共房间。
+ *
+ * 这些房间定义在前端 CommunityView 里，从来没有登记进 rooms 表。
+ * SEC-2 给 prayer API 加上 requireRoomExists 之后，真实用户进入内置祷告室
+ * 会直接 404——因此必须把它们登记为**无密码的公共房间**。
+ *
+ * host_id 记为 'system'：'system' 不是真实用户，所以
+ *   - 不会创建 room_members 行（addMember 的存在性守卫会跳过）；
+ *   - 任何真实用户在这些房间里都不是房主，无法编辑祷告主题。
+ * 这是刻意的保守选择——内置公共房间目前没有归属人，
+ * 由谁担任房主是产品决策，不应由本轮的安全改动顺手决定。
+ */
+const PUBLIC_ROOMS = ['prayer_room', 'praise_room', 'bible_reading', 'preaching_room', 'fellowship_room'];
+const seedRoom = db.prepare(
+  `INSERT OR IGNORE INTO rooms (room_id, host_id, password_hash, salt, created_at) VALUES (?, 'system', NULL, NULL, ?)`,
+);
+{
+  const t = Date.now();
+  let seeded = 0;
+  for (const id of PUBLIC_ROOMS) seeded += seedRoom.run(id, t).changes;
+  if (seeded > 0) console.log(`[amas-backend] seeded ${seeded} built-in public room(s)`);
+}
+
+/**
+ * SEC-2 迁移回填：房主必须是成员。
+ *
+ * 现有数据库里已经存在房间，新增 room_members 后若不回填，
+ * 这些房间的房主会立刻失去访问权。这里按 rooms.host_id 补齐。
+ *
+ * **刻意不从 room_presence 回填其他历史参与者**——presence 是在线状态，
+ * 不是成员关系的真相源；用它回填会把"曾经路过"永久变成"成员"。
+ * 没有可靠历史成员数据时，只保证 host membership，其余用户重新 join 即可。
+ *
+ * 幂等：INSERT OR IGNORE + 只回填 users 表中确实存在的 host。
+ */
+const backfilled = db.prepare(`
+  INSERT OR IGNORE INTO room_members (room_id, user_id, joined_at, updated_at)
+  SELECT r.room_id, r.host_id, r.created_at, ?
+  FROM rooms r
+  WHERE EXISTS (SELECT 1 FROM users u WHERE u.id = r.host_id)
+`).run(Date.now());
+if (backfilled.changes > 0) {
+  console.log(`[amas-backend] room_members backfill: +${backfilled.changes} host membership(s)`);
+}
+
+
+/**
  * TEST-ONLY: wipe all rows in every wave-1 table. Guarded by
  * `NODE_ENV === 'test'` so production code can't blow itself up.
  *
@@ -339,6 +405,11 @@ export function resetDb(): void {
   db.exec(`
     DELETE FROM users;
     DELETE FROM refresh_jti;
+    DELETE FROM room_members;
+    DELETE FROM room_presence;
+    DELETE FROM prayer_intercessions;
+    DELETE FROM prayer_shares;
+    DELETE FROM room_prayer_topics;
     DELETE FROM rooms;
     DELETE FROM push_tokens;
     DELETE FROM posts;
