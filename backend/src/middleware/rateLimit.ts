@@ -2,16 +2,22 @@ import rateLimit from 'express-rate-limit';
 import type { Request } from 'express';
 
 /**
- * General per-IP rate limit applied to all `/api/*` routes (excluding
- * `/api/health`). 60 requests per minute is generous for normal client
- * behavior but blocks runaway loops and basic abuse.
+ * **Layer A —— 认证前的 IP 保护**（SEC-3 §10）。
+ *
+ * 它跑在 requireAuth 之前，因此拿不到 userId，只能按 IP 计数。
+ * 教会 / 学校 / 宿舍常共享 NAT，所以这一层**不承担业务级用户限流**——
+ * 阈值放宽到只拦机器人、失控循环与未登录攻击。
+ *
+ * 业务限流由 Layer B（下方 byUser 系列）在认证之后按 userId 执行。
+ * 60 → 600：单个真实用户 10 秒轮询 + 20 秒心跳远达不到，
+ * 而同一 NAT 出口下几十个用户也不会互相挤爆。
  */
 export const generalApiLimiter = rateLimit({
   windowMs: 60 * 1000,
   // Tests fire many requests back-to-back against the same /api/* surface
   // (multiple suite tests share one server process). Raise the cap in
   // NODE_ENV=test so the limiter doesn't introduce spurious 429s.
-  max: process.env.NODE_ENV === 'test' ? 10_000 : 60,
+  max: process.env.NODE_ENV === 'test' ? 10_000 : 600,
   standardHeaders: true,
   legacyHeaders: false,
   skip: (req: Request) => req.path === '/api/health',
@@ -77,13 +83,13 @@ export function _resetWsConnections(): void {
 }
 
 /**
- * 祷告室写操作限流（SEC-2 §10）。
+ * **Layer B —— 认证后的用户级业务限流**（SEC-3 §10）。
  *
- * 为什么不能只靠全局 IP 限流：教会、学校、宿舍常共享 NAT，
- * 按 IP 计数会让同一出口下的用户互相挤占配额，也无法约束单个滥用账号。
- * 这里按**已认证用户 + 动作类别**计数，IP 限流继续作为外围保护。
+ * key = `userId:action`。这是真正约束滥用的一层：
+ * 同一 NAT 下 A 刷屏只会限制 A，B 不受影响。
+ * 未认证请求回落到 IP（此时 Layer A 才是主要防线）。
  *
- * 刻意保持轻量：直接复用 express-rate-limit 的 keyGenerator，不引入新框架。
+ * 刻意保持轻量：复用 express-rate-limit 的 keyGenerator，不引入新框架。
  */
 const byUser = (suffix: string) => (req: Request): string => {
   const p = (req as { principal?: { kind: string; user?: { id: string } } }).principal;
@@ -109,4 +115,14 @@ export const prayerHeartbeatLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: byUser('prayer_heartbeat'),
   message: { error: 'Too many heartbeats.' },
+});
+
+/** room.join / room.leave：正常使用极低频，20/分钟足够覆盖重连。 */
+export const roomMembershipLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: process.env.NODE_ENV === 'test' ? 10_000 : 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: byUser('room_membership'),
+  message: { error: 'Too many join/leave requests.' },
 });

@@ -85,6 +85,22 @@ db.exec(`
     created_at INTEGER NOT NULL
   );
 
+  -- ===== 代祷举报（SEC-3）=====
+  -- 最小可用设计，不做大型审核平台。
+  -- UNIQUE(share_id, reporter_user_id) 防止同一用户对同一条反复举报。
+  CREATE TABLE IF NOT EXISTS prayer_share_reports (
+    id TEXT PRIMARY KEY,
+    share_id TEXT NOT NULL,
+    reporter_user_id TEXT NOT NULL,
+    reason TEXT NOT NULL CHECK(reason IN ('privacy','harassment','spam','unsafe','other')),
+    status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','reviewed','dismissed')),
+    created_at INTEGER NOT NULL,
+    UNIQUE (share_id, reporter_user_id),
+    FOREIGN KEY (share_id) REFERENCES prayer_shares(id) ON DELETE CASCADE,
+    FOREIGN KEY (reporter_user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_reports_share ON prayer_share_reports(share_id);
+
   -- ===== 房间成员（SEC-2 授权模型）=====
   --
   -- room_members 是**授权**的唯一依据；room_presence 只是**在线状态**。
@@ -344,6 +360,44 @@ db.exec(`
 `);
 
 /**
+ * SEC-3 迁移：为既有表增列。
+ *
+ * SQLite 的 ALTER TABLE ADD COLUMN 无法附加 CHECK，因此 role 的取值
+ * 由服务端强制（见 roomAuth.ts）。所有语句幂等，重复启动无副作用。
+ *
+ * §21 安全升级保证：
+ *   - role 默认 'member'，现有 membership 一条不丢；
+ *   - **不把任何现有普通成员自动提升为 moderator**；
+ *   - rooms.host_id='system' 保持不变。
+ */
+function hasColumn(table: string, column: string): boolean {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  return cols.some(c => c.name === column);
+}
+{
+  const added: string[] = [];
+  if (!hasColumn('room_members', 'role')) {
+    db.exec(`ALTER TABLE room_members ADD COLUMN role TEXT NOT NULL DEFAULT 'member'`);
+    added.push('room_members.role');
+  }
+  // 内容隐藏（moderation hide）——**不物理删除**，正文保留供治理与申诉
+  for (const [col, ddl] of [
+    ['hidden_at', 'ALTER TABLE prayer_shares ADD COLUMN hidden_at INTEGER'],
+    ['hidden_by', 'ALTER TABLE prayer_shares ADD COLUMN hidden_by TEXT'],
+    ['hidden_reason', 'ALTER TABLE prayer_shares ADD COLUMN hidden_reason TEXT'],
+    ['client_request_id', 'ALTER TABLE prayer_shares ADD COLUMN client_request_id TEXT'],
+  ] as [string, string][]) {
+    if (!hasColumn('prayer_shares', col)) { db.exec(ddl); added.push(`prayer_shares.${col}`); }
+  }
+  // 幂等唯一键：同一 user 在同一 room 用同一 clientRequestId 只能产生一条。
+  // 部分索引跳过 NULL，因此历史数据与不带 id 的请求不受影响。
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_share_idem
+           ON prayer_shares(room_id, user_id, client_request_id)
+           WHERE client_request_id IS NOT NULL`);
+  if (added.length) console.log(`[amas-backend] SEC-3 migration: +${added.join(', ')}`);
+}
+
+/**
  * SEC-2 种子：App 内置的 5 个公共房间。
  *
  * 这些房间定义在前端 CommunityView 里，从来没有登记进 rooms 表。
@@ -405,6 +459,7 @@ export function resetDb(): void {
   db.exec(`
     DELETE FROM users;
     DELETE FROM refresh_jti;
+    DELETE FROM prayer_share_reports;
     DELETE FROM room_members;
     DELETE FROM room_presence;
     DELETE FROM prayer_intercessions;

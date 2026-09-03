@@ -1,7 +1,8 @@
 import type { Express, Request, Response } from 'express';
 import crypto from 'node:crypto';
 import { requireAuth } from '../middleware/auth.js';
-import { requireRoomExists, requireRoomMember, requireRoomHost } from '../middleware/roomAuth.js';
+import { requireRoomExists, requireRoomMember, requireRoomManager } from '../middleware/roomAuth.js';
+import { sanitizeDisplayName, inspectPrayerText } from '../middleware/textSafety.js';
 import { prayerWriteLimiter, prayerHeartbeatLimiter } from '../middleware/rateLimit.js';
 import { db } from '../db.js';
 
@@ -40,13 +41,39 @@ const stmtUserProfile = db.prepare<[string], { name: string; avatar: string | nu
 // ---- 分享 ----
 interface ShareRow {
   id: string; user_id: string; text: string; is_anonymous: number; created_at: number;
+  hidden_at: number | null; hidden_reason: string | null;
 }
 const stmtShares = db.prepare<[string, number], ShareRow>(
-  'SELECT id, user_id, text, is_anonymous, created_at FROM prayer_shares WHERE room_id = ? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT ?',
+  `SELECT id, user_id, text, is_anonymous, created_at, hidden_at, hidden_reason
+   FROM prayer_shares WHERE room_id = ? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT ?`,
 );
-const stmtInsertShare = db.prepare<[string, string, string, string, number, number]>(
-  'INSERT INTO prayer_shares (id, room_id, user_id, text, is_anonymous, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+const stmtInsertShare = db.prepare<[string, string, string, string, number, number, string | null]>(
+  `INSERT INTO prayer_shares (id, room_id, user_id, text, is_anonymous, created_at, client_request_id)
+   VALUES (?, ?, ?, ?, ?, ?, ?)`,
 );
+/** 幂等查找：同 room + 同 user + 同 clientRequestId 只能有一条。 */
+const stmtFindByIdem = db.prepare<[string, string, string], { id: string }>(
+  'SELECT id FROM prayer_shares WHERE room_id = ? AND user_id = ? AND client_request_id = ? LIMIT 1',
+);
+// 隐藏（moderation）：**不物理删除**，正文保留供治理与申诉
+const stmtHide = db.prepare<[number, string, string, string]>(
+  'UPDATE prayer_shares SET hidden_at = ?, hidden_by = ?, hidden_reason = ? WHERE id = ?',
+);
+const stmtUnhide = db.prepare<[string]>(
+  'UPDATE prayer_shares SET hidden_at = NULL, hidden_by = NULL, hidden_reason = NULL WHERE id = ?',
+);
+// 举报
+const stmtReport = db.prepare<[string, string, string, string, number]>(
+  `INSERT OR IGNORE INTO prayer_share_reports (id, share_id, reporter_user_id, reason, created_at)
+   VALUES (?, ?, ?, ?, ?)`,
+);
+const stmtReportsOfRoom = db.prepare<[string], {
+  id: string; share_id: string; reason: string; status: string; created_at: number; text: string; hidden_at: number | null;
+}>(`
+  SELECT rp.id, rp.share_id, rp.reason, rp.status, rp.created_at, s.text, s.hidden_at
+  FROM prayer_share_reports rp JOIN prayer_shares s ON s.id = rp.share_id
+  WHERE s.room_id = ? ORDER BY rp.created_at DESC LIMIT 100
+`);
 const stmtGetShare = db.prepare<[string], { id: string; room_id: string; user_id: string }>(
   'SELECT id, room_id, user_id FROM prayer_shares WHERE id = ? AND deleted_at IS NULL LIMIT 1',
 );
@@ -110,17 +137,30 @@ export function registerPrayerRoutes(app: Express): void {
 
     const counts = new Map(stmtCounts.all(roomId).map(r => [r.share_id, r.n]));
     const mine = new Set(stmtMine.all(roomId, me.id).map(r => r.share_id));
-    const shares = stmtShares.all(roomId, SHARE_PAGE).map(s => ({
-      id: s.id,
-      // 匿名分享不向任何人暴露 user_id；发布者本人靠 isMine 判断删除权
-      userId: s.is_anonymous ? null : s.user_id,
-      isAnonymous: Boolean(s.is_anonymous),
-      isMine: s.user_id === me.id,
-      text: s.text,
-      createdAt: s.created_at,
-      intercessions: counts.get(s.id) ?? 0,
-      didIntercede: mine.has(s.id),
-    }));
+    const isManager = Boolean(req.room?.isManager);
+    const shares = stmtShares.all(roomId, SHARE_PAGE).map(s => {
+      const hidden = s.hidden_at != null;
+      const isMine = s.user_id === me.id;
+      // 被隐藏的内容**不向普通成员返回正文**。作者本人与 manager 需要知情，
+      // 但连 manager 也拿不到匿名帖的作者身份（§9）。
+      const text = !hidden ? s.text
+        : isMine ? '（此内容已被管理员隐藏，仅你可见此提示）'
+          : isManager ? s.text
+            : '（此内容已被管理员隐藏）';
+      return {
+        id: s.id,
+        // 匿名分享不向任何人暴露 user_id——包括 moderator 与房主
+        userId: s.is_anonymous ? null : s.user_id,
+        isAnonymous: Boolean(s.is_anonymous),
+        isMine,
+        text,
+        hidden,
+        hiddenReason: hidden && (isMine || isManager) ? s.hidden_reason : null,
+        createdAt: s.created_at,
+        intercessions: counts.get(s.id) ?? 0,
+        didIntercede: mine.has(s.id),
+      };
+    });
 
     res.json({
       topics: stmtTopics.all(roomId),
@@ -129,6 +169,8 @@ export function registerPrayerRoutes(app: Express): void {
       })),
       shares,
       isHost: isHostReq(req),
+      isManager: Boolean(req.room?.isManager),
+      isModerator: Boolean(req.room?.isModerator),
       serverTime: now(),
     });
   });
@@ -137,7 +179,7 @@ export function registerPrayerRoutes(app: Express): void {
    * PUT /api/rooms/:roomId/prayer/topics
    * 房主整体替换本次祷告主题。Body: { topics: string[] }
    */
-  app.put('/api/rooms/:roomId/prayer/topics', requireAuth, requireRoomExists, requireRoomMember, requireRoomHost, (req: Request, res: Response) => {
+  app.put('/api/rooms/:roomId/prayer/topics', requireAuth, requireRoomExists, requireRoomMember, requireRoomManager, (req: Request, res: Response) => {
     const me = userOf(req);
     if (!me) return res.status(401).json({ error: 'User token required.' });
     const { roomId } = req.params;
@@ -165,12 +207,27 @@ export function registerPrayerRoutes(app: Express): void {
     const me = userOf(req);
     if (!me) return res.status(401).json({ error: 'User token required.' });
     const { roomId } = req.params;
-    const body = (req.body ?? {}) as { text?: string; isAnonymous?: boolean };
-    const text = String(body.text ?? '').trim().slice(0, MAX_TEXT);
+    const body = (req.body ?? {}) as { text?: string; isAnonymous?: boolean; clientRequestId?: string };
+    const { text } = inspectPrayerText(String(body.text ?? ''), MAX_TEXT);
     if (!text) return res.status(400).json({ error: 'text is required.' });
+
+    // §12 幂等：同 room + 同 user（来自 JWT，不信 body）+ 同 clientRequestId
+    // 只能产生一条。重复请求返回 200 + 既有资源；首次创建返回 201。
+    const cid = body.clientRequestId ? String(body.clientRequestId).slice(0, 64) : null;
+    if (cid) {
+      const existing = stmtFindByIdem.get(roomId, me.id, cid);
+      if (existing) return res.status(200).json({ ok: true, id: existing.id, idempotentReplay: true });
+    }
     const id = uid();
-    stmtInsertShare.run(id, roomId, me.id, text, body.isAnonymous ? 1 : 0, now());
-    res.json({ ok: true, id });
+    try {
+      stmtInsertShare.run(id, roomId, me.id, text, body.isAnonymous ? 1 : 0, now(), cid);
+    } catch {
+      // 并发下唯一索引兜底：另一请求已抢先写入，返回它
+      const existing = cid ? stmtFindByIdem.get(roomId, me.id, cid) : null;
+      if (existing) return res.status(200).json({ ok: true, id: existing.id, idempotentReplay: true });
+      throw new Error('insert failed');
+    }
+    res.status(cid ? 201 : 200).json({ ok: true, id, idempotentReplay: false });
   });
 
   /**
@@ -212,6 +269,72 @@ export function registerPrayerRoutes(app: Express): void {
     requireAuth, requireRoomExists, requireRoomMember, prayerWriteLimiter, setIntercede(false));
 
   /**
+   * POST /api/rooms/:roomId/prayer/shares/:shareId/hide     隐藏不当内容（manager）
+   * POST /api/rooms/:roomId/prayer/shares/:shareId/unhide   取消隐藏（manager）
+   *
+   * 与「删除」区分：删除是作者对自己内容的权利；隐藏是治理手段。
+   * **不物理删除记录**——正文保留，供治理与申诉。
+   * Moderator 不应通过 delete 冒充作者删除内容。
+   */
+  app.post('/api/rooms/:roomId/prayer/shares/:shareId/hide',
+    requireAuth, requireRoomExists, requireRoomMember, requireRoomManager, prayerWriteLimiter,
+    (req: Request, res: Response) => {
+      const me = userOf(req);
+      if (!me) return res.status(401).json({ error: 'User token required.' });
+      const { roomId, shareId } = req.params;
+      const row = stmtGetShare.get(shareId);
+      if (!row || row.room_id !== roomId) return res.status(404).json({ error: 'Share not found.' });
+      const reason = String((req.body ?? {}).reason ?? 'other').slice(0, 200);
+      stmtHide.run(now(), me.id, reason, shareId);
+      res.json({ ok: true, hidden: true });
+    });
+
+  app.post('/api/rooms/:roomId/prayer/shares/:shareId/unhide',
+    requireAuth, requireRoomExists, requireRoomMember, requireRoomManager, prayerWriteLimiter,
+    (req: Request, res: Response) => {
+      const { roomId, shareId } = req.params;
+      const row = stmtGetShare.get(shareId);
+      if (!row || row.room_id !== roomId) return res.status(404).json({ error: 'Share not found.' });
+      stmtUnhide.run(shareId);
+      res.json({ ok: true, hidden: false });
+    });
+
+  /**
+   * POST /api/rooms/:roomId/prayer/shares/:shareId/report   举报（任何成员）
+   * Body: { reason: privacy|harassment|spam|unsafe|other }
+   * UNIQUE(share_id, reporter_user_id) 保证同一人重复举报不产生新行。
+   */
+  const REPORT_REASONS = ['privacy', 'harassment', 'spam', 'unsafe', 'other'];
+  app.post('/api/rooms/:roomId/prayer/shares/:shareId/report',
+    requireAuth, requireRoomExists, requireRoomMember, prayerWriteLimiter,
+    (req: Request, res: Response) => {
+      const me = userOf(req);
+      if (!me) return res.status(401).json({ error: 'User token required.' });
+      const { roomId, shareId } = req.params;
+      const row = stmtGetShare.get(shareId);
+      if (!row || row.room_id !== roomId) return res.status(404).json({ error: 'Share not found.' });
+      const reason = String((req.body ?? {}).reason ?? 'other');
+      if (!REPORT_REASONS.includes(reason)) return res.status(400).json({ error: 'Invalid reason.' });
+      const r = stmtReport.run(uid(), shareId, me.id, reason, now());
+      res.json({ ok: true, created: r.changes > 0 });
+    });
+
+  /**
+   * GET /api/rooms/:roomId/prayer/reports   查看本房举报（manager 专属）
+   * 返回里**不含举报人与被举报者身份**——匿名帖的作者对 manager 同样不可见（§9）。
+   */
+  app.get('/api/rooms/:roomId/prayer/reports',
+    requireAuth, requireRoomExists, requireRoomMember, requireRoomManager,
+    (req: Request, res: Response) => {
+      const reports = stmtReportsOfRoom.all(req.params.roomId).map(r => ({
+        id: r.id, shareId: r.share_id, reason: r.reason, status: r.status,
+        createdAt: r.created_at, hidden: r.hidden_at != null,
+        excerpt: r.text.slice(0, 80),
+      }));
+      res.json({ reports });
+    });
+
+  /**
    * POST   /api/rooms/:roomId/prayer/heartbeat   Body: { name, avatar?, role? }
    * DELETE /api/rooms/:roomId/prayer/presence    离开房间
    */
@@ -222,7 +345,9 @@ export function registerPrayerRoutes(app: Express): void {
     // SEC-2 §7：显示名与头像**只从服务器读取**，不再信任 body 里的
     // name / displayName / avatar / role —— 否则 C 可以把自己显示成「王牧师」。
     const profile = stmtUserProfile.get(me.id);
-    const name = (profile?.name ?? me.id).slice(0, 40);
+    // §15：剥离 bidi 控制符与零宽字符，防止伪装成管理员/牧师。
+    //      阿拉伯文、希伯来文等正常 RTL 名字不受影响。
+    const name = sanitizeDisplayName(profile?.name ?? me.id).slice(0, 40) || me.id;
     const role = isHostReq(req) ? 'host' : 'listener';
     stmtHeartbeat.run(roomId, me.id, name, profile?.avatar ?? null, role, now());
     res.json({ ok: true });

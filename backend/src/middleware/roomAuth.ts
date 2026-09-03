@@ -17,14 +17,27 @@ import { db } from '../db.js';
 const stmtRoom = db.prepare<[string], { room_id: string; host_id: string }>(
   'SELECT room_id, host_id FROM rooms WHERE room_id = ? LIMIT 1',
 );
-const stmtMember = db.prepare<[string, string], { user_id: string }>(
-  'SELECT user_id FROM room_members WHERE room_id = ? AND user_id = ? LIMIT 1',
+const stmtMember = db.prepare<[string, string], { user_id: string; role: string }>(
+  'SELECT user_id, role FROM room_members WHERE room_id = ? AND user_id = ? LIMIT 1',
 );
+
+/** room_members.role 的合法取值。SQLite ALTER 无法加 CHECK，改由服务端强制。 */
+export type RoomRole = 'member' | 'moderator';
+export const ROOM_ROLES: RoomRole[] = ['member', 'moderator'];
 
 /** 请求上下文里带上已解析的房间信息，避免下游重复查库。 */
 declare module 'express-serve-static-core' {
   interface Request {
-    room?: { roomId: string; hostId: string; isHost: boolean };
+    room?: {
+      roomId: string;
+      hostId: string;
+      /** rooms.host_id === jwt.userId。内置公共房间 host_id='system'，任何真人都不是 host。 */
+      isHost: boolean;
+      /** room_members.role === 'moderator' */
+      isModerator: boolean;
+      /** RoomManager = 真人 host 或 moderator。管理类操作统一用它。 */
+      isManager: boolean;
+    };
   }
 }
 
@@ -42,7 +55,12 @@ export function requireRoomExists(req: Request, res: Response, next: NextFunctio
     return;
   }
   const uid = principalUserId(req);
-  req.room = { roomId: room.room_id, hostId: room.host_id, isHost: !!uid && room.host_id === uid };
+  const isHost = !!uid && room.host_id === uid;
+  const isModerator = !!uid && stmtMember.get(room.room_id, uid)?.role === 'moderator';
+  req.room = {
+    roomId: room.room_id, hostId: room.host_id,
+    isHost, isModerator, isManager: isHost || isModerator,
+  };
   next();
 }
 
@@ -59,12 +77,34 @@ export function requireRoomMember(req: Request, res: Response, next: NextFunctio
   res.status(403).json({ error: 'Not a member of this room.' });
 }
 
-/** 必须是房主。真相源只有 rooms.host_id。 */
+/** 必须是房主。真相源只有 rooms.host_id——**不存在 role='host'**。 */
 export function requireRoomHost(req: Request, res: Response, next: NextFunction): void {
   const uid = principalUserId(req);
   if (!uid) { res.status(401).json({ error: 'User token required.' }); return; }
   if (!req.room) { res.status(500).json({ error: 'requireRoomExists must run first.' }); return; }
   if (!req.room.isHost) { res.status(403).json({ error: 'Only the host can do this.' }); return; }
+  next();
+}
+
+/** 必须是本房 moderator。跨房 moderator 无效——req.room 已按当前 roomId 解析。 */
+export function requireRoomModerator(req: Request, res: Response, next: NextFunction): void {
+  if (!principalUserId(req)) { res.status(401).json({ error: 'User token required.' }); return; }
+  if (!req.room) { res.status(500).json({ error: 'requireRoomExists must run first.' }); return; }
+  if (!req.room.isModerator) { res.status(403).json({ error: 'Moderator permission required.' }); return; }
+  next();
+}
+
+/**
+ * RoomManager = 真人 host **或** 本房 moderator。
+ *
+ * 内置公共房间 host_id='system'，没有真人是 host，因此其内容管理
+ * 完全依赖 moderator；用户自建房间的 host 天然是 manager，无需额外授予 moderator。
+ * 管理类 API 一律用这一个函数，不要在各处重复写条件。
+ */
+export function requireRoomManager(req: Request, res: Response, next: NextFunction): void {
+  if (!principalUserId(req)) { res.status(401).json({ error: 'User token required.' }); return; }
+  if (!req.room) { res.status(500).json({ error: 'requireRoomExists must run first.' }); return; }
+  if (!req.room.isManager) { res.status(403).json({ error: 'Room manager permission required.' }); return; }
   next();
 }
 
@@ -94,5 +134,22 @@ export function removeMember(roomId: string, userId: string): void {
 
 export const isMember = (roomId: string, userId: string): boolean =>
   Boolean(stmtMember.get(roomId, userId));
+
+export const roleOf = (roomId: string, userId: string): RoomRole | null =>
+  (stmtMember.get(roomId, userId)?.role as RoomRole | undefined) ?? null;
+
+const stmtSetRole = db.prepare<[string, number, string, string]>(
+  'UPDATE room_members SET role = ?, updated_at = ? WHERE room_id = ? AND user_id = ?',
+);
+
+/**
+ * 设置房间角色。**不对客户端开放**——只能由受保护的管理入口调用
+ * （backend/scripts/room-moderator.ts）。join 永远只创建 role='member'。
+ * 返回 false 表示该用户不是这个房间的成员（需先 join）。
+ */
+export function setRoomRole(roomId: string, userId: string, role: RoomRole, at = Date.now()): boolean {
+  if (!ROOM_ROLES.includes(role)) throw new Error(`invalid role: ${role}`);
+  return stmtSetRole.run(role, at, roomId, userId).changes > 0;
+}
 
 export const memberCount = (roomId: string): number => stmtCount.get(roomId)?.n ?? 0;

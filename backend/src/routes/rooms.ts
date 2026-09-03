@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import { db } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireRoomExists, addMember, removeMember, memberCount } from '../middleware/roomAuth.js';
+import { roomMembershipLimiter } from '../middleware/rateLimit.js';
 
 /**
  * Room password store, now persisted to SQLite (`rooms` table). The
@@ -110,7 +111,7 @@ export function registerRoomRoutes(app: Express): void {
    * 身份**只**来自 JWT——客户端无法指定要给谁建立 membership。
    * 重复 join 幂等（UPSERT）。
    */
-  app.post('/api/rooms/:roomId/join', requireAuth, requireRoomExists, (req: Request, res: Response) => {
+  app.post('/api/rooms/:roomId/join', requireAuth, requireRoomExists, roomMembershipLimiter, (req: Request, res: Response) => {
     const p = req.principal;
     if (!p || p.kind !== 'user') return res.status(401).json({ error: 'User token required.' });
     const { roomId } = req.params;
@@ -135,7 +136,7 @@ export function registerRoomRoutes(app: Express): void {
    * 注意：断网 / 切后台 / 心跳超时**不会**走到这里，那些只影响 room_presence。
    * 这是刻意的——否则网络波动会导致授权状态异常。
    */
-  app.post('/api/rooms/:roomId/leave', requireAuth, requireRoomExists, (req: Request, res: Response) => {
+  app.post('/api/rooms/:roomId/leave', requireAuth, requireRoomExists, roomMembershipLimiter, (req: Request, res: Response) => {
     const p = req.principal;
     if (!p || p.kind !== 'user') return res.status(401).json({ error: 'User token required.' });
     const { roomId } = req.params;

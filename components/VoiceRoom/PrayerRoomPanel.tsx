@@ -2,10 +2,12 @@ import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } 
 import {
   ClipboardList, BookMarked, Leaf, ChevronRight, Crown, Shield, Lock,
   Users, Trash2, EyeOff, Check, X, Plus as PlusIcon, ChevronLeft, MoreHorizontal,
+  Flag, EyeOff as HideIcon, Eye,
 } from 'lucide-react';
 import {
   fetchPrayerRoom, savePrayerTopics, postPrayerShare, deletePrayerShare,
   setIntercession, sendHeartbeat, leavePresence, relativeTime, joinRoom,
+  reportShare, setShareHidden, REPORT_REASON_LABEL, type ReportReason,
   isPrayerBackendConfigured, EMPTY_STATE, POLL_MS, HEARTBEAT_MS,
   type PrayerRoomState, type PrayerShare,
 } from '../../services/prayerRoomService';
@@ -221,6 +223,8 @@ const PrayerRoomPanel: React.FC<Props> = ({
 }) => {
   const [server, setServer] = useState<PrayerRoomState>(EMPTY_STATE);
   const [loaded, setLoaded] = useState(false);
+  const [reportFor, setReportFor] = useState<string | null>(null);
+
   const [ui, dispatch] = useReducer(uiReducer, initialUi);
   const backend = isPrayerBackendConfigured();
   const topicsRef = useRef<HTMLDivElement>(null);
@@ -268,7 +272,8 @@ const PrayerRoomPanel: React.FC<Props> = ({
   const shown = ui.expandedMembers ? online : online.slice(0, 6);
 
   const publishShare = async (text: string, anonymous: boolean): Promise<boolean> => {
-    const r = await postPrayerShare(roomId, text, anonymous);
+    const cid = (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}_${Math.random().toString(36).slice(2)}`);
+    const r = await postPrayerShare(roomId, text, anonymous, cid);
     if (!r) { showToast('发布失败，请稍后再试'); return false; }
     await refresh();
     showToast('已发布，仅本房间成员可见');
@@ -559,9 +564,9 @@ const PrayerRoomPanel: React.FC<Props> = ({
                 <Avatar src={s.isAnonymous ? null : undefined} name={s.isAnonymous ? '友' : (s.isMine ? meName : (s.userId ?? '弟'))} size={38} />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-[12.5px] font-bold truncate" style={{ color: PT.navy }}>
+                    <bdi dir="auto" className="text-[12.5px] font-bold truncate" style={{ color: PT.navy }}>
                       {s.isAnonymous ? '一位弟兄姊妹' : (s.isMine ? '我' : (s.userId ?? '弟兄姊妹'))}
-                    </span>
+                    </bdi>
                     {s.isAnonymous && <EyeOff size={10} style={{ color: PT.faint }} className="shrink-0" />}
                     <span className="text-[10px] shrink-0" style={{ color: PT.faint }}>{relativeTime(s.createdAt, nowMs)}</span>
                     {s.isMine && (
@@ -570,7 +575,10 @@ const PrayerRoomPanel: React.FC<Props> = ({
                       </button>
                     )}
                   </div>
-                  <p className="text-[13px] leading-[1.75] mt-1.5 break-words" style={{ color: PT.body }}>{s.text}</p>
+                  <bdi dir="auto" className="block text-[13px] leading-[1.75] mt-1.5 break-words"
+                  style={{ color: s.hidden ? PT.faint : PT.body, unicodeBidi: 'plaintext', fontStyle: s.hidden ? 'italic' : undefined }}>
+                  {s.text}
+                </bdi>
 
                   <div className="flex items-center gap-3 mt-2.5">
                     <button onClick={() => toggleIntercede(s)}
@@ -587,7 +595,50 @@ const PrayerRoomPanel: React.FC<Props> = ({
                         {s.intercessions} 人同心祷告
                       </span>
                     )}
+                    <div className="ml-auto flex items-center gap-1">
+                      {/* 举报：任何成员可用；同一人对同一条重复举报不产生新记录 */}
+                      {!s.isMine && (
+                        <button onClick={() => setReportFor(reportFor === s.id ? null : s.id)}
+                          aria-label="举报" className="p-1 active:scale-90" style={{ color: PT.faint }}>
+                          <Flag size={12} />
+                        </button>
+                      )}
+                      {/* 隐藏：仅 manager（真人 host 或本房 moderator）。与作者的「删除」是两回事 */}
+                      {server.isManager && (
+                        <button
+                          onClick={async () => {
+                            const r = await setShareHidden(roomId, s.id, !s.hidden, '管理员处理');
+                            showToast(r ? (s.hidden ? '已取消隐藏' : '已隐藏该内容') : '操作失败');
+                            void refresh();
+                          }}
+                          aria-label={s.hidden ? '取消隐藏' : '隐藏'}
+                          className="p-1 active:scale-90" style={{ color: s.hidden ? PT.gold : PT.faint }}>
+                          {s.hidden ? <Eye size={12} /> : <HideIcon size={12} />}
+                        </button>
+                      )}
+                    </div>
                   </div>
+
+                  {/* 举报原因选择 */}
+                  {reportFor === s.id && (
+                    <div className="mt-2 rounded-xl p-2.5" style={{ background: PT.neutralWash }}>
+                      <p className="text-[10.5px] mb-2" style={{ color: PT.muted }}>举报原因（管理员会看到内容摘要，不会看到匿名作者身份）</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {(Object.keys(REPORT_REASON_LABEL) as ReportReason[]).map(rr => (
+                          <button key={rr}
+                            onClick={async () => {
+                              const r = await reportShare(roomId, s.id, rr);
+                              setReportFor(null);
+                              showToast(r ? (r.created ? '已收到你的举报' : '你已举报过这条内容') : '举报失败');
+                            }}
+                            className="text-[11px] rounded-full px-2.5 py-1 active:scale-95"
+                            style={{ color: PT.body, background: PT.card }}>
+                            {REPORT_REASON_LABEL[rr]}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}

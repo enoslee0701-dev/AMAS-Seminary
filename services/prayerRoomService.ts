@@ -41,6 +41,9 @@ export interface PrayerShare {
   /** 正在为此代祷的人数。这不是点赞数。 */
   intercessions: number;
   didIntercede: boolean;
+  /** 已被管理员隐藏。此时 text 已被服务端替换为提示语（作者与 manager 除外）。 */
+  hidden?: boolean;
+  hiddenReason?: string | null;
 }
 
 export interface PrayerRoomState {
@@ -48,6 +51,9 @@ export interface PrayerRoomState {
   presence: PrayerPresence[];
   shares: PrayerShare[];
   isHost: boolean;
+  /** RoomManager = 真人 host 或本房 moderator。决定是否显示治理操作。 */
+  isManager?: boolean;
+  isModerator?: boolean;
   serverTime: number;
 }
 
@@ -101,10 +107,33 @@ export const savePrayerTopics = (roomId: string, topics: string[]) =>
     { method: 'PUT', body: JSON.stringify({ topics }) },
   );
 
-export const postPrayerShare = (roomId: string, text: string, isAnonymous = false) =>
-  call<{ ok: boolean; id: string }>(
+/**
+ * 发布代祷。`clientRequestId` 提供幂等：网络卡顿时重复点击不会产生两条。
+ * 唯一键是 (room_id, user_id, client_request_id)，user_id 由服务端从 JWT 取。
+ */
+export const postPrayerShare = (roomId: string, text: string, isAnonymous = false, clientRequestId?: string) =>
+  call<{ ok: boolean; id: string; idempotentReplay?: boolean }>(
     `/api/rooms/${encodeURIComponent(roomId)}/prayer/shares`,
-    { method: 'POST', body: JSON.stringify({ text, isAnonymous }) },
+    { method: 'POST', body: JSON.stringify({ text, isAnonymous, clientRequestId }) },
+  );
+
+/** 举报不当内容。同一人对同一条重复举报不会产生新记录。 */
+export type ReportReason = 'privacy' | 'harassment' | 'spam' | 'unsafe' | 'other';
+export const REPORT_REASON_LABEL: Record<ReportReason, string> = {
+  privacy: '涉及他人隐私', harassment: '骚扰或攻击', spam: '广告或刷屏',
+  unsafe: '可能有安全风险', other: '其他',
+};
+export const reportShare = (roomId: string, shareId: string, reason: ReportReason) =>
+  call<{ ok: boolean; created: boolean }>(
+    `/api/rooms/${encodeURIComponent(roomId)}/prayer/shares/${encodeURIComponent(shareId)}/report`,
+    { method: 'POST', body: JSON.stringify({ reason }) },
+  );
+
+/** 隐藏 / 取消隐藏（仅 manager）。与「删除」区分：删除是作者的权利，隐藏是治理手段。 */
+export const setShareHidden = (roomId: string, shareId: string, hidden: boolean, reason?: string) =>
+  call<{ ok: boolean; hidden: boolean }>(
+    `/api/rooms/${encodeURIComponent(roomId)}/prayer/shares/${encodeURIComponent(shareId)}/${hidden ? 'hide' : 'unhide'}`,
+    { method: 'POST', body: JSON.stringify({ reason }) },
   );
 
 export const deletePrayerShare = (roomId: string, shareId: string) =>
