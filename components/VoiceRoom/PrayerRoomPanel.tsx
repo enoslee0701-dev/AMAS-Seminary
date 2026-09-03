@@ -35,6 +35,56 @@ interface Props {
   onViewProfile?: (p: any) => void;
 }
 
+// ---------- 调色板 ----------
+//
+// 祷告室的配色可整体切换。酒红+金是很传统的教会配色，容易显旧；
+// 而 App 的品牌色本来就是藏青+金（见 ChristianProfileView），
+// 旧的酒红是从 rose 主题继承下来的，本来就不统一。
+// 换主题只改这一个对象 + VoiceRoomOverlay 里 getBgGradient 的 prayer 一行。
+
+type Palette = {
+  /** 卡片主色（主题卡用），rgba 两段做垂直渐变 */
+  cardFrom: string; cardTo: string; cardBorder: string;
+  /** 强调色：标题、序号、图标、按钮 */
+  accent: string; accentDeep: string; accentInk: string;
+  /** 环境光三团 */
+  glowTop: string; glowSide: string; glowBottom: string;
+  /** 头像底 */
+  avatarFrom: string; avatarTo: string; avatarInk: string;
+  /** 徽章描边色（要与页面底色一致才像“挖空”） */
+  badgeRing: string;
+};
+
+const PALETTES: Record<'midnight' | 'pine' | 'graphite', Palette> = {
+  // 午夜靛蓝 · 与 App 品牌的藏青一脉相承，冷静、现代、夜祷感
+  midnight: {
+    cardFrom: 'rgba(30,52,110,.55)', cardTo: 'rgba(11,20,48,.66)', cardBorder: 'rgba(150,180,240,.20)',
+    accent: '#A9C4F5', accentDeep: '#5B7FD4', accentInk: '#0A1633',
+    glowTop: 'rgba(150,185,255,.26)', glowSide: 'rgba(58,96,190,.38)', glowBottom: 'rgba(30,48,110,.40)',
+    avatarFrom: '#26406F', avatarTo: '#101c3a', avatarInk: 'rgba(196,216,255,.94)',
+    badgeRing: '#0B1430',
+  },
+  // 深松绿 · 安静、有生命感，不冷不燥
+  pine: {
+    cardFrom: 'rgba(20,68,58,.55)', cardTo: 'rgba(7,26,23,.66)', cardBorder: 'rgba(150,220,196,.18)',
+    accent: '#9EDCC2', accentDeep: '#3E8F72', accentInk: '#06201A',
+    glowTop: 'rgba(168,236,206,.24)', glowSide: 'rgba(30,120,96,.36)', glowBottom: 'rgba(16,64,54,.40)',
+    avatarFrom: '#1B5145', avatarTo: '#08221D', avatarInk: 'rgba(190,236,218,.94)',
+    badgeRing: '#071A17',
+  },
+  // 石墨 + 琥珀 · 极简，几乎中性，靠单一强调色说话
+  graphite: {
+    cardFrom: 'rgba(58,60,68,.48)', cardTo: 'rgba(20,21,26,.66)', cardBorder: 'rgba(255,255,255,.12)',
+    accent: '#F0C070', accentDeep: '#B8863A', accentInk: '#2A1B05',
+    glowTop: 'rgba(240,192,112,.20)', glowSide: 'rgba(120,124,140,.26)', glowBottom: 'rgba(40,42,52,.45)',
+    avatarFrom: '#3A3C46', avatarTo: '#17181D', avatarInk: 'rgba(240,214,170,.94)',
+    badgeRing: '#15161A',
+  },
+};
+
+/** 当前主题。换一行即可整体换色。 */
+const P = PALETTES.midnight;
+
 // ---------- 视觉基元 ----------
 
 /** 玻璃卡：半透明面 + 模糊 + 顶部内高光 + 双层阴影。 */
@@ -47,15 +97,15 @@ const glass: React.CSSProperties = {
   boxShadow: 'inset 0 1px 0 rgba(255,255,255,.10), 0 2px 6px rgba(0,0,0,.35), 0 14px 40px rgba(0,0,0,.45)',
 };
 
-/** 主题卡：同样的玻璃，底色偏酒红，作为页面的视觉重心。 */
+/** 主题卡：同样的玻璃，底色取调色板主色，作为页面的视觉重心。 */
 const wineCard: React.CSSProperties = {
   ...glass,
-  background: 'linear-gradient(180deg, rgba(124,26,54,.55) 0%, rgba(58,10,26,.62) 100%)',
-  border: '1px solid rgba(201,154,69,.22)',
+  background: `linear-gradient(180deg, ${P.cardFrom} 0%, ${P.cardTo} 100%)`,
+  border: `1px solid ${P.cardBorder}`,
 };
 
-const GOLD = '#E8C98C';
-const GOLD_DIM = '#C99A45';
+const GOLD = P.accent;
+const GOLD_DIM = P.accentDeep;
 
 /** 区块标题：中文衬线 + 金色英文 eyebrow，与 App 其余板块层级一致。 */
 const Head: React.FC<{ title: string; en: string; right?: React.ReactNode }> = ({ title, en, right }) => (
@@ -81,20 +131,20 @@ const Avatar: React.FC<{ src?: string | null; name: string; size?: number; gold?
         style={{
           width: size, height: size, padding: 2,
           background: gold
-            ? 'linear-gradient(145deg,#F4D796,#C99A45 55%,#8A6519)'
-            : 'linear-gradient(145deg,rgba(232,201,140,.45),rgba(201,154,69,.14))',
-          boxShadow: gold ? '0 0 14px rgba(232,201,140,.35)' : '0 2px 8px rgba(0,0,0,.4)',
+            ? `linear-gradient(145deg, ${P.accent}, ${P.accentDeep})`
+            : `linear-gradient(145deg, ${P.accent}55, ${P.accentDeep}22)`,
+          boxShadow: gold ? `0 0 14px ${P.accent}59` : '0 2px 8px rgba(0,0,0,.4)',
         }}
       >
-        <div className="w-full h-full rounded-full overflow-hidden" style={{ background: '#2a0812' }}>
+        <div className="w-full h-full rounded-full overflow-hidden" style={{ background: P.avatarTo }}>
           {real ? (
             <img src={real} alt={name} className="w-full h-full object-cover" />
           ) : (
             <div
               className="w-full h-full flex items-center justify-center"
-              style={{ background: 'radial-gradient(120% 120% at 30% 20%, #6d1f36 0%, #340c1c 70%)' }}
+              style={{ background: `radial-gradient(120% 120% at 30% 20%, ${P.avatarFrom} 0%, ${P.avatarTo} 70%)` }}
             >
-              <span className="font-serif font-bold" style={{ fontSize: size * 0.4, color: 'rgba(244,215,150,.92)' }}>
+              <span className="font-serif font-bold" style={{ fontSize: size * 0.4, color: P.avatarInk }}>
                 {name.slice(0, 1)}
               </span>
             </div>
@@ -125,16 +175,16 @@ const Ambience: React.FC = () => (
   <div className="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden>
     <div className="absolute" style={{
       top: -170, left: '50%', transform: 'translateX(-50%)', width: 420, height: 340,
-      background: 'radial-gradient(closest-side, rgba(244,215,150,.30), rgba(201,154,69,.10) 55%, transparent 78%)',
+      background: `radial-gradient(closest-side, ${P.glowTop}, transparent 78%)`,
       filter: 'blur(14px)',
     }} />
     <div className="absolute" style={{
       top: 190, right: -130, width: 330, height: 330,
-      background: 'radial-gradient(closest-side, rgba(150,32,68,.42), transparent 72%)', filter: 'blur(24px)',
+      background: `radial-gradient(closest-side, ${P.glowSide}, transparent 72%)`, filter: 'blur(24px)',
     }} />
     <div className="absolute" style={{
       bottom: -110, left: -110, width: 320, height: 320,
-      background: 'radial-gradient(closest-side, rgba(86,20,48,.42), transparent 72%)', filter: 'blur(26px)',
+      background: `radial-gradient(closest-side, ${P.glowBottom}, transparent 72%)`, filter: 'blur(26px)',
     }} />
   </div>
 );
@@ -247,12 +297,12 @@ const PrayerRoomPanel: React.FC<Props> = ({
         <Ambience />
         <div className="relative flex items-center justify-center mb-8">
           <span className="absolute w-40 h-40 rounded-full animate-ping"
-            style={{ background: 'radial-gradient(closest-side, rgba(232,201,140,.16), transparent 70%)' }} />
-          <span className="absolute w-28 h-28 rounded-full" style={{ border: '1px solid rgba(232,201,140,.25)' }} />
+            style={{ background: `radial-gradient(closest-side, ${P.accent}29, transparent 70%)` }} />
+          <span className="absolute w-28 h-28 rounded-full" style={{ border: `1px solid ${P.accent}40` }} />
           <div className="w-20 h-20 rounded-full flex items-center justify-center" style={{
-            background: 'radial-gradient(120% 120% at 35% 25%, rgba(244,215,150,.22), rgba(58,10,26,.9))',
-            border: '1px solid rgba(232,201,140,.35)',
-            boxShadow: '0 0 40px rgba(232,201,140,.22)',
+            background: `radial-gradient(120% 120% at 35% 25%, ${P.accent}38, ${P.cardTo})`,
+            border: `1px solid ${P.accent}59`,
+            boxShadow: `0 0 40px ${P.accent}38`,
           }}>
             <Feather size={30} style={{ color: GOLD }} />
           </div>
@@ -283,10 +333,10 @@ const PrayerRoomPanel: React.FC<Props> = ({
           <div style={wineCard} className="p-7">
             <div className="flex items-center gap-2 mb-5">
               <Flame size={13} style={{ color: GOLD_DIM }} />
-              <span className="text-[9.5px] font-black tracking-[2.5px] uppercase" style={{ color: 'rgba(232,201,140,.65)' }}>Verse of Today</span>
+              <span className="text-[9.5px] font-black tracking-[2.5px] uppercase" style={{ color: `${P.accent}A6` }}>Verse of Today</span>
             </div>
             <p className="text-white/95 font-serif leading-[2.1]" style={{ fontSize: fontSize + 3 }}>{verse.text}</p>
-            <div className="mt-6 pt-4" style={{ borderTop: '1px solid rgba(232,201,140,.18)' }}>
+            <div className="mt-6 pt-4" style={{ borderTop: `1px solid ${P.accent}2E` }}>
               <p className="text-[13px] font-bold font-serif" style={{ color: GOLD }}>{verse.ref}</p>
             </div>
           </div>
@@ -306,7 +356,7 @@ const PrayerRoomPanel: React.FC<Props> = ({
 
         {/* 房间副标题：承接顶栏的「祷告室」，在暖光里给一句定调的话 */}
         <p className="text-center font-serif text-[12.5px] tracking-[1px] pt-1 pb-3"
-           style={{ color: 'rgba(244,215,150,.62)', textShadow: '0 0 18px rgba(232,201,140,.35)' }}>
+           style={{ color: `${P.accent}B0`, textShadow: `0 0 18px ${P.accent}59` }}>
           同心合意，为国度祷告。
         </p>
 
@@ -314,21 +364,21 @@ const PrayerRoomPanel: React.FC<Props> = ({
         <div ref={topicsRef} style={wineCard} className="overflow-hidden">
           <div className="px-5 pt-5 pb-4 flex items-center gap-3.5">
             <div className="w-11 h-11 rounded-full flex items-center justify-center shrink-0" style={{
-              background: 'radial-gradient(120% 120% at 35% 25%, rgba(244,215,150,.30), rgba(92,26,46,.95))',
-              border: '1px solid rgba(232,201,140,.35)',
-              boxShadow: '0 0 18px rgba(232,201,140,.20)',
+              background: `radial-gradient(120% 120% at 35% 25%, ${P.accent}4D, ${P.cardTo})`,
+              border: `1px solid ${P.accent}59`,
+              boxShadow: `0 0 18px ${P.accent}33`,
             }}>
               <span style={{ fontSize: 17 }}>🙏</span>
             </div>
             <div className="flex-1 min-w-0">
               <h3 className="font-serif text-white text-[18px] font-bold tracking-wide">本次祷告主题</h3>
-              <p className="text-[9px] font-black tracking-[2px] mt-0.5" style={{ color: 'rgba(232,201,140,.5)' }}>THIS SESSION</p>
+              <p className="text-[9px] font-black tracking-[2px] mt-0.5" style={{ color: `${P.accent}80` }}>THIS SESSION</p>
             </div>
             {state.isHost && !editingTopics && (
               <button
                 onClick={() => { setDraft(state.topics.length ? state.topics.map(t => t.text) : ['']); setEditingTopics(true); }}
                 className="text-[11px] font-bold rounded-full px-3.5 py-1.5 active:scale-95 transition shrink-0"
-                style={{ color: GOLD, border: '1px solid rgba(201,154,69,.40)', background: 'rgba(232,201,140,.07)' }}
+                style={{ color: GOLD, border: `1px solid ${P.accentDeep}66`, background: `${P.accent}12` }}
               >编辑</button>
             )}
           </div>
@@ -339,7 +389,7 @@ const PrayerRoomPanel: React.FC<Props> = ({
                 {draft.map((t, i) => (
                   <div key={i} className="flex items-center gap-2.5">
                     <span className="w-8 h-8 rounded-xl text-[12px] font-bold flex items-center justify-center shrink-0"
-                      style={{ background: 'rgba(232,201,140,.10)', color: GOLD, border: '1px solid rgba(232,201,140,.22)' }}>{i + 1}</span>
+                      style={{ background: `${P.accent}1A`, color: GOLD, border: `1px solid ${P.accent}38` }}>{i + 1}</span>
                     <input
                       value={t} autoFocus={i === draft.length - 1}
                       onChange={e => setDraft(d => d.map((x, j) => (j === i ? e.target.value : x)))}
@@ -362,7 +412,7 @@ const PrayerRoomPanel: React.FC<Props> = ({
                   <button onClick={() => setEditingTopics(false)} className="text-[11.5px] text-white/45 px-3 py-2">取消</button>
                   <button onClick={saveTopics}
                     className="text-[11.5px] font-bold rounded-full px-5 py-2 active:scale-95 transition"
-                    style={{ color: '#4A2E05', background: 'linear-gradient(180deg,#F4D796,#DDAE55)', boxShadow: '0 4px 14px rgba(201,154,69,.35)' }}>
+                    style={{ color: P.accentInk, background: `linear-gradient(180deg, ${P.accent}, ${P.accentDeep})`, boxShadow: `0 4px 14px ${P.accentDeep}59` }}>
                     保存
                   </button>
                 </div>
@@ -373,8 +423,8 @@ const PrayerRoomPanel: React.FC<Props> = ({
                   <div key={t.id} className="flex items-start gap-3.5">
                     <span className="w-8 h-8 rounded-xl text-[12.5px] font-bold flex items-center justify-center shrink-0 mt-px"
                       style={{
-                        background: 'linear-gradient(160deg, rgba(232,201,140,.20), rgba(232,201,140,.06))',
-                        color: GOLD, border: '1px solid rgba(232,201,140,.26)',
+                        background: `linear-gradient(160deg, ${P.accent}33, ${P.accent}0F)`,
+                        color: GOLD, border: `1px solid ${P.accent}42`,
                       }}>{t.seq}</span>
                     <p className="font-serif leading-[1.85] flex-1 pt-1" style={{ fontSize, color: 'rgba(255,241,235,.94)' }}>{t.text}</p>
                   </div>
@@ -421,16 +471,16 @@ const PrayerRoomPanel: React.FC<Props> = ({
                     {/* 只有后端心跳确认在线的才点绿灯，不谎报在线 */}
                     {p.live && (
                       <span className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-emerald-400"
-                        style={{ border: '2.5px solid #2a0812', boxShadow: '0 0 7px rgba(52,211,153,.85)' }} />
+                        style={{ border: `2.5px solid ${P.badgeRing}`, boxShadow: '0 0 7px rgba(52,211,153,.85)' }} />
                     )}
                     {p.role === 'host' && (
                       <span className="absolute -top-1 -right-1 rounded-full p-[3px]"
-                        style={{ background: 'linear-gradient(180deg,#F7E3B4,#D9A54B)', border: '2px solid #2a0812' }}>
-                        <Crown size={8} style={{ color: '#5C3A08' }} fill="currentColor" />
+                        style={{ background: `linear-gradient(180deg, ${P.accent}, ${P.accentDeep})`, border: `2px solid ${P.badgeRing}` }}>
+                        <Crown size={8} style={{ color: P.accentInk }} fill="currentColor" />
                       </span>
                     )}
                     {p.role === 'admin' && (
-                      <span className="absolute -top-1 -right-1 rounded-full p-[3px]" style={{ background: '#8B5CF6', border: '2px solid #2a0812' }}>
+                      <span className="absolute -top-1 -right-1 rounded-full p-[3px]" style={{ background: '#8B5CF6', border: `2px solid ${P.badgeRing}` }}>
                         <Shield size={8} className="text-white" fill="currentColor" />
                       </span>
                     )}
@@ -467,14 +517,14 @@ const PrayerRoomPanel: React.FC<Props> = ({
               className="px-2 py-4 flex flex-col items-center text-center active:scale-95 transition"
             >
               <div className="w-11 h-11 rounded-full flex items-center justify-center mb-2.5" style={{
-                background: 'linear-gradient(160deg,#E8C98C,#B8863A)',
-                boxShadow: '0 4px 14px rgba(201,154,69,.30), inset 0 1px 0 rgba(255,255,255,.45)',
+                background: `linear-gradient(160deg, ${P.accent}, ${P.accentDeep})`,
+                boxShadow: `0 4px 14px ${P.accentDeep}4D, inset 0 1px 0 rgba(255,255,255,.45)`,
               }}>
-                <c.icon size={17} style={{ color: '#3A2405' }} strokeWidth={2.2} />
+                <c.icon size={17} style={{ color: P.accentInk }} strokeWidth={2.2} />
               </div>
               <span className="font-serif text-white text-[13.5px] font-bold">{c.title}</span>
               <span className="text-[9.5px] leading-[1.5] mt-1.5 whitespace-pre-line" style={{ color: 'rgba(255,255,255,.38)' }}>{c.sub}</span>
-              <ChevronRight size={13} className="mt-2.5" style={{ color: 'rgba(232,201,140,.40)' }} />
+              <ChevronRight size={13} className="mt-2.5" style={{ color: `${P.accent}66` }} />
             </button>
           ))}
         </div>
@@ -513,7 +563,7 @@ const PrayerRoomPanel: React.FC<Props> = ({
                   onClick={() => toggleIntercede(s)}
                   className="mt-2.5 inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[11px] font-bold transition active:scale-95"
                   style={s.didIntercede
-                    ? { color: GOLD, background: 'rgba(232,201,140,.12)', border: '1px solid rgba(232,201,140,.35)' }
+                    ? { color: GOLD, background: `${P.accent}1F`, border: `1px solid ${P.accent}59` }
                     : { color: 'rgba(255,255,255,.55)', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.10)' }}
                 >
                   <span style={{ fontSize: 12 }}>🙏</span>
@@ -536,14 +586,14 @@ const PrayerRoomPanel: React.FC<Props> = ({
               />
               <button onClick={submitShare} disabled={!backend || !text.trim()} aria-label="发送祷告"
                 className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 disabled:opacity-30 active:scale-95 transition"
-                style={{ background: 'linear-gradient(180deg,#F4D796,#DDAE55)', boxShadow: '0 5px 16px rgba(201,154,69,.38), inset 0 1px 0 rgba(255,255,255,.5)' }}>
-                <Send size={17} style={{ color: '#4A2E05' }} strokeWidth={2.3} />
+                style={{ background: `linear-gradient(180deg, ${P.accent}, ${P.accentDeep})`, boxShadow: `0 5px 16px ${P.accentDeep}61, inset 0 1px 0 rgba(255,255,255,.5)` }}>
+                <Send size={17} style={{ color: P.accentInk }} strokeWidth={2.3} />
               </button>
             </div>
             <button onClick={() => setAnon(v => !v)} disabled={!backend}
               className="mt-2.5 inline-flex items-center gap-1.5 text-[11px] rounded-full px-3 py-1.5 transition active:scale-95"
               style={anon
-                ? { color: GOLD, background: 'rgba(232,201,140,.12)', border: '1px solid rgba(232,201,140,.35)' }
+                ? { color: GOLD, background: `${P.accent}1F`, border: `1px solid ${P.accent}59` }
                 : { color: 'rgba(255,255,255,.40)', border: '1px solid rgba(255,255,255,.10)' }}>
               <EyeOff size={11} /> 匿名分享{anon ? '（已开启）' : ''}
             </button>

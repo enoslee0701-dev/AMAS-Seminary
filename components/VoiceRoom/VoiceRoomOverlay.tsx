@@ -189,7 +189,8 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
     const isPreachingRoom = currentType === 'preaching';
     const getBgGradient = () => {
        switch(currentType) {
-          case 'prayer': return 'bg-gradient-to-b from-[#2d0a15] via-[#1a050d] to-black';
+          // 祷告室底色与 PrayerRoomPanel 的调色板配套（换主题时两处一起改）
+          case 'prayer': return 'bg-gradient-to-b from-[#16264f] via-[#0b1430] to-black';
           case 'praise': return 'bg-gradient-to-b from-amber-950 via-slate-900 to-black';
           case 'bible': return 'bg-gradient-to-b from-[#0f172a] via-[#1a1a2e] to-black';
           case 'fellowship': return 'bg-gradient-to-b from-emerald-950 via-slate-900 to-black';
