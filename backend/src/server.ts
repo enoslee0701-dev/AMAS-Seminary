@@ -9,6 +9,7 @@ import { registerRoomRoutes } from './routes/rooms.js';
 import { registerPrayerRoutes } from './routes/prayer.js';
 import { registerPrayerSessionRoutes } from './routes/prayerSession.js';
 import { registerPrayerHistoryRoutes } from './routes/prayerHistory.js';
+import { reportSystemRoomModerators } from './diagnostics/systemRooms.js';
 import { registerRoomStreamRoutes } from './routes/roomStream.js';
 import { startEventPoller, sweepRealtimeEvents, realtimeDeploymentNote } from './realtime/roomEvents.js';
 import { registerGeminiProxy } from './routes/gemini.js';
@@ -120,6 +121,9 @@ server.listen(config.port, () => {
   }
   warnIfNoAppSecret();
   warnIfJwtDerived();
+  // 内置公共房间没有真人房主，治理全靠 moderator。缺人只写服务端日志，
+  // 不影响启动，也**绝不**把 SYSTEM_ROOM_HAS_NO_MODERATOR 这类码发给客户端。
+  reportSystemRoomModerators();
   // Realtime：全局一个事件轮询器（跨实例可见性 + 兜底），不是每连接一个
   startEventPoller();
   console.log(realtimeDeploymentNote(process.env.DB_PATH?.trim() || '<backend>/data/amas.sqlite'));

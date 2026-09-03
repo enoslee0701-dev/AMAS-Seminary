@@ -33,3 +33,4 @@ backend/recordings/
 
 # Phase 5 验证脚本的一次性临时数据库
 .tmp-phase5/
+.tmp-sysroom/

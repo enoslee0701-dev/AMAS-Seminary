@@ -198,12 +198,29 @@ Test Files  16 passed (16)
 
 ---
 
-## 七、留给下一轮的观察
+## 七、勘误（Post-Phase5 复核）
 
-内置公共房间（`prayer_room` 等五间）的 `host_id` 是 `'system'`，
-按 `db.ts` 的注释这是刻意保守：**目前没有任何真实用户是这些房间的 manager，
-因此谁也创建不了祷告会**。Phase 5 的历史功能在这些房间里能正常读，
-但没有人能往里写第一场。
+本报告初版在这里写过：内置公共房间 `host_id='system'`，
+「**目前没有任何真实用户是这些房间的 manager，因此谁也创建不了祷告会**」。
 
-由谁担任内置房间的房主是产品决策，不该由技术改动顺手定。
-需要你拍板之后再动。已记入 [PRAYER_ROOM_BACKLOG.md](PRAYER_ROOM_BACKLOG.md)。
+**这句话是错的。** 它漏看了 `requireRoomManager` 的定义：
+
+```ts
+RoomManager = 真人 host  或  本房 moderator
+```
+
+内置房间确实没有真人 host，但 `room_members.role = 'moderator'`
+同样构成 manager。授予方式早在 SEC-3 就已存在：
+`backend/scripts/room-moderator.ts grant <roomId> <email>`。
+
+所以正确的结论是：**内置房间的祷告会由 moderator 创建和主持，机制齐备。**
+当前缺的不是机制，而是**还没有给任何人授予 moderator**——
+五个房间此刻都是 0 moderator。
+
+已用真实闭环验证（`scripts/verify-system-room-moderator.mjs`，26/26 PASS）：
+Moderator A 创建 → Moderator B 编辑主持 → Member C 403 →
+撤销 A 后 A 的 manager 命令立即 403 且仍保留成员身份，
+全程 `rooms.host_id` 恒为 `'system'`。
+
+正式开放的操作步骤见 [PUBLIC_ROOM_LAUNCH_CHECKLIST.md](PUBLIC_ROOM_LAUNCH_CHECKLIST.md)：
+每个开放的房间至少 2 位已验证真人 moderator。

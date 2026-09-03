@@ -64,24 +64,31 @@ mute → cleanup（麦克风指示灯熄灭）→ Wi-Fi/4G 切换 → 断网恢�
 
 ---
 
-## B-3｜内置公共房间没有 manager，谁也创建不了祷告会
+## B-3｜内置公共房间的运营 moderator 尚未授予
 
-**状态**：等你拍板，不是技术问题。
+**状态**：机制齐备，等人。不是技术问题。
 
-`prayer_room / praise_room / bible_reading / preaching_room / fellowship_room`
-这五个内置房间的 `host_id` 是 `'system'`（见 `backend/src/db.ts` 的注释）。
-`'system'` 不是真实用户，所以：
+> **勘误**：本条初版写的是「内置公共房间没有 manager，谁也创建不了祷告会」。
+> 那是错的——`requireRoomManager` = 真人 host **或**本房 moderator，
+> 而内置房间虽无真人 host，却可以有 moderator。机制从 SEC-3 起就存在。
 
-- 不会产生 `room_members` 行
-- 任何真实用户在这些房间里都不是房主，也不是 manager
-- **因此谁也创建不了祷告会**，Phase 2 / 2.5 / 5 在这些房间里只能读不能写
+五个内置房间（`prayer_room / praise_room / bible_reading /
+preaching_room / fellowship_room`）的 `host_id` 是 `'system'`，
+**这一点刻意保持不变**——不把任何真实用户改成 host。
+所有权与治理权分开：治理权只以 `room_members.role='moderator'` 的形式存在，
+可授予、可撤销，且不动 `rooms.host_id`。
 
-这是当初刻意的保守选择：由谁担任内置房间的房主是产品决策，
-不应由安全改动顺手决定。可选方向：
+当前实际状态：**五个房间都是 0 moderator，也就是 0 人可运营。**
 
-1. 指定某个管理员账号为这五间的房主
-2. 允许 `role === 'admin'` 的用户在内置房间里获得 manager 权限
-3. 内置房间改为「谁先进谁带领」——需要新的权限模型，最重
+要做的只是决定**由谁**担任，然后在服务器上执行：
 
-第 2 种改动最小，但会把「平台管理员」与「房间带领者」两个概念绑在一起，
-需要你确认这是想要的语义。
+```bash
+cd backend
+node node_modules/tsx/dist/cli.mjs scripts/room-moderator.ts grant <roomId> <email>
+```
+
+正式开放前每个房间至少 2 位已验证真人 moderator，
+完整清单见 [PUBLIC_ROOM_LAUNCH_CHECKLIST.md](PUBLIC_ROOM_LAUNCH_CHECKLIST.md)。
+
+**明确不做**：不自动指派任何人，不把平台管理员自动等同于房间 moderator，
+不在前端 hardcode 名单，不开放客户端自我提升的接口。
