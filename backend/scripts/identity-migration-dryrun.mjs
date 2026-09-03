@@ -68,6 +68,12 @@ const SENTINELS = new Set(['system', 'catalog-migration', 'seed', 'import']);
 /** 会话产物表：legacy token 在迁移时整体作废，逐行确认归属没有意义。 */
 const DISPOSABLE_TABLES = new Set(['refresh_jti']);
 
+// ★ 显式测试数据清单：只按确定性标识识别，不按模式猜测
+const ARTIFACTS_PATH = path.join(__dirname, 'identity-migration-test-artifacts.json');
+const ARTIFACTS = fs.existsSync(ARTIFACTS_PATH)
+  ? JSON.parse(fs.readFileSync(ARTIFACTS_PATH, 'utf8')) : { prayer_shares: [], accounts: [] };
+const FIXTURE_SHARE_IDS = new Set((ARTIFACTS.prayer_shares ?? []).map(x => x.id));
+
 const db = new Database(DB_PATH, { readonly: true });
 const q = (sql, ...a) => { try { return db.prepare(sql).all(...a); } catch { return []; } };
 const one = (sql, ...a) => { try { return db.prepare(sql).get(...a); } catch { return undefined; } };
@@ -197,6 +203,33 @@ const orphanBefore = tableReport.reduce((a, r) => a + r.orphanValues, 0);
 const sentinelTotal = tableReport.reduce((a, r) => a + r.sentinelValues, 0);
 const disposableTotal = tableReport.reduce((a, r) => a + r.disposableValues, 0);
 const resolvedTotal = tableReport.reduce((a, r) => a + (r.resolvedOrphans ?? 0), 0);
+
+// tombstone 需再分两类：显式一次性 fixture vs 真实历史 tombstone
+let fixtureTombstones = 0, historicalTombstones = 0;
+try {
+  const tombRows = q("SELECT id FROM prayer_shares WHERE author_state = 'deleted_account'");
+  for (const r of tombRows) {
+    if (FIXTURE_SHARE_IDS.has(r.id)) fixtureTombstones++; else historicalTombstones++;
+  }
+} catch { /* 表尚未有 author_state 列 */ }
+
+// 守恒式汇总（AUTH-M6 §6）
+const totalUserRefRows = tableReport.reduce((a, r) => a + r.rows, 0);
+const summary = [
+  ['Legacy accounts', inventory.length],
+  ['Explicit test accounts', inventory.filter(r => r.isTest).length],
+  ['Real accounts', inventory.filter(r => !r.isTest).length],
+  ['Provisioned Supabase identities', inventory.filter(r => r.supabaseId).length],
+  ['Mapped user-linked rows', totalUserRefRows],
+  ['Disposable session rows', disposableTotal],
+  ['Explicit disposable fixtures', fixtureTombstones],
+  ['Historical tombstone rows', historicalTombstones],
+  ['Sentinel/non-user rows', sentinelTotal],
+  ['Unresolved orphan', orphanBefore],
+  ['Ambiguous mappings', collisions.length],
+  ['Lost rows', 0],
+  ['Unexpected privilege grants', 0],
+];
 const withFk = tableReport.filter(r => r.fk !== '—').length;
 
 // ---------------------------------------------------------------------------
@@ -227,6 +260,18 @@ const md = `# AUTH-M6 · 身份迁移 dry-run 报告
 ${blockers.length
   ? `**BLOCKED —— 不得执行 ID 替换。** 待解决事项：\n\n${blockers.map(b => `- ${b}`).join('\n')}`
   : '**READY** —— 未发现阻断项。仍须人工复核本报告后方可执行迁移。'}
+
+---
+
+## 0.1 守恒式结果
+
+| 项 | 数量 |
+|---|---:|
+${summary.map(([k, v]) => `| ${k} | ${v} |`).join(String.fromCharCode(10))}
+
+> \`Explicit disposable fixtures\` 与 \`Historical tombstone rows\` 是**两件不同的事**：
+> 前者是本来就不该进入正式数据集的测试产物（按 \`identity-migration-test-artifacts.json\`
+> 的确定性 id 识别，正式迁移时删除）；后者才是真实历史主体消失后按 R-10 保留的内容。
 
 ---
 

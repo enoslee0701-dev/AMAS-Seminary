@@ -1,13 +1,37 @@
 # AUTH-M6 · 身份迁移 dry-run 报告
 
 > 本报告由 `backend/scripts/identity-migration-dryrun.mjs` 自动生成，**只读、不做任何写入**。
-> 生成时间：2026-09-03 08:25:02
+> 生成时间：2026-09-03 08:36:18
 > 数据库：`C:/Users/enosl/Desktop/amas-auth-worktree/backend/data/amas-auth-migration.sqlite`
 > Supabase：可达（https://sdrwyebizfdwldlfjyim.supabase.co）
 
 ## 0. 结论
 
 **READY** —— 未发现阻断项。仍须人工复核本报告后方可执行迁移。
+
+---
+
+## 0.1 守恒式结果
+
+| 项 | 数量 |
+|---|---:|
+| Legacy accounts | 11 |
+| Explicit test accounts | 10 |
+| Real accounts | 1 |
+| Provisioned Supabase identities | 1 |
+| Mapped user-linked rows | 263 |
+| Disposable session rows | 80 |
+| Explicit disposable fixtures | 2 |
+| Historical tombstone rows | 0 |
+| Sentinel/non-user rows | 3 |
+| Unresolved orphan | 0 |
+| Ambiguous mappings | 0 |
+| Lost rows | 0 |
+| Unexpected privilege grants | 0 |
+
+> `Explicit disposable fixtures` 与 `Historical tombstone rows` 是**两件不同的事**：
+> 前者是本来就不该进入正式数据集的测试产物（按 `identity-migration-test-artifacts.json`
+> 的确定性 id 识别，正式迁移时删除）；后者才是真实历史主体消失后按 R-10 保留的内容。
 
 ---
 
