@@ -31,6 +31,74 @@ describe('§1 生产禁用 mock transport', () => {
   it('错误码常量与脚本一致', () => {
     expect(MOCK_IN_PROD_ERROR).toBe('MOCK_VOICE_TRANSPORT_FORBIDDEN_IN_PRODUCTION');
   });
+
+  it('不存在通用逃生口环境变量', () => {
+    // 曾经有过 VOICE_GUARD_ALLOW_MOCK=1 npm run build。那种开关迟早会被人
+    // 配进 CI 让流水线变绿，硬护栏就废了。放行只能来自 build:voice-demo
+    // 在进程内设置的 VOICE_DEMO_BUILD，配不进 .env 也配不进 CI 变量。
+    // 只看代码。注释里写着「曾经有过 VOICE_GUARD_ALLOW_MOCK，已废弃」是历史说明，
+    // 恰恰应该保留，否则下一个人可能把它再加回来。
+    const guard = readFileSync(resolve(repoRoot, 'scripts/check-voice-config.mjs'), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    expect(guard).not.toContain('VOICE_GUARD_ALLOW_MOCK');
+    const pkg = JSON.parse(readFileSync(resolve(repoRoot, 'package.json'), 'utf8'));
+    for (const cmd of Object.values(pkg.scripts as Record<string, string>)) {
+      expect(cmd).not.toContain('VOICE_GUARD_ALLOW_MOCK');
+    }
+  });
+
+  it('正式 build 不设置 demo 放行标记，无法产出 mock 包', () => {
+    const pkg = JSON.parse(readFileSync(resolve(repoRoot, 'package.json'), 'utf8'));
+    expect(pkg.scripts.build).not.toContain('--demo-build');
+    expect(pkg.scripts.build).not.toContain('dist-voice-demo');
+    // 放行只认 argv，不认环境变量——CI 里配不出来
+    const guard = readFileSync(resolve(repoRoot, 'scripts/check-voice-config.mjs'), 'utf8');
+    expect(guard).toContain("process.argv.includes('--demo-build')");
+    expect(guard).not.toMatch(/process\.env\.[A-Z_]*DEMO/);
+    const driver = readFileSync(resolve(repoRoot, 'scripts/build-voice-demo.mjs'), 'utf8');
+    expect(driver).toContain("'--demo-build'");
+  });
+});
+
+describe('语音演示构建与正式构建物理隔离', () => {
+  it('build:voice-demo 输出独立目录并写入 DO_NOT_DEPLOY', () => {
+    const pkg = JSON.parse(readFileSync(resolve(repoRoot, 'package.json'), 'utf8'));
+    expect(pkg.scripts['build:voice-demo']).toBe('node scripts/build-voice-demo.mjs');
+    const driver = readFileSync(resolve(repoRoot, 'scripts/build-voice-demo.mjs'), 'utf8');
+    expect(driver).toContain('dist-voice-demo');
+    expect(driver).toContain('mark-demo-build.mjs');
+    const marker = readFileSync(resolve(repoRoot, 'scripts/mark-demo-build.mjs'), 'utf8');
+    expect(marker).toContain('DO_NOT_DEPLOY');
+  });
+
+  it('部署守卫见到 DO_NOT_DEPLOY 即退出', () => {
+    const dep = readFileSync(resolve(repoRoot, 'scripts/check-deploy-dir.mjs'), 'utf8');
+    expect(dep).toContain('DO_NOT_DEPLOY');
+    expect(dep).toMatch(/process\.exit\(1\)/);
+    const pkg = JSON.parse(readFileSync(resolve(repoRoot, 'package.json'), 'utf8'));
+    expect(pkg.scripts['deploy:check']).toContain('check-deploy-dir.mjs');
+  });
+
+  it('运行时守卫对演示构建的豁免与 mock 强绑定', () => {
+    // 演示构建同样是 vite production，env.PROD 为 true，必须豁免运行时守卫，
+    // 否则演示包一进祷告室就抛 MOCK_VOICE_TRANSPORT_FORBIDDEN_IN_PRODUCTION。
+    // 豁免本身不削弱护栏：VITE_VOICE_DEMO_BUILD 要起作用，构建期必须同时是
+    // VITE_VOICE_TRANSPORT=mock，而那条路只有 build:voice-demo 走得通。
+    const src = readFileSync(resolve(repoRoot, 'services/voiceTransport/index.ts'), 'utf8');
+    expect(src).toContain('VITE_VOICE_DEMO_BUILD');
+    expect(src).toMatch(/isProdBuild\(\)\s*&&\s*!isVoiceDemoBuild\(\)/);
+  });
+
+  it('DEMO 标识不可关闭，且正式构建里不渲染', () => {
+    const src = readFileSync(resolve(repoRoot, 'components/DemoBuildBadge.tsx'), 'utf8');
+    expect(src).toContain('VITE_VOICE_DEMO_BUILD');
+    expect(src).toContain('return null');
+    // 没有关闭按钮 / 可关闭状态
+    expect(src).not.toMatch(/onClick|useState|dismiss/);
+    // 必须真的挂进入口
+    const entry = readFileSync(resolve(repoRoot, 'index.tsx'), 'utf8');
+    expect(entry).toContain('<DemoBuildBadge />');
+  });
 });
 
 describe('§10 语音错误分类', () => {
