@@ -498,7 +498,7 @@ const PrayerRoomPanel: React.FC<Props> = ({
               ))}
             </div>
             <p className="text-[10px] mt-3 px-1" style={{ color: PT.faint }}>
-              这是本次祷告的主题顺序，由房主设置。进行到哪一条目前不会跨设备同步。
+              这是本次祷告的主题顺序，由房主设置。
             </p>
           </div>
         )}
