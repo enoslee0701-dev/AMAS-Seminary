@@ -15,6 +15,35 @@
  * static SPA — both contexts need explicit bearer auth on every request.
  */
 
+import {
+  supabaseEnabled, supabase, currentSession, accessToken as sbAccessToken,
+  fetchProfile, fetchRoles,
+} from './supabaseAuth';
+
+/**
+ * AUTH-M2 · 统一身份适配
+ *
+ * 配置了 Supabase（VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY）时，本模块内部
+ * 全部改走 Supabase Auth；**对外签名一字未改**，因此 16 个业务文件零改动。
+ * 未配置时继续走 legacy 自签流程 —— 迁移期两条链路互不兜底（AUTH-M1 §4）。
+ *
+ * ★ 普通 student 不要求 MFA：这里不做任何 aal 检查。
+ */
+
+/** 把 Supabase 会话转成 App 既有的 PublicUser 形状（不新建第二套身份）。 */
+async function toPublicUserFromSupabase(userId: string, email: string): Promise<PublicUser> {
+  const [prof, roles] = await Promise.all([fetchProfile(userId), fetchRoles()]);
+  const meta = (await supabase().auth.getUser()).data.user?.user_metadata ?? {};
+  return {
+    id: userId,
+    email,
+    name: prof?.display_name || (meta.display_name as string | undefined) || email.split('@')[0],
+    // 展示用途；授权一律由服务端判定（工程规则 R-2）
+    role: roles.some(r => ['registrar', 'academic_admin', 'super_admin'].includes(r)) ? 'admin' : 'student',
+    createdAt: Date.now(),
+  };
+}
+
 export interface PublicUser {
   id: string;
   email: string;
@@ -201,18 +230,45 @@ async function patchJson<T>(path: string, body: unknown, headers: Record<string,
 // --- Public API --------------------------------------------------------------
 
 export async function register(email: string, password: string, name: string): Promise<PublicUser> {
+  if (supabaseEnabled) {
+    const { data, error } = await supabase().auth.signUp({
+      email, password, options: { data: { display_name: name } },
+    });
+    if (error) throw makeError(400, error.message);
+    const u = data.user;
+    if (!u) throw makeError(400, '注册未完成，请检查邮箱确认邮件。');
+    const pub = await toPublicUserFromSupabase(u.id, u.email ?? email);
+    write(STORAGE_KEYS.user, pub);
+    return pub;
+  }
   const result = await postJson<IssuedTokens>('/api/auth/register', { email, password, name });
   saveTokens(result);
   return result.user as PublicUser;
 }
 
 export async function login(email: string, password: string): Promise<PublicUser> {
+  if (supabaseEnabled) {
+    const { data, error } = await supabase().auth.signInWithPassword({ email, password });
+    if (error) throw makeError(401, error.message);
+    const u = data.user;
+    if (!u) throw makeError(401, '登录失败。');
+    const pub = await toPublicUserFromSupabase(u.id, u.email ?? email);
+    write(STORAGE_KEYS.user, pub);
+    return pub;
+  }
   const result = await postJson<IssuedTokens>('/api/auth/login', { email, password });
   saveTokens(result);
   return result.user as PublicUser;
 }
 
 export async function me(): Promise<PublicUser> {
+  if (supabaseEnabled) {
+    const sess = await currentSession();
+    if (!sess?.user) throw makeError(401, '未登录。');
+    const pub = await toPublicUserFromSupabase(sess.user.id, sess.user.email ?? '');
+    write(STORAGE_KEYS.user, pub);
+    return pub;
+  }
   const access = getAccessToken();
   if (!access) throw makeError(401, '未登录。');
   const result = await getJson<{ user: PublicUser }>('/api/auth/me', {
@@ -265,6 +321,11 @@ export async function changePassword(oldPassword: string, newPassword: string): 
 }
 
 export async function logout(): Promise<void> {
+  if (supabaseEnabled) {
+    try { await supabase().auth.signOut(); } catch { /* 即使网络失败也要清本地 */ }
+    clear();
+    return;
+  }
   const refresh = getRefreshToken();
   const access = getAccessToken();
   if (access && refresh) {
@@ -315,6 +376,8 @@ export function refresh(): Promise<string | null> {
  * REFRESH_LEEWAY_SEC of expiring.
  */
 async function ensureFreshAccessToken(): Promise<string | null> {
+  // Supabase 客户端自带过期前自动刷新，这里直接取当前会话即可
+  if (supabaseEnabled) return sbAccessToken();
   const access = getAccessToken();
   if (!access) return null;
   const exp = decodeExp(access);

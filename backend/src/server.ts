@@ -101,7 +101,21 @@ server.listen(config.port, () => {
   console.log(`[amas-backend] listening on :${config.port}`);
   console.log(`[amas-backend] cors origins: ${config.corsOrigins.join(', ') || '(none)'}`);
   console.log(`[amas-backend] gemini configured: ${Boolean(config.gemini.apiKey)}`);
-  console.log(`[amas-backend] livekit configured: ${Boolean(config.liveKit.apiKey && config.liveKit.url)}`);
+  // Phase 4B-R §2：语音就绪状态必须在启动日志里说清楚，
+  // 且**绝不自动 fallback 到 mock / agora / 其他 transport**。
+  const voiceReady = Boolean(config.liveKit.url && config.liveKit.apiKey && config.liveKit.apiSecret);
+  if (voiceReady) {
+    console.log(`[amas-backend] VOICE SERVICE READY — livekit url=${config.liveKit.url}`);
+  } else {
+    const missing = [
+      !config.liveKit.url && 'LIVEKIT_URL',
+      !config.liveKit.apiKey && 'LIVEKIT_API_KEY',
+      !config.liveKit.apiSecret && 'LIVEKIT_API_SECRET',
+    ].filter(Boolean).join(', ');
+    console.warn(`[amas-backend] VOICE SERVICE NOT READY — missing: ${missing}`);
+    console.warn('[amas-backend]   voice token endpoint will return 503 VOICE_SERVICE_UNAVAILABLE.');
+    console.warn('[amas-backend]   NO fallback transport is used. Prayer Room stays fully usable without voice.');
+  }
   warnIfNoAppSecret();
   warnIfJwtDerived();
   // Realtime：全局一个事件轮询器（跨实例可见性 + 兜底），不是每连接一个

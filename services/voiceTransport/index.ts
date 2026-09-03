@@ -42,8 +42,36 @@ function readEnvKind(): TransportKind | undefined {
 }
 
 /** 当前解析出的传输类型。UI 可据此判断语音是否真的可用。 */
+/** 生产构建标记。与 readEnvKind 一样必须用**直接的** import.meta.env 表达式。 */
+const isProdBuild = (): boolean =>
+  Boolean((import.meta as unknown as { env?: Record<string, unknown> }).env?.PROD);
+
+export const MOCK_IN_PROD_ERROR = 'MOCK_VOICE_TRANSPORT_FORBIDDEN_IN_PRODUCTION';
+
+/**
+ * 生产禁用 mock（Phase 4B-R §1）。
+ *
+ * 允许矩阵：
+ *   development + mock    ✅
+ *   test        + mock    ✅
+ *   production  + none    ✅
+ *   production  + livekit ✅
+ *   production  + mock    ❌ 抛错
+ *
+ * mock 会凭空生成虚拟成员并随机翻转 isSpeaking。它出现在生产里意味着
+ * 真实用户会看到不存在的人「在说话」——必须响亮地失败，而不是等用户
+ * 进了祷告室才发现。构建期还有 scripts/check-voice-config.mjs 提前拦一道。
+ */
+export function assertVoiceTransportAllowed(kind: TransportKind): void {
+  if (kind === 'mock' && isProdBuild()) {
+    throw new Error(MOCK_IN_PROD_ERROR);
+  }
+}
+
 export function resolveTransportKind(kind?: TransportKind): TransportKind {
-  return kind ?? readEnvKind() ?? 'none';
+  const resolved = kind ?? readEnvKind() ?? 'none';
+  assertVoiceTransportAllowed(resolved);
+  return resolved;
 }
 
 /** 语音是否真实可用（mock 不算——它没有真实音轨）。 */

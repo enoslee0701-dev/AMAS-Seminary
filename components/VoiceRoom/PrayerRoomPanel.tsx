@@ -15,6 +15,7 @@ import { PT, prayerCard } from './prayerTheme';
 import { usePrayerSession } from './usePrayerSession';
 import { usePrayerRoomRealtime } from './usePrayerRoomRealtime';
 import { useRoomVoice } from './useRoomVoice';
+import VoiceDiagnostics, { voiceDebugEnabled } from './VoiceDiagnostics';
 import { elapsedText, ERROR_TEXT, type DraftItem } from '../../services/prayerSessionService';
 import PrayerSessionBuilder from './PrayerSessionBuilder';
 import PrayerRoomActionBar, { type PrayerAction } from './PrayerRoomActionBar';
@@ -504,6 +505,8 @@ const PrayerRoomPanel: React.FC<Props> = ({
    * voice.peers 只表示「在线成员中当前连着音频的那部分」，是另一个数字。
    */
   const voice = useRoomVoice(roomId, meId, meName);
+  // §4 诊断面板只在 ?voiceDebug=1 且（开发构建 或 显式 VITE_ALLOW_VOICE_DEBUG=1）时可用
+  const [showDiag, setShowDiag] = useState(voiceDebugEnabled());
   /** 共享祷告会：**服务器唯一真相源**。currentItemId 等绝不复制进本地 reducer。 */
   const ps = usePrayerSession(roomId, backend, rtHealthy);
   // 只用于「已进行 mm:ss」的视觉刷新；基准始终是 server 的 startedAt
@@ -621,6 +624,9 @@ const PrayerRoomPanel: React.FC<Props> = ({
   const shell = (children: React.ReactNode) => (
     <div className="flex-1 flex flex-col min-h-0" style={{ background: PT.page }}>
       {children}
+      {showDiag && voiceDebugEnabled() && (
+        <VoiceDiagnostics diag={voice.diagnostics} peers={voice.peers} onClose={() => setShowDiag(false)} />
+      )}
       <PrayerRoomActionBar
         onAction={onAction}
         active={ui.subPage}
