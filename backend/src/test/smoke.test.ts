@@ -13,6 +13,8 @@ import http from 'node:http';
 import net from 'node:net';
 import { spawn, type ChildProcess } from 'node:child_process';
 import path from 'node:path';
+import fs from 'node:fs';
+import Database from 'better-sqlite3';
 import { fileURLToPath } from 'node:url';
 import { WebSocket } from 'ws';
 
@@ -22,6 +24,36 @@ const BACKEND_ROOT = path.resolve(__dirname, '../..');
 
 const APP_SECRET = 'test-secret';
 const AUTH_HEADERS = { authorization: `Bearer ${APP_SECRET}` };
+
+/** 本次 run 专用的一次性数据库。绝不复用，绝不留下。 */
+const TEST_DB_PATH = path.join(
+  BACKEND_ROOT, '.tmp-test', `smoke-${process.pid}-${Date.now()}.sqlite`,
+);
+
+const rmTestDb = () => {
+  for (const suffix of ['', '-wal', '-shm']) {
+    try { fs.rmSync(TEST_DB_PATH + suffix, { force: true }); } catch { /* 尽力而为 */ }
+  }
+};
+
+/**
+ * 直接给 fixture 数据库播种一个管理员。
+ *
+ * 取代已被移除的 POST /api/auth/_promote。**刻意不经任何 HTTP 端点**——
+ * 一个「能把任意账号提成 admin」的入口，无论门槛多高，都不该为了测试方便
+ * 而存在于生产代码里。测试要管理员，就自己动 fixture 数据。
+ *
+ * 与 server 进程共用同一个文件；SQLite 处于 WAL 模式，跨进程写入是安全的。
+ */
+function seedAdminInFixtureDb(userId: string): void {
+  const d = new Database(TEST_DB_PATH);
+  try {
+    const info = d.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(userId);
+    assert.equal(info.changes, 1, `播种管理员失败：数据库里没有 ${userId}`);
+  } finally {
+    d.close();
+  }
+}
 
 let serverProcess: ChildProcess | null = null;
 let baseUrl = '';
@@ -137,11 +169,17 @@ before(async () => {
     APP_SECRET,
     CORS_ORIGINS: '*',
     NODE_ENV: 'test',
-    // Wave-1 persistence uses better-sqlite3. `:memory:` gives every
-    // spawn a fresh, isolated in-process DB that vanishes on exit — no
-    // tempfile cleanup needed, no cross-run contamination.
-    DB_PATH: ':memory:',
+    // 曾经用 ':memory:'。改成一次性临时文件，原因只有一个：
+    // 移除 POST /api/auth/_promote 之后，测试要构造管理员就必须能直接写
+    // fixture 数据库——而 ':memory:' 只存在于 server 进程内，测试进程碰不到。
+    //
+    // 换成文件不会带来跨轮次污染：路径含本次 run 的随机后缀，
+    // before() 里先删干净，after() 里再删一次。
+    DB_PATH: TEST_DB_PATH,
   };
+
+  rmTestDb();
+  fs.mkdirSync(path.dirname(TEST_DB_PATH), { recursive: true });
 
   // Spawn tsx via its JS entry with the current Node binary. `spawn('npx', ...)`
   // breaks on Windows: npx is npx.cmd there, which child_process refuses to
@@ -184,6 +222,8 @@ after(async () => {
       });
     });
   }
+  // server 退出后才删，否则 Windows 上文件仍被占用
+  rmTestDb();
 });
 
 test('GET /api/health returns ok and features flags', async () => {
@@ -734,8 +774,9 @@ test('POST /api/announcements as student returns 403', async () => {
   assert.equal(r.status, 403, `expected 403, got ${r.status} body=${r.body}`);
 });
 
-test('POST /api/announcements as admin (promoted) returns 200', async () => {
-  // Register and promote to admin via the APP_SECRET-gated dev endpoint.
+test('POST /api/announcements as admin (seeded) returns 200', async () => {
+  // 直接给 fixture 数据库播种管理员。曾经这里调用 POST /api/auth/_promote，
+  // 那个端点已被移除——见 routes/auth.ts 的说明。
   const reg = await request('POST', '/api/auth/register', {
     email: 'admin-ann@example.com',
     password: 'goodpassword1',
@@ -743,10 +784,7 @@ test('POST /api/announcements as admin (promoted) returns 200', async () => {
   });
   assert.equal(reg.status, 200);
   const tokens = reg.json<AuthTokens>();
-  const promote = await request('POST', '/api/auth/_promote', {
-    userId: tokens.user.id,
-  }, AUTH_HEADERS);
-  assert.equal(promote.status, 200, `expected 200, got ${promote.status} body=${promote.body}`);
+  seedAdminInFixtureDb(tokens.user.id);
   // Re-login to get a new access token that carries role=admin in its claims.
   // (Our requireAdmin re-reads role from the user store, so the existing
   // token would also work — but a fresh login mirrors a real admin flow.)
@@ -773,6 +811,51 @@ test('POST /api/announcements as admin (promoted) returns 200', async () => {
 // ---------------------------------------------------------------------------
 // Courses endpoint tests
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// POST /api/auth/_promote 移除后的回归
+//
+// 这个端点由 APP_SECRET 把关，可以把任意账号**永久**提升为 admin。
+// 持有 APP_SECRET 的调用方本来就被 requireAdmin 当作 machine-admin，
+// 所以它没有给出任何新能力；问题在于它把一次性的机器凭据变成了挂在真人
+// 账号上的持久管理员权限——密钥轮换之后仍然有效，界面上也看不出来。
+// ---------------------------------------------------------------------------
+
+test('POST /api/auth/_promote 已移除：带 APP_SECRET 也返回 404', async () => {
+  const reg = await request('POST', '/api/auth/register', {
+    email: 'promote-gone@example.com', password: 'goodpassword1', name: 'PromoteGone',
+  });
+  assert.equal(reg.status, 200);
+  const victim = reg.json<AuthTokens>();
+
+  // 用最高凭据去打：service token。端点不存在就是不存在。
+  const r = await request('POST', '/api/auth/_promote', { userId: victim.user.id }, AUTH_HEADERS);
+  assert.equal(r.status, 404, `expected 404, got ${r.status} body=${r.body}`);
+
+  // 更要紧的是：该账号确实没有被提权
+  const login = await request('POST', '/api/auth/login', {
+    email: 'promote-gone@example.com', password: 'goodpassword1',
+  });
+  assert.equal(login.status, 200);
+  assert.equal(login.json<AuthTokens>().user.role, 'student');
+});
+
+test('普通用户仍然无法访问 admin 端点（403）', async () => {
+  const reg = await request('POST', '/api/auth/register', {
+    email: 'plain-user@example.com', password: 'goodpassword1', name: 'PlainUser',
+  });
+  const t = reg.json<AuthTokens>();
+  const r = await request('POST', '/api/announcements',
+    { title: 'nope', content: 'nope', type: 'important' },
+    { authorization: `Bearer ${t.accessToken}` });
+  assert.equal(r.status, 403, `expected 403, got ${r.status} body=${r.body}`);
+});
+
+test('service token 仍被当作 machine-admin（未因移除 _promote 受影响）', async () => {
+  const r = await request('POST', '/api/announcements',
+    { title: 'machine admin still works', content: 'ok', type: 'important' }, AUTH_HEADERS);
+  assert.equal(r.status, 200, `expected 200, got ${r.status} body=${r.body}`);
+});
 
 test('GET /api/courses returns array (initially)', async () => {
   const r = await request('GET', '/api/courses');

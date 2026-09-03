@@ -87,9 +87,6 @@ const stmtFindByEmail = db.prepare<[string], UserRow>(
 const stmtFindById = db.prepare<[string], UserRow>(
   'SELECT * FROM users WHERE id = ? LIMIT 1',
 );
-const stmtUpdateRole = db.prepare<[
-  'student' | 'admin', string,
-]>('UPDATE users SET role = ? WHERE id = ?');
 const stmtUpdatePassword = db.prepare<[
   string, string, string,
 ]>('UPDATE users SET password_hash = ?, salt = ? WHERE id = ?');
@@ -196,19 +193,12 @@ export function verifyPassword(user: UserRecord, candidate: string): boolean {
   return crypto.timingSafeEqual(a, b);
 }
 
-/**
- * Promote a user to admin role. Returns true if a user was found and
- * promoted (or was already admin); false if no user matched.
- *
- * Used by the APP_SECRET-gated dev endpoint `/api/auth/_promote` so the
- * test suite can mint admin principals without needing a seed step. In
- * production, real admin promotion should happen through an out-of-band
- * process (DB migration / ops tool).
- */
-export function promoteToAdmin(id: string): boolean {
-  const info = stmtUpdateRole.run('admin', id);
-  return info.changes > 0;
-}
+// 这里曾经有 promoteToAdmin()，供 APP_SECRET 把关的开发端点
+// POST /api/auth/_promote 使用。该端点已移除（见 routes/auth.ts 的说明），
+// 因此这个提权函数与它专用的 UPDATE users SET role 语句也一并删掉——
+// 留着一个没有调用者的提权函数，只会给下一个人一个现成的口子。
+//
+// 生产环境授予管理员应走带外流程（DB 迁移 / 运维工具），不经任何 HTTP 端点。
 
 /**
  * Replace the user's password hash + salt with a freshly-derived pair.

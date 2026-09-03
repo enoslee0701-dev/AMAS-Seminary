@@ -3,13 +3,11 @@ import {
   createUser,
   findByEmail,
   findById,
-  promoteToAdmin,
   setPassword,
   updateProfile,
   verifyPassword,
   toPublicUser,
 } from '../auth/users.js';
-import { requireAppSecret } from '../middleware/auth.js';
 import {
   issueTokens,
   verifyAccess,
@@ -227,26 +225,16 @@ export function registerAuthRoutes(app: Express): void {
     res.status(200).json({ ok: true });
   });
 
-  /**
-   * POST /api/auth/_promote — DEV/OPS ONLY.
-   * Body: { userId }. Gated by APP_SECRET bearer (machine-only). Promotes
-   * the named user to `admin` role. Used by the test suite to construct
-   * an admin principal without needing a seed step. Safe to expose only
-   * because APP_SECRET is required.
-   */
-  app.post('/api/auth/_promote', requireAppSecret, (req, res) => {
-    const { userId } = (req.body ?? {}) as { userId?: string };
-    if (!userId || typeof userId !== 'string') {
-      res.status(400).json({ error: 'userId is required.' });
-      return;
-    }
-    const ok = promoteToAdmin(userId);
-    if (!ok) {
-      res.status(404).json({ error: 'User not found.' });
-      return;
-    }
-    res.status(200).json({ ok: true });
-  });
+  // POST /api/auth/_promote 已移除。
+  //
+  // 它由 APP_SECRET 把关，可以把任意账号永久提升为 admin。持有 APP_SECRET
+  // 的调用方本来就被 requireAdmin 当作 machine-admin，所以这个端点并没有给
+  // 它任何**新**能力——真正的问题是它把一次性的机器凭据变成了**持久的、
+  // 挂在真人账号上的**管理员权限：密钥轮换之后依然有效，且在任何界面上都看
+  // 不出来。一个只为测试方便而存在的隐藏提权入口，不该留在生产代码里。
+  //
+  // 测试构造管理员改为直接给测试自己的 fixture 数据库播种，不经任何 HTTP 端点。
+  // 生产环境授予管理员走带外流程（DB 迁移 / 运维工具）。
 
   app.get('/api/auth/me', async (req, res) => {
     const token = bearer(req);
