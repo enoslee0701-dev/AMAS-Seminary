@@ -33,6 +33,8 @@ export interface PrayerShare {
   id: string;
   /** 匿名分享时为 null——后端不会把发布者透给任何人 */
   userId: string | null;
+  /** 'active' | 'deleted_account'。作者已注销 ≠ 作者主动匿名，前端必须分开显示。 */
+  authorState?: 'active' | 'deleted_account';
   isAnonymous: boolean;
   /** 我是不是发布者（决定能否删除；匿名时也成立） */
   isMine: boolean;

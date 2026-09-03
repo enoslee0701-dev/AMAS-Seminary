@@ -862,11 +862,15 @@ const PrayerRoomPanel: React.FC<Props> = ({
             ) : server.shares.map((s, i) => (
               <div key={s.id} className="flex gap-3 py-3.5 animate-fade-in"
                 style={i ? { borderTop: `1px solid ${PT.divider}` } : undefined}>
-                <Avatar src={s.isAnonymous ? null : undefined} name={s.isAnonymous ? '友' : (s.isMine ? meName : (s.userId ?? '弟'))} size={38} />
+                <Avatar src={s.isAnonymous ? null : undefined} name={s.authorState === 'deleted_account' ? '注' : (s.isAnonymous ? '友' : (s.isMine ? meName : (s.userId ?? '弟')))} size={38} />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <bdi dir="auto" className="text-[12.5px] font-bold truncate" style={{ color: PT.navy }}>
-                      {s.isAnonymous ? '一位弟兄姊妹' : (s.isMine ? '我' : (s.userId ?? '弟兄姊妹'))}
+                      {/* 作者已注销：显示「已注销用户」。刻意**不**显示成「匿名用户」——
+                          那会把系统状态冒充成作者主动选择匿名（D-AUTH-1 第 5 条）。 */}
+                      {s.authorState === 'deleted_account'
+                        ? '已注销用户'
+                        : (s.isAnonymous ? '一位弟兄姊妹' : (s.isMine ? '我' : (s.userId ?? '弟兄姊妹')))}
                     </bdi>
                     {s.isAnonymous && <EyeOff size={10} style={{ color: PT.faint }} className="shrink-0" />}
                     <span className="text-[10px] shrink-0" style={{ color: PT.faint }}>{relativeTime(s.createdAt, nowMs)}</span>

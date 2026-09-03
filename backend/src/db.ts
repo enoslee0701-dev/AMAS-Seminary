@@ -212,7 +212,12 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS prayer_shares (
     id TEXT PRIMARY KEY,
     room_id TEXT NOT NULL,
-    user_id TEXT NOT NULL,
+    -- 作者账号可能已注销：user_id 允许为空，语义由 author_state 表达。
+    -- 铁律（D-AUTH-1 / 工程规则 R-10）：**缺失作者 ≠ system author**。
+    -- 内容保留，但不得重新赋予任何虚构或替代所有者。
+    user_id TEXT,
+    author_state TEXT NOT NULL DEFAULT 'active'
+      CHECK(author_state IN ('active','deleted_account')),
     text TEXT NOT NULL,
     is_anonymous INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL,

@@ -1,32 +1,33 @@
 # AUTH-M6 · 身份迁移 dry-run 报告
 
 > 本报告由 `backend/scripts/identity-migration-dryrun.mjs` 自动生成，**只读、不做任何写入**。
-> 生成时间：2026-09-03 08:16:54
-> 数据库：`C:/Users/enosl/Desktop/amas---asian-missionary-theological-seminary/backend/data/amas.sqlite`
+> 生成时间：2026-09-03 08:25:02
+> 数据库：`C:/Users/enosl/Desktop/amas-auth-worktree/backend/data/amas-auth-migration.sqlite`
 > Supabase：可达（https://sdrwyebizfdwldlfjyim.supabase.co）
 
 ## 0. 结论
 
-**BLOCKED —— 不得执行 ID 替换。** 待解决事项：
-
-- 存在 2 个 orphan 用户引用，须先确认其归属（不得静默删除）
-- 1 个真实账号在 Supabase 尚无对应账号，须先建号并安排密码重置
+**READY** —— 未发现阻断项。仍须人工复核本报告后方可执行迁移。
 
 ---
 
 ## 1. Legacy account inventory
 
-共 7 个 legacy 账号（其中已登记测试账号 6 个）。
+共 11 个 legacy 账号（其中已登记测试账号 10 个）。
 
 | legacy UUID | normalized email | 是否测试账号 | Supabase 账号 | 目标 Supabase UUID | mapping status |
 |---|---|---|---|---|---|
 | `6ea90950-d17f-457d-9d16-693a159592a2` | s1780377335744@amas.test | 是（已登记） | 无 | — | SKIP(已登记测试账号，不迁移、只留映射) |
 | `9492e7f2-7b60-48f7-88da-7f5bb428b779` | s1780377880150@amas.test | 是（已登记） | 无 | — | SKIP(已登记测试账号，不迁移、只留映射) |
 | `5b3896e6-4c53-46d8-8479-38a8d1bb07b5` | s1780377952749@amas.test | 是（已登记） | 无 | — | SKIP(已登记测试账号，不迁移、只留映射) |
-| `d470e79a-f155-44c5-aaaf-cc299fc04d4b` | estherzh0528@gmail.com | **否 → 按真实账号处理** | 无 | — | NEEDS_ACCOUNT(须先在 Supabase 建号并走密码重置) |
+| `d470e79a-f155-44c5-aaaf-cc299fc04d4b` | estherzh0528@gmail.com | **否 → 按真实账号处理** | 已存在 | `c50ea5c3-04d0-45e8-827f-b3d00fdf27fa` | MAP(已有 Supabase 账号) |
 | `1cb28215-30f6-408d-a68e-ae1178ef0c46` | sec2_a_17884084639119eka@amas.local | 是（已登记） | 无 | — | SKIP(已登记测试账号，不迁移、只留映射) |
 | `dc4c6c4d-1ebd-4021-9b81-d9f5e31f38d2` | sec2_b_1788408463981p4mn@amas.local | 是（已登记） | 无 | — | SKIP(已登记测试账号，不迁移、只留映射) |
 | `1c028145-14de-494a-a08d-fdba2ff4c13d` | sec2_c_1788408464022tn2z@amas.local | 是（已登记） | 无 | — | SKIP(已登记测试账号，不迁移、只留映射) |
+| `48863e03-af5b-4be7-83fe-aa3e131aabbb` | p4_17884156045797ehq@amas.local | 是（已登记） | 无 | — | SKIP(已登记测试账号，不迁移、只留映射) |
+| `35b63b3f-6ca6-4485-8f32-892443cd0960` | p4_17884156046633kfc@amas.local | 是（已登记） | 无 | — | SKIP(已登记测试账号，不迁移、只留映射) |
+| `61ec0b6f-639a-42e5-a534-9033558c1a29` | p4_1788415604708tgcj@amas.local | 是（已登记） | 无 | — | SKIP(已登记测试账号，不迁移、只留映射) |
+| `80fb4dbd-6b73-4722-93a0-ec353f9418f6` | p4_1788415604752nk32@amas.local | 是（已登记） | 无 | — | SKIP(已登记测试账号，不迁移、只留映射) |
 
 > ★ 测试账号来自脚本内的**显式登记表**（`KNOWN_TEST_ACCOUNTS`）。
 > 未登记的一律按真实账号处理——**不得通过"看起来像测试邮箱"猜测**（AUTH-M6 §7）。
@@ -64,12 +65,12 @@
 | prayer_sessions | created_by | 0 | users.id | NO ACTION | CASCADE | 0 | 0 | 结构迁移（无数据） |
 | prayer_sessions | facilitator_user_id | 0 | users.id | NO ACTION | SET NULL | 0 | 0 | 结构迁移（无数据） |
 | prayer_share_reports | reporter_user_id | 0 | users.id | NO ACTION | CASCADE | 0 | 0 | 结构迁移（无数据） |
-| prayer_shares | user_id | 12 | — | — | — | 4 | 2 | UPDATE ... SET col = map(col) |
+| prayer_shares | user_id | 12 | — | — | — | 2 | 0 | UPDATE ... SET col = map(col) |
 | prayer_shares | hidden_by | 12 | — | — | — | 0 | 0 | UPDATE ... SET col = map(col) |
 | pt_state | user_id | 0 | — | — | — | 0 | 0 | 结构迁移（无数据） |
 | push_tokens | user_id | 0 | — | — | — | 0 | 0 | 结构迁移（无数据） |
 | recordings | user_id | 0 | — | — | — | 0 | 0 | 结构迁移（无数据） |
-| refresh_jti | user_id | 111 | — | — | — | 111 | 0 | 整表作废（legacy 会话产物） |
+| refresh_jti | user_id | 91 | — | — | — | 91 | 0 | 整表作废（legacy 会话产物） |
 | room_members | user_id | 3 | users.id | NO ACTION | CASCADE | 2 | 0 | UPDATE ... SET col = map(col) |
 | room_prayer_topics | created_by | 2 | — | — | — | 1 | 0 | UPDATE ... SET col = map(col) |
 | room_presence | user_id | 0 | — | — | — | 0 | 0 | 结构迁移（无数据） |
@@ -79,19 +80,18 @@
 
 ## 4. Orphan scan
 
-`orphan_before` = **2**（另有哨兵值 3 个、可丢弃会话产物 104 个，均不计入）
+`orphan_before` = **0**（另有哨兵值 3 个、可丢弃会话产物 80 个，均不计入）
 
 三类"不在 users 表内的值"被显式分开，避免把它们混成一个数字：
 
 | 类别 | 数量 | 处置 |
 |---|---:|---|
 | **哨兵值**（`system` / `catalog-migration` / `seed` / `import`） | 3 | 本来就不是用户 ID。不迁移、不删除、不计入 orphan |
-| **可丢弃会话产物**（refresh_jti） | 104 | legacy token 在迁移时整体作废，逐行确认归属没有意义 |
-| **真正的 orphan** | 2 | 作者账号已不存在的真实数据，**须人工裁决，不得静默删除** |
+| **可丢弃会话产物**（refresh_jti） | 80 | legacy token 在迁移时整体作废，逐行确认归属没有意义 |
+| **已解决 orphan（tombstone）** | 4 | 作者已按 D-AUTH-1 置为 `deleted_account`，内容保留、无人拥有。**不再计为 blocker** |
+| **真正的 orphan** | 0 | 作者账号已不存在的真实数据，**须人工裁决，不得静默删除** |
 
-**存在 orphan 用户引用，须先确认归属。涉及真实数据时不得静默删除。**
-
-- `prayer_shares.user_id`：2 个，样例 `17907e6f-48b8-40db-8750-d1b8be64512f`, `728c6df5-88c2-490e-a5c9-a9257c33e259`
+迁移前无 orphan。迁移后必须复跑本脚本，确认 `orphan_after` 未新增。
 
 **验收口径**：迁移前后各跑一次本脚本，`orphan_after` **不得因迁移而新增**。
 

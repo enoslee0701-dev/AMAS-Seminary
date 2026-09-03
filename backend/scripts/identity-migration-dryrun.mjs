@@ -48,6 +48,13 @@ const KNOWN_TEST_ACCOUNTS = new Set([
   'sec2_a_17884084639119eka@amas.local',
   'sec2_b_1788408463981p4mn@amas.local',
   'sec2_c_1788408464022tn2z@amas.local',
+  // 祷告室 Phase 4 语音测试 fixture（2026-09-03T06:06:44 同一毫秒批量创建，
+  // 命名为「语音房主/版主/成员/外人」四个固定角色，除 4 条可丢弃的 refresh_jti
+  // 外零关联数据）。依据是上述可核实的事实，**不是**邮箱前缀模式匹配。
+  'p4_17884156045797ehq@amas.local',
+  'p4_17884156046633kfc@amas.local',
+  'p4_1788415604708tgcj@amas.local',
+  'p4_1788415604752nk32@amas.local',
 ]);
 
 // ---------------------------------------------------------------------------
@@ -157,6 +164,12 @@ for (const t of tables) {
     const fk = fks.find(f => f.from === col);
     // orphan：该列有值但不在 users 表内
     const vals = q(`SELECT DISTINCT "${col}" v FROM "${t}" WHERE "${col}" IS NOT NULL`).map(r => r.v);
+    // 已 tombstone 的记录：user_id 已置 NULL，本就不会出现在 vals 里；
+    // 这里显式统计一次，便于在报告中把它们列为 resolved orphan 而非 blocker。
+    let resolved = 0;
+    if (cols.includes('author_state')) {
+      resolved = one(`SELECT COUNT(*) n FROM "${t}" WHERE author_state = 'deleted_account'`)?.n ?? 0;
+    }
     const unknown = vals.filter(v => !legacyIds.has(v));
     const sentinels = unknown.filter(v => SENTINELS.has(v));
     const disposable = DISPOSABLE_TABLES.has(t);
@@ -170,6 +183,7 @@ for (const t of tables) {
       distinctUsers: vals.length,
       sentinelValues: sentinels.length,
       disposableValues: disposable ? unknown.length : 0,
+      resolvedOrphans: resolved,
       orphanValues: orphans.length,
       orphanSample: orphans.slice(0, 3),
       method: disposable ? '整表作废（legacy 会话产物）'
@@ -182,6 +196,7 @@ for (const t of tables) {
 const orphanBefore = tableReport.reduce((a, r) => a + r.orphanValues, 0);
 const sentinelTotal = tableReport.reduce((a, r) => a + r.sentinelValues, 0);
 const disposableTotal = tableReport.reduce((a, r) => a + r.disposableValues, 0);
+const resolvedTotal = tableReport.reduce((a, r) => a + (r.resolvedOrphans ?? 0), 0);
 const withFk = tableReport.filter(r => r.fk !== '—').length;
 
 // ---------------------------------------------------------------------------
@@ -258,6 +273,7 @@ ${tableReport.map(r => `| ${esc(r.table)} | ${esc(r.column)} | ${r.rows} | ${esc
 |---|---:|---|
 | **哨兵值**（\`${[...SENTINELS].join('\` / \`')}\`） | ${sentinelTotal} | 本来就不是用户 ID。不迁移、不删除、不计入 orphan |
 | **可丢弃会话产物**（${[...DISPOSABLE_TABLES].join(', ')}） | ${disposableTotal} | legacy token 在迁移时整体作废，逐行确认归属没有意义 |
+| **已解决 orphan（tombstone）** | ${resolvedTotal} | 作者已按 D-AUTH-1 置为 \`deleted_account\`，内容保留、无人拥有。**不再计为 blocker** |
 | **真正的 orphan** | ${orphanBefore} | 作者账号已不存在的真实数据，**须人工裁决，不得静默删除** |
 
 ${orphanBefore === 0
