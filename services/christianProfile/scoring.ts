@@ -434,18 +434,18 @@ function buildRecommendations(
     },
     {
       span: '6个月',
-      objective: '根据真实学习与服侍证据，重新验证并更新你的 Christian Profile。',
+      objective: '根据真实学习与服侍证据，重新验证并更新你的信仰成长档案。',
       actions: [
         '邀请导师或牧者给出一次正式反馈',
         '整理这半年的学习、服侍与反思记录',
-        '重新完成 Christian Profile',
+        '重新完成信仰成长档案',
       ],
       verification: [
         '哪些倾向被真实经历印证了？',
         '哪些倾向的证据仍然不足？',
         '你的准备度是否随着实践提升？',
       ],
-      newEvidence: ['导师反馈（F2）', '新一版 Christian Profile', '两版画像的对比'],
+      newEvidence: ['导师反馈（F2）', '新一版信仰成长档案', '两版画像的对比'],
     },
   ];
 

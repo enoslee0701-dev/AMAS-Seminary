@@ -1247,7 +1247,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
         email: user?.email || 'app@amas.local',
         organization: 'AMAS App · 定制化神学',
         type: '事奉申请',
-        message: `【成长档案·事奉申请】角色：${roleName}（匹配度 ${pct}%）。来自 Christian Profile 的事奉倾向匹配。`,
+        message: `【成长档案·事奉申请】角色：${roleName}（匹配度 ${pct}%）。来自信仰成长档案的事奉倾向匹配。`,
       });
       const next: CTState = { ...ct, applications: [...(ct.applications ?? []), { role: roleName, at: new Date().toISOString() }] };
       saveCT(next); setCt(next); scheduleGrowthPush(next);
@@ -1472,7 +1472,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
               保存服事记录
             </button>
             <p style={{ margin: '10px 0 0', fontSize: 10.5, color: '#98A2B3', lineHeight: '16px' }}>
-              服事记录会成为 Christian Profile 的实践证据（Evidence），并解锁档案的服事验证模块。导师/同工的正式反馈功能将在教会后台开通后加入。
+              服事记录会成为信仰成长档案的实践证据（Evidence），并解锁档案的服事验证模块。导师/同工的正式反馈功能将在教会后台开通后加入。
             </p>
           </div>
         </div>
@@ -1566,7 +1566,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                 你在这一维度的当前<b style={{ color: '#F2D493' }}>倾向指数 {myScore}</b>，
                 在你 12 项倾向中排第 <b style={{ color: '#F2D493' }}>{myRank}</b> 位
                 {myRank === 1 ? '——这是你目前最明显的倾向。' : myRank === 2 ? '——这是你的次要倾向。' : '。'}
-                {detailPrelim && '（精简版画像，完成完整版 Christian Profile 后更新）'}
+                {detailPrelim && '（精简版画像，完成完整版信仰成长档案后更新）'}
               </p>
             </div>
           )}
@@ -1758,7 +1758,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
 
         {/* ===== Christian Profile：12 项事奉倾向（由确定性评分引擎驱动） ===== */}
         <section style={{ marginTop: 22 }}>
-          <SectionEyebrow title="我的 Christian Profile" en="Christian Profile" />
+          <SectionEyebrow title="我的信仰成长档案" en="Christian Profile" />
           {!cp && discover && (
             <div style={{ ...ctCard, padding: '14px 14px 12px', marginBottom: 10, background: '#FBF6EA', border: '1px solid rgba(201,154,69,.3)' }}>
               <div className="flex items-start" style={{ gap: 8 }}>
@@ -1808,7 +1808,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                       </button>
                       <button
                         onClick={() => {
-                          if (!window.confirm('确定删除本次 Christian Profile 结果吗？12 项事奉倾向与建议将被清除，之后可以随时重新评估。')) return;
+                          if (!window.confirm('确定删除本次信仰成长档案结果吗？12 项事奉倾向与建议将被清除，之后可以随时重新评估。')) return;
                           clearChristianProfile(); setCp(null); setCt(loadCT());
                         }}
                         aria-label="删除结果" title="删除结果" className="p-1.5 rounded-full active:scale-90 transition" style={{ color: 'rgba(242,212,147,.8)' }}
@@ -1892,7 +1892,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
               </button>
               <button onClick={() => openCp('standard')} className="w-full active:scale-[0.98] transition" style={{ ...navyBtn, width: '100%', marginTop: 8, height: 44 }}>
                 <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: '1px', color: '#123061', background: 'linear-gradient(180deg,#F4D796,#E1B75F)', borderRadius: 999, padding: '2px 7px' }}>四层完整</span>
-                Christian Profile · 完整版 · 84 题
+                信仰成长档案 · 完整版 · 84 题
               </button>
               <div className="flex items-center" style={{ gap: 10, marginTop: 12, padding: '10px 12px', background: '#FBF6EA', border: '1px solid rgba(201,154,69,.25)', borderRadius: 12 }}>
                 <BookOpen size={15} color="#A9812F" className="shrink-0" />
@@ -1924,14 +1924,14 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                     { t: '背景与处境', done: true },
                     { t: '信仰基础与装备画像（九维）', done: true },
                     cp
-                      ? { t: 'Christian Profile（事奉倾向）', done: true, sub: cp.level === 'quick' ? '精简版 · 可升级为完整版' : '完整版' }
-                      : { t: 'Christian Profile（事奉倾向）', action: () => openCp('quick'), actionText: '开始' },
+                      ? { t: '信仰成长档案（事奉倾向）', done: true, sub: cp.level === 'quick' ? '精简版 · 可升级为完整版' : '完整版' }
+                      : { t: '信仰成长档案（事奉倾向）', action: () => openCp('quick'), actionText: '开始' },
                     hasLearn
                       ? { t: '学习佐证', done: true, sub: `已计入 ${portrait.learnedCount} 门完成课程` }
                       : { t: '学习佐证', sub: '完成任一门装备路径课程后自动计入' },
                     hasServe
                       ? { t: '服事验证', done: true, sub: `${ct.service!.length} 条服事记录` }
-                      : { t: '服事验证', action: cp ? openServe : undefined, actionText: '记录服事', sub: cp ? undefined : '先完成 Christian Profile' },
+                      : { t: '服事验证', action: cp ? openServe : undefined, actionText: '记录服事', sub: cp ? undefined : '先完成信仰成长档案' },
                   ];
                   return (
                     <>

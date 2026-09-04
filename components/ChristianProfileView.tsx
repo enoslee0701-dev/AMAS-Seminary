@@ -51,7 +51,7 @@ const Eyebrow: React.FC<{ title: string; en: string }> = ({ title, en }) => (
 const EVIDENCE_LABEL: Record<EvidenceStrength, string> = { high: '证据充分', moderate: '证据中等', limited: '证据有限' };
 const LEVEL_META: Record<AssessmentLevel, { name: string; count: string }> = {
   quick: { name: '事奉倾向画像 · 精简版', count: '30 题' },
-  standard: { name: 'Christian Profile · 完整版', count: '84 题 · 6 个阶段' },
+  standard: { name: '信仰成长档案 · 完整版', count: '84 题 · 6 个阶段' },
 };
 
 interface Props {
@@ -214,7 +214,7 @@ const ChristianProfileView: React.FC<Props> = ({ level, courses, onCourseClick, 
 };
 
 const TYPE_LABEL: Record<Item['type'], string> = { knowledge: '认识', frequency: '过去一段时间', likert: '符合程度', scenario: '情境', experience: '实际经验' };
-const DISCLAIMER = 'AMAS Christian Profile 旨在帮助基督徒认识自己的信仰基础、成长实践、事奉倾向和装备需要。评估结果属于发展性参考，不用于衡量个人属灵价值，也不替代圣经、祷告、教会群体、牧者或导师的长期辨识。事奉方向应在真实生命、群体关系与持续实践中进一步确认。';
+const DISCLAIMER = 'AMAS 信仰成长档案旨在帮助基督徒认识自己的信仰基础、成长实践、事奉倾向和装备需要。评估结果属于发展性参考，不用于衡量个人属灵价值，也不替代圣经、祷告、教会群体、牧者或导师的长期辨识。事奉方向应在真实生命、群体关系与持续实践中进一步确认。';
 
 // ------------------------------------------------------------
 // 外壳：顶部栏 + 阶段进度
@@ -495,7 +495,7 @@ export const ResultPage: React.FC<{ p: ChristianProfile; courses: Course[]; onCo
     <div className="fixed inset-0 z-[120] max-w-md mx-auto flex flex-col bg-slate-50 animate-fade-in">
       <div className="flex items-center px-4 bg-white border-b border-slate-200" style={{ paddingTop: 'calc(var(--safe-top) + 8px)', paddingBottom: 10 }}>
         <button onClick={onExit} aria-label="返回" className="p-1 -ml-2 rounded-full hover:bg-slate-100 transition"><ChevronLeft size={24} className="text-slate-900" /></button>
-        <p className="ml-2 flex-1" style={{ margin: 0, fontSize: 15, fontWeight: 800, color: '#1F2A37' }}>我的 Christian Profile</p>
+        <p className="ml-2 flex-1" style={{ margin: 0, fontSize: 15, fontWeight: 800, color: '#1F2A37' }}>我的信仰成长档案</p>
         <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '1px', color: '#8A6519', background: '#FBF6EA', border: '1px solid rgba(201,154,69,.3)', borderRadius: 999, padding: '3px 8px' }}>V{p.versionNo}</span>
       </div>
       <div className="flex-1 overflow-y-auto px-4" style={{ paddingTop: 14, paddingBottom: 30 }}>
@@ -503,7 +503,7 @@ export const ResultPage: React.FC<{ p: ChristianProfile; courses: Course[]; onCo
         {/* ===== 1. 当前核心画像（第一屏只放最重要的） ===== */}
         <div style={{ padding: '18px 16px 16px', color: '#FFF', borderRadius: 18, background: 'radial-gradient(90% 120% at 12% 0%, rgba(240,205,135,.16) 0%, rgba(240,205,135,0) 42%), linear-gradient(160deg, #0B2450 0%, #071A3C 100%)' }}>
           <p style={{ margin: '0 0 6px', fontSize: 9.5, fontWeight: 800, letterSpacing: '2px', color: 'rgba(232,201,140,.9)' }}>
-            {p.level === 'quick' ? '事奉倾向画像 · 精简版' : 'AMAS CHRISTIAN PROFILE · 完整版'}
+            {p.level === 'quick' ? '事奉倾向画像 · 精简版' : '信仰成长档案 · 完整版'}
           </p>
           <p style={{ margin: '0 0 2px', fontSize: 12, fontWeight: 700, color: 'rgba(233,238,248,.8)' }}>你当前最明显的成长倾向</p>
           <h2 style={{ margin: '0 0 4px', fontSize: 24, fontWeight: 900, letterSpacing: '1px', background: 'linear-gradient(180deg, #F7E3B4 10%, #E4BC6E 90%)', WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
@@ -536,7 +536,7 @@ export const ResultPage: React.FC<{ p: ChristianProfile; courses: Course[]; onCo
 
         {/* 短版说明前置 */}
         <p style={{ margin: '10px 2px 0', fontSize: 10.5, color: '#98A2B3', lineHeight: 1.75 }}>
-          Christian Profile 不是身份标签，也不是属灵等级。它根据测评、学习、真实服侍与反馈持续更新，只代表当前阶段可观察到的事奉倾向。
+          信仰成长档案不是身份标签，也不是属灵等级。它根据测评、学习、真实服侍与反馈持续更新，只代表当前阶段可观察到的事奉倾向。
         </p>
 
         {/* ===== 2. Top 3 ===== */}
