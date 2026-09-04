@@ -19,6 +19,21 @@
 
 ---
 
+## 🧭 接手开发？先读这里
+
+**[`docs/project-memory/`](docs/project-memory/) 是本项目开发接力的 Source of Truth。**
+
+新的 AI 对话、更换开发者、上下文过长、跨阶段开发时，读那一个目录即可恢复
+项目真实状态 —— 当前做到哪里、什么已验收、什么不能改、下一步做什么。
+
+最少读两份：[CURRENT_STATE.md](docs/project-memory/CURRENT_STATE.md) ·
+[ARCHITECTURE_RULES.md](docs/project-memory/ARCHITECTURE_RULES.md)
+
+接手规则与**新对话启动模板**见
+[AI_HANDOFF_RULES.md](docs/project-memory/AI_HANDOFF_RULES.md)。
+
+---
+
 ## 模块概览
 
 | 模块 | 状态 | 说明 |
