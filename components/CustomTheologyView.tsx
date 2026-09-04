@@ -16,6 +16,10 @@ import ChristianProfileView, { ResultPage } from './ChristianProfileView';
 import { readChristianProfile, clearChristianProfile } from '../services/christianProfile/store';
 import type { ChristianProfile } from '../services/christianProfile/scoring';
 import type { AssessmentLevel } from '../services/christianProfile/items';
+import {
+  readDiscoverHandoff, dismissDiscoverHandoff, hasPendingDiscoverHandoff, weakestArea, AREA_LABEL,
+  type DiscoverHandoff,
+} from '../services/christianProfile/discoverHandoff';
 
 /**
  * 定制化神学 — 基督徒成长档案系统（完整版）。
@@ -1067,6 +1071,11 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
   const [cpLevel, setCpLevel] = useState<AssessmentLevel>('quick');
   const [cp, setCp] = useState<ChristianProfile | null>(() => readChristianProfile());
   const openCp = (level: AssessmentLevel) => { setCpLevel(level); setMode('cp'); };
+  // 网页版快速探索（10 题）带过来的 5 项初步状态。只展示，不参与下面任何评分。
+  const [discover, setDiscover] = useState<DiscoverHandoff | null>(
+    () => (hasPendingDiscoverHandoff() ? readDiscoverHandoff() : null),
+  );
+  const discoverWeakest = discover ? weakestArea(discover.areas) : null;
 
   // ---- 九维评估状态 ----
   const [current, setCurrent] = useState<Question | null>(null);
@@ -1750,6 +1759,40 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
         {/* ===== Christian Profile：12 项事奉倾向（由确定性评分引擎驱动） ===== */}
         <section style={{ marginTop: 22 }}>
           <SectionEyebrow title="我的 Christian Profile" en="Christian Profile" />
+          {!cp && discover && (
+            <div style={{ ...ctCard, padding: '14px 14px 12px', marginBottom: 10, background: '#FBF6EA', border: '1px solid rgba(201,154,69,.3)' }}>
+              <div className="flex items-start" style={{ gap: 8 }}>
+                <div className="flex-1 min-w-0">
+                  <p style={{ margin: 0, fontSize: 9.5, fontWeight: 800, letterSpacing: '1.5px', color: '#A9812F' }}>FROM WEB · 快速探索</p>
+                  <p style={{ margin: '3px 0 0', fontSize: 13, fontWeight: 900, color: '#5C4A1E' }}>你在网页上做的 10 题，结果带过来了</p>
+                </div>
+                <button
+                  onClick={() => { dismissDiscoverHandoff(); setDiscover(null); }}
+                  aria-label="关闭" title="关闭"
+                  className="p-1 rounded-full active:scale-90 transition shrink-0"
+                  style={{ color: '#A9812F' }}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+              <div style={{ marginTop: 10, display: 'grid', gap: 6 }}>
+                {discover.areas.map((a) => (
+                  <div key={a.key} className="flex items-center" style={{ gap: 8 }}>
+                    <span style={{ flex: '0 0 72px', fontSize: 11, fontWeight: 700, color: '#5C4A1E' }}>{AREA_LABEL[a.key]}</span>
+                    <div style={{ flex: 1, height: 5, borderRadius: 999, background: 'rgba(201,154,69,.18)', overflow: 'hidden' }}>
+                      <span style={{ display: 'block', width: `${a.value}%`, height: '100%', borderRadius: 999, background: 'linear-gradient(90deg,#E1B75F,#C99A45)' }} />
+                    </div>
+                    <span style={{ flex: '0 0 48px', textAlign: 'right', fontSize: 10.5, fontWeight: 800, color: '#A9812F' }}>{a.level}</span>
+                  </div>
+                ))}
+              </div>
+              {discoverWeakest && (
+                <p style={{ margin: '10px 0 0', fontSize: 11, lineHeight: 1.7, color: '#7A6A45' }}>
+                  当时最值得先投入的是「{AREA_LABEL[discoverWeakest.key]}」。网页那 10 题只是起点，<b>不参与</b>下面的评分；12 项事奉倾向由 30 / 84 题独立测量。
+                </p>
+              )}
+            </div>
+          )}
           {cp ? (() => {
             const rows = archRowsFromProfile(cp, ct?.service ?? []);
             const pri = rows[0];

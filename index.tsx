@@ -4,6 +4,11 @@ import './i18n';
 import App from './App';
 import ErrorBoundary from './components/ErrorBoundary';
 import DemoBuildBadge from './components/DemoBuildBadge';
+import { captureDiscoverHandoff } from './services/christianProfile/discoverHandoff';
+
+// 从网页版「信仰成长快速探索」(discover.html) 跳进来时，URL 上带着 5 项初步状态。
+// 必须在 render 之前读掉：参数一落盘就从地址栏抹掉，刷新才不会重复带入。
+captureDiscoverHandoff();
 
 // A lazily-loaded chunk can fail to load when the page still holds a module graph
 // from before a dev-server hot update or a production deploy. Reload once so the

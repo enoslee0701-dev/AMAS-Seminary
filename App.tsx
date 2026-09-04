@@ -47,6 +47,7 @@ import { CheckCircle, Mic } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { getAccessToken, getCurrentUser, me as fetchMe, logout as apiLogout } from './services/authService';
 import { initialAvatar } from './services/imageFallback';
+import { hasPendingDiscoverHandoff } from './services/christianProfile/discoverHandoff';
 import { listAnnouncements } from './services/announcementsService';
 import {
   listCourses,
@@ -139,7 +140,11 @@ const App: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   
-  const [currentView, setCurrentView] = useState<ViewState>(ViewState.HOME);
+  // 冷启动落在哪一屏。从网页版快速探索跳进来（URL 带 5 项初步状态）时直接进
+  // 「定制化神学」——那 5 项状态就展示在成长档案入口，用户不用自己找回去。
+  const [currentView, setCurrentView] = useState<ViewState>(
+    () => (hasPendingDiscoverHandoff() ? ViewState.CUSTOM_THEOLOGY : ViewState.HOME),
+  );
   // Deep-link target inside CollegeView (e.g. directly open '学科介绍').
   const [pendingCollegeItem, setPendingCollegeItem] = useState<string | null>(null);
   // Which course-path tier to focus when opening COURSE_PATH (null = full overview).
