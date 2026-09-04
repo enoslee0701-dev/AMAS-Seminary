@@ -38,3 +38,18 @@ backend/.tmp-test/
 .tmp-rooms/
 .tmp-presence/
 .tmp-reading/
+
+# ── 仓库只放当前项目本身 ────────────────────────────────────
+# 以下都留在本地磁盘上，只是不进仓库：
+
+# 2025-11 ~ 2026-02 的旧 AI 对话记录，32 MB，与 App 无关
+migrated_prompt_history/
+
+# 一次性验收报告（结论已写进 docs/PRAYER_ROOM_SEC2_REPORT.md）
+sec2-report.txt
+
+# 早期把组件源码抄成 Markdown 的存档，984 行，真实代码在 components/ 里
+动画与首页UI代码.md
+
+# 无处引用的散图（代码里 0 处引用）
+aa777956-a567-4b53-a1c6-1bc7ad78e71a.png
