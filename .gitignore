@@ -53,3 +53,6 @@ sec2-report.txt
 
 # 无处引用的散图（代码里 0 处引用）
 aa777956-a567-4b53-a1c6-1bc7ad78e71a.png
+
+# 历史重写前的 .git 备份（59MB）。是本地保险，不进版本控制。
+.git-backup-before-history-rewrite/
