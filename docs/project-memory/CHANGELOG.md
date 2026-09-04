@@ -12,6 +12,16 @@
 
 ---
 
+## 2026-09-04（补）
+
+- **补齐四份缺失的记忆文档。** 首版八份偏重语音房间（那是最近几个阶段的工作），
+  新 AI 读完会误判项目范围。补上：
+  `PRODUCT_OVERVIEW`（项目全貌 + Christian Profile 九条铁律 + 两仓库 discover.html 同步）·
+  `ENVIRONMENT_AND_TOOLING`（9 个已踩过的坑 + 怎么跑 + 验证脚本套路）·
+  `DATA_MODEL`（30 张表 + authoritative source 对照表）·
+  `WORKING_AGREEMENTS`（用户的证据标准与协作方式）。
+- 阅读顺序改为 11 份，并给出「5 分钟最短路径」与「动手前再补两份」。
+
 ## 2026-09-04
 
 - **建立 `docs/project-memory/` 作为开发接力 Source of Truth。**

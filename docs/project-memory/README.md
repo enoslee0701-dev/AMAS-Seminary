@@ -14,15 +14,22 @@
 
 | # | 文件 | 回答什么问题 |
 |---|---|---|
-| 1 | [CURRENT_STATE.md](CURRENT_STATE.md) | 现在做到哪里？下一步是什么？ |
-| 2 | [ARCHITECTURE_RULES.md](ARCHITECTURE_RULES.md) | 什么绝对不能破坏？哪些方案已被否定？ |
-| 3 | [DEVELOPMENT_ROADMAP.md](DEVELOPMENT_ROADMAP.md) | 各阶段的目标、范围、不做什么、验收条件 |
-| 4 | [OPEN_ISSUES.md](OPEN_ISSUES.md) | 有哪些已知问题、风险、BLOCKED、待你决定的事 |
-| 5 | [ACCEPTANCE_HISTORY.md](ACCEPTANCE_HISTORY.md) | 每个阶段实际验收了什么（append-only） |
-| 6 | [AI_HANDOFF_RULES.md](AI_HANDOFF_RULES.md) | 接手时必须遵守的规则 + 新对话启动模板 |
-| 7 | [CHANGELOG.md](CHANGELOG.md) | 影响未来判断的架构与规则变化（append-only） |
+| 1 | [PRODUCT_OVERVIEW.md](PRODUCT_OVERVIEW.md) | **这个项目到底是什么？**有哪些模块？（先读这份，否则容易误判范围） |
+| 2 | [CURRENT_STATE.md](CURRENT_STATE.md) | 现在做到哪里？下一步是什么？ |
+| 3 | [ARCHITECTURE_RULES.md](ARCHITECTURE_RULES.md) | 什么绝对不能破坏？哪些方案已被否定？ |
+| 4 | [WORKING_AGREEMENTS.md](WORKING_AGREEMENTS.md) | 用户希望怎么协作？证据标准是什么？ |
+| 5 | [DEVELOPMENT_ROADMAP.md](DEVELOPMENT_ROADMAP.md) | 各阶段的目标、范围、不做什么、验收条件 |
+| 6 | [OPEN_ISSUES.md](OPEN_ISSUES.md) | 有哪些已知问题、风险、BLOCKED、待你决定的事 |
+| 7 | [ENVIRONMENT_AND_TOOLING.md](ENVIRONMENT_AND_TOOLING.md) | 怎么跑起来？有哪些已经踩过的坑？ |
+| 8 | [DATA_MODEL.md](DATA_MODEL.md) | 有哪些表？某个状态该信谁？ |
+| 9 | [ACCEPTANCE_HISTORY.md](ACCEPTANCE_HISTORY.md) | 每个阶段实际验收了什么（append-only） |
+| 10 | [AI_HANDOFF_RULES.md](AI_HANDOFF_RULES.md) | 接手时必须遵守的规则 + 新对话启动模板 |
+| 11 | [CHANGELOG.md](CHANGELOG.md) | 影响未来判断的架构与规则变化（append-only） |
 
-赶时间只读两份：**CURRENT_STATE.md** 与 **ARCHITECTURE_RULES.md**。
+**赶时间的最短路径**（约 5 分钟）：
+PRODUCT_OVERVIEW → CURRENT_STATE → ARCHITECTURE_RULES → WORKING_AGREEMENTS
+
+**动手前再补两份**：ENVIRONMENT_AND_TOOLING（省最多时间）· DATA_MODEL
 
 ---
 

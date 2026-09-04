@@ -7,15 +7,27 @@
 
 ## 第一步：先读，不要先写
 
-按顺序阅读：
+按顺序阅读（前四份是必读，约 5 分钟）：
 
 ```
-1. CURRENT_STATE.md
-2. ARCHITECTURE_RULES.md
-3. DEVELOPMENT_ROADMAP.md
-4. OPEN_ISSUES.md
-5. ACCEPTANCE_HISTORY.md 的最后一条
+1. PRODUCT_OVERVIEW.md      这个项目到底是什么 —— 不读会误判范围
+2. CURRENT_STATE.md         做到哪里、下一步
+3. ARCHITECTURE_RULES.md    什么不能破坏
+4. WORKING_AGREEMENTS.md    用户的证据标准与协作方式
+5. DEVELOPMENT_ROADMAP.md
+6. OPEN_ISSUES.md
+7. ACCEPTANCE_HISTORY.md 的最后一条
 ```
+
+**动手写代码前再补两份**：
+
+```
+ENVIRONMENT_AND_TOOLING.md   怎么跑、已经踩过哪些坑（省最多时间）
+DATA_MODEL.md                有哪些表、某个状态该信谁
+```
+
+如果要改**定制化神学 / Christian Profile**，额外必读
+`docs/CHRISTIAN_PROFILE_SPEC.md` 的「§1 产品定位与铁律」—— 那有九条硬约束。
 
 ---
 
@@ -165,11 +177,17 @@ rm -rf 用户数据目录
 请先阅读：
 
 docs/project-memory/README.md
+docs/project-memory/PRODUCT_OVERVIEW.md
 docs/project-memory/CURRENT_STATE.md
 docs/project-memory/ARCHITECTURE_RULES.md
+docs/project-memory/WORKING_AGREEMENTS.md
 docs/project-memory/DEVELOPMENT_ROADMAP.md
 docs/project-memory/OPEN_ISSUES.md
 docs/project-memory/AI_HANDOFF_RULES.md
+
+动手写代码前再读：
+docs/project-memory/ENVIRONMENT_AND_TOOLING.md
+docs/project-memory/DATA_MODEL.md
 
 然后检查：
 git status
@@ -187,5 +205,9 @@ git log --oneline -10
 破坏性操作（force push / 历史重写 / 删远端分支 / 删数据）不要自行执行，
 写好脚本交给我。
 
-每完成一个阶段，必须同时更新 docs/project-memory/ 下的五个文件。
+每完成一个阶段，必须同时更新 docs/project-memory/ 下的五个文件
+（CURRENT_STATE / DEVELOPMENT_ROADMAP / ACCEPTANCE_HISTORY / OPEN_ISSUES / CHANGELOG）。
+
+用中文回复。证据标准见 WORKING_AGREEMENTS.md —— 报告必须给实际跑出来的
+数字并写明 FAIL 数，不接受用 mock 冒充真实验证。
 ```
