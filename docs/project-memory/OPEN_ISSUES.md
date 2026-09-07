@@ -446,3 +446,38 @@ AUTH-M7 之后 `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` 成为**硬依赖*
 不再静默回落到已经不存在的 legacy 端点。
 
 这是目标态而非缺陷，但**部署清单必须包含这两个变量** —— 否则 App 登录不可用。
+
+---
+
+## #DBR-01~16 RB-01 迁移风险登记（DB-0 产出）
+
+```
+status:    OPEN（DB-0 已识别，DB-1 前需决策）
+severity:  见各条
+owner:     用户 / GPT（4 项决策）
+phase:     RB-01 DB-0 -> DB-1
+```
+
+完整报告见 `amas-website/docs/operations/DB-0-DATABASE-FACTS-AND-TARGET-DESIGN.md`。
+
+**P0 四项**：
+
+- **DBR-01 孤儿行** —— 32 张表仅 6 张有 FK；23 张用户所属表中 **20 张无 FK**，
+  历史数据可能引用已不存在的 users.id。加 FK 前必须全表扫描，逐条决定。
+- **DBR-02 admin 角色映射歧义** —— App `users.role` 只有 `student`/`admin`，
+  Portal 有 9 个角色且 `ADMIN_ROLES = {registrar, academic_admin, super_admin}`。
+  **`'admin'` 不在其中**：批量给 super_admin 是过度授权，给 content_admin 会静默掉权。
+- **DBR-03 无 schema 版本号** —— schema 靠运行期 `PRAGMA table_info` +
+  `ALTER TABLE ADD COLUMN` 打补丁，无法判定某部署处于哪个 schema 状态。
+- **DBR-04 同步→异步 DAL** —— better-sqlite3 全同步，pg 全异步；
+  5 处 `db.transaction()` 的同步闭包改异步后事务边界易断。
+- **DBR-05 CP blob 归属错配** —— Christian Profile 全部数据在
+  `growth_state.state_json` 一个不透明 JSON 列里，无 FK。
+  映射错一个人，其全部成长档案归错人且 blob 内不含身份，**无从察觉**。
+
+**具体陷阱**：`rooms.host_id = 'system'` 是哨兵值（非 uuid、非真实用户），
+直接加 FK 会让 5 个内置公共房间插入失败（DBR-09）。
+
+**DB-1 前必须由 Supervisor 决定的 4 项**：
+admin 角色目标映射 · CP 迁移方案（保持 blob / 关系化） ·
+course_progress 与 growth_state 的授权类型 · App users 表是否并入 profiles。
