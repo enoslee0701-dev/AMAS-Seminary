@@ -305,20 +305,69 @@ MIGRATION PROCESS: LOCAL VERIFIED），**但从未在任何真实环境执行过
 
 ---
 
-## #18 迁移 apply 脚本的收尾断言绑定了真实数据集
+## #18 迁移 apply 收尾断言绑定真实数据集 — `CLOSED`
 
 ```
-status:    OPEN
+status:    CLOSED（staging/app-release-candidate，2026-09-07）
+severity:  曾为 STAGING CUTOVER BLOCKER
+```
+
+`identity-migration-apply.mjs` 曾写死 `prayer_shares rows === 12`，
+于是迁移完全成功、退出码却是 1，通用 migration 命令的 exit code 不可信。
+
+修法（断言分层）：
+
+```
+C(...)  migration correctness —— 任何数据集都成立，**决定退出码**
+        「prayer_shares 一行未丢」改为迁移前后守恒断言，不再写死行数
+D(...)  dataset acceptance    —— 用 --expect-prayer-shares=<n> 传入，
+        默认只报告；要参与判定必须显式 --dataset-gate
+```
+
+护栏：`auth-migration-cutover.test.ts` 新增专项 —— 故意给错基线时默认退出码
+仍为 0 且如实报告，加 `--dataset-gate` 后才为 1。
+
+---
+
+## #19 App Staging 缺外部前提
+
+```
+status:    BLOCKED
+severity:  P1（阻断 APP STAGING 阶段的全部真实验收）
+owner:     用户
+phase:     APP STAGING
+```
+
+仓库侧准备已完成（环境模板、启动身份自述、运行手册、#18 关闭）。
+缺的全是外部凭据，互不阻塞，拿到哪项解锁哪项：
+
+```
+Supabase staging URL / anon key / service-role key   MISSING
+托管凭据（前端 / 后端）                                MISSING
+staging 域名                                          MISSING
+SMTP / 发信域                                         MISSING → 密码找回无法验证
+LiveKit 凭据                                          MISSING → 语音保持关闭
+Android 真机 + 域名关联                                MISSING → Deep Link 无法验证
+```
+
+流程与验收矩阵见 [APP-STAGING-RUNBOOK.md](../operations/APP-STAGING-RUNBOOK.md)。
+
+---
+
+## #20 VITE_APP_SECRET 是废弃且危险的配置项
+
+```
+status:    OPEN（已在模板中标注 DEPRECATED）
 severity:  P3
 owner:     unassigned
 ```
 
-`identity-migration-apply.mjs` 末尾有一批针对当前生产数据的断言
-（例如「prayer_shares 内容一条未丢 rows === 12」）。在任何其它数据库上它们必然不成立，
-于是 `exitCode = 1` —— 迁移本身成功，退出码却是失败。
+`.env.example` 仍保留该行。前端代码**已不读取**它（全仓库仅剩该行与 backend 的
+一处注释）。但 `VITE_` 前缀意味着值会被打进前端 bundle —— 一旦有人从旧文档抄回来
+并填上 APP_SECRET，等于把机器管理员凭据公开发布。
 
-影响：无法用退出码判断迁移是否成功，自动化只能解析输出。
-建议把「数据集专属断言」与「迁移正确性断言」分开，或让数量期望值从快照推导。
+本轮已在模板里显式标注 DEPRECATED 并说明后果。彻底删除该行需确认没有任何
+既有部署仍依赖它。
 
 ---
 

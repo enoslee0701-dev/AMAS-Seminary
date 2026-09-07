@@ -96,6 +96,21 @@ function db<T = any>(sql: string, ...args: unknown[]): T[] {
  *   永远得不到应答，迁移脚本最终判成「Supabase 不可达」——一个纯粹由测试
  *   写法造成的假故障（首次实现踩过，dry-run 卡满 5 分钟后失败）。
  */
+function runMigrationRaw(extraArgs: string[]): Promise<{ code: number; out: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [TSX, 'scripts/identity-migration-apply.mjs', ...extraArgs], {
+      cwd: BACKEND_ROOT,
+      env: { ...process.env, AMAS_ENV: ENV_PATH, DB_PATH },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let out = '';
+    child.stdout?.on('data', d => { out += d.toString(); });
+    child.stderr?.on('data', d => { out += d.toString(); });
+    child.on('error', reject);
+    child.on('close', code => resolve({ code: code ?? -1, out }));
+  });
+}
+
 function runMigration(script: 'dryrun' | 'apply', apply = false): Promise<{ code: number; out: string }> {
   const args = [TSX, `scripts/identity-migration-${script}.mjs`];
   if (apply) args.push('--apply');
@@ -218,10 +233,10 @@ test('dry-run · 只读，不建号、不写映射', async () => {
 
 test('apply · 三个账号各归其位（provisioned / mapped / skipped_test_account）', async () => {
   const r = await runMigration('apply', true);
-  // ★ apply 末尾有一批**绑定真实数据集**的断言（例如「prayer_shares 内容一条未丢
-  //   rows === 12」）。在一次性 fixture 库上它们必然不成立，于是 exitCode = 1。
-  //   这是迁移工具的已知局限（见 OPEN_ISSUES），不是迁移本身失败 ——
-  //   因此断言迁移的**实际结果**，而不是退出码。
+  // #18 已于 STAGING 阶段关闭：apply 的退出码现在只反映 migration correctness，
+  //   数据集专属期望（原先写死的 rows === 12）已下放到 dataset acceptance 层，
+  //   默认不计入退出码。因此这里可以、也应该断言退出码为 0。
+  assert.equal(r.code, 0, '#18 关闭后，迁移正确即退出码 0：' + r.out);
   assert.match(r.out, /已建号 alice\.legacy@example\.test/, 'A 应被建号：' + r.out);
   assert.match(r.out, /bob\.legacy@example\.test → mapped/, 'B 应直接映射：' + r.out);
   assert.match(r.out, /s1780377335744@amas\.test → skipped_test_account/, '测试账号应被排除');
@@ -353,7 +368,7 @@ test('幂等 · 再跑一次 apply 不重复建号、不新增映射、不动业
 
   const r = await runMigration('apply', true);
   // 第二次运行时 A 已经在 Supabase 有账号，应判为 mapped 而不是重新建号。
-  // 退出码同样受数据集专属断言影响，因此断言行为而非退出码。
+  assert.equal(r.code, 0, '#18 关闭后重跑同样应退出码 0：' + r.out);
   assert.match(r.out, /alice\.legacy@example\.test → mapped/,
     '第二次 apply 必须复用既有账号：' + r.out);
   assert.doesNotMatch(r.out, /已建号 alice\.legacy/, '不得第二次建号');
@@ -398,4 +413,22 @@ test('幂等 · 第二次 apply 之后 A 仍然能正常登录', async () => {
   const r = await request('GET', '/api/auth/me', undefined, { authorization: `Bearer ${token}` });
   assert.equal(r.status, 200);
   assert.equal(r.json.user.id, USER_A.id);
+});
+
+// ═══════════════ #18 · 通用退出码只反映 migration correctness ═══════════════
+
+test('#18 · 数据集专属断言默认不污染退出码，--dataset-gate 才计入', async () => {
+  // 给一个**故意错误**的数据集基线。默认模式下它只该被报告，不该改变退出码；
+  // 显式 --dataset-gate 时才允许它让命令失败。
+  const wrong = await runMigrationRaw(['--apply', '--expect-prayer-shares=99999']);
+  assert.equal(wrong.code, 0, '默认模式下数据集断言失败不得影响退出码：' + wrong.out);
+  assert.match(wrong.out, /\[dataset\]/, '应当仍然如实报告 dataset 检查');
+  assert.match(wrong.out, /不计入退出码/, '应当说明它未计入退出码');
+
+  const gated = await runMigrationRaw(['--apply', '--expect-prayer-shares=99999', '--dataset-gate']);
+  assert.equal(gated.code, 1, '显式 --dataset-gate 时数据集断言必须能让命令失败');
+
+  // 正确基线（fixture 库里 prayer_shares 为 0 行）即使 gate 打开也应通过
+  const ok = await runMigrationRaw(['--apply', '--expect-prayer-shares=0', '--dataset-gate']);
+  assert.equal(ok.code, 0, '基线正确时 gate 模式也应通过：' + ok.out);
 });

@@ -31,6 +31,7 @@ import { registerGrowthRoutes } from './routes/growth.js';
 import { requireAuth, requireAdmin, warnIfNoAppSecret, warnIfJwtDerived } from './middleware/auth.js';
 import { generalApiLimiter, tokenLimiter } from './middleware/rateLimit.js';
 import { assertProductionConfigOrExit } from './startupGuard.js';
+import { identityEnvLines } from './diagnostics/identityEnv.js';
 
 // RB-06 · 生产启动护栏。放在建 app 之前：配置不合格的生产实例
 // 不应该开出监听端口。开发与测试环境一律放行，流程不受影响。
@@ -113,6 +114,10 @@ server.listen(config.port, () => {
   console.log(`[amas-backend] listening on :${config.port}`);
   console.log(`[amas-backend] cors origins: ${config.corsOrigins.join(', ') || '(none)'}`);
   console.log(`[amas-backend] gemini configured: ${Boolean(config.gemini.apiKey)}`);
+  // STAGING：身份环境自述。Supabase 是唯一用户认证来源，配没配、连的是哪个
+  // project，必须在启动日志里一眼看得见（D-40 要求 staging/production 隔离）。
+  // 只打印 host 与 SET/MISSING，绝不打印任何 key。
+  for (const line of identityEnvLines()) console.log(line);
   // Phase 4B-R §2：语音就绪状态必须在启动日志里说清楚，
   // 且**绝不自动 fallback 到 mock / agora / 其他 transport**。
   const voiceReady = Boolean(config.liveKit.url && config.liveKit.apiKey && config.liveKit.apiSecret);

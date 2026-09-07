@@ -12,6 +12,25 @@
 
 ---
 
+## 2026-09-07（APP STAGING · 部署前准备）
+
+- **确立：通用 migration 命令的退出码只反映 migration correctness（#18 关闭）。**
+  `identity-migration-apply.mjs` 曾写死 `prayer_shares rows === 12` ——
+  迁移成功、退出码却是 1，自动化只能解析输出。现在断言分层：
+  correctness（任何数据集都成立，决定退出码）与 dataset acceptance
+  （`--expect-prayer-shares=<n>` 传入，默认只报告，`--dataset-gate` 才计入）。
+  「一行未丢」改为**迁移前后守恒**断言 —— 那才是与数据集无关的正确性。
+- **确立：启动日志必须自述身份环境，且绝不打印 key。**
+  AUTH-M7 之后 Supabase 是唯一用户认证来源，`SUPABASE_URL` 没配不是
+  「少个功能」而是**没有任何用户能登录**，而此前启动日志对此只字未提。
+  新增 `[amas-backend] IDENTITY: supabase host=… · service-role key=SET/MISSING`，
+  只打印 host 与有无，用于人眼核对 D-40 要求的 staging/production 隔离。
+- **补齐环境模板。** `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` /
+  `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` / `NODE_ENV` 此前全部未出现在
+  `.env.example` —— 照模板配一遍会得到一个**没人能登录**的部署。
+- **`VITE_APP_SECRET` 标为 DEPRECATED。** 前端已不读取它；`VITE_` 前缀意味着
+  值会进 bundle，填上等于公开发布机器管理员凭据（OPEN_ISSUES #20）。
+
 ## 2026-09-07（POST-LEGACY CANONICAL INTEGRATION）
 
 - **确立：rebase 之后必须做语义保全审计，`CONFLICT = 0` 不构成证据。**

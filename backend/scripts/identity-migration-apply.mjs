@@ -193,6 +193,10 @@ const cols = db.prepare(`PRAGMA table_info("prayer_shares")`).all().map(c => c.n
 const needsRebuild = !cols.includes('author_state');
 
 const legacyIds = new Set(legacyUsers.map(u => u.id));
+// 迁移前的基数。守恒断言用它 —— 「一行未丢」是**任何数据集都成立**的迁移正确性，
+// 写死某个具体行数只对某一份库成立（#18）。
+const prayerSharesBefore = db.prepare('SELECT COUNT(*) n FROM prayer_shares').get().n;
+
 const orphanShares = db.prepare('SELECT id, user_id FROM prayer_shares').all()
   .filter(r => r.user_id && !legacyIds.has(r.user_id));
 log(`  orphan prayer_shares: ${orphanShares.length}`);
@@ -257,7 +261,25 @@ if (!APPLY) {
 // ---------------------------------------------------------------------------
 step(4, '断言');
 const assertions = [];
-const A = (name, ok, detail = '') => { assertions.push({ name, ok, detail }); log(`  ${ok ? 'PASS' : 'FAIL'} ${name}${detail ? ' | ' + detail : ''}`); };
+// ── #18 · 断言分层（STAGING 阶段关闭）────────────────────────────
+// 此前所有断言共用一个数组，其中含 `prayer_shares rows === 12` 这类
+// **绑定某一份具体数据库**的期望值。后果：迁移完全成功、退出码却是 1，
+// 通用 migration 命令的 exit code 因此不可信，自动化只能解析输出。
+//
+//   C(...)  migration correctness —— 任何数据集都必须成立，**决定退出码**
+//   D(...)  dataset acceptance    —— 绑定特定数据集的期望，默认只报告；
+//                                   仅当显式 --dataset-gate 时才计入退出码
+const datasetChecks = [];
+const DATASET_GATE = process.argv.includes('--dataset-gate');
+const C = (name, ok, detail = '') => {
+  assertions.push({ name, ok, detail });
+  log(`  ${ok ? 'PASS' : 'FAIL'} ${name}${detail ? ' | ' + detail : ''}`);
+};
+const D = (name, ok, detail = '') => {
+  datasetChecks.push({ name, ok, detail });
+  log(`  ${ok ? 'PASS' : 'FAIL'} [dataset] ${name}${detail ? ' | ' + detail : ''}`);
+};
+const A = C;   // 兼容既有调用点
 
 const unresolved = plan.filter(p => p.mapping_status === 'needs_provision' || p.mapping_status === 'provision_failed');
 if (APPLY) {
@@ -282,7 +304,15 @@ if (APPLY) {
   const tomb = db.prepare("SELECT COUNT(*) n FROM prayer_shares WHERE author_state = 'deleted_account'").get();
   A('tombstone 数量正确', tomb.n === orphanShares.length, `tombstoned=${tomb.n}`);
   const total = db.prepare('SELECT COUNT(*) n FROM prayer_shares').get();
-  A('prayer_shares 内容一条未丢', total.n === 12, `rows=${total.n}`);
+  // correctness：迁移前后守恒。tombstone 只改 user_id/author_state，不删行。
+  C('prayer_shares 一行未丢（迁移前后守恒）', total.n === prayerSharesBefore,
+    `before=${prayerSharesBefore} after=${total.n}`);
+  // dataset acceptance：只有显式给出基线时才检查，默认不影响退出码。
+  const expectArg = process.argv.find(a => a.startsWith('--expect-prayer-shares='));
+  if (expectArg) {
+    const expected = Number(expectArg.split('=')[1]);
+    D(`prayer_shares 行数符合数据集基线 ${expected}`, total.n === expected, `rows=${total.n}`);
+  }
   const noOwner = db.prepare(
     "SELECT COUNT(*) n FROM prayer_shares WHERE author_state='deleted_account' AND user_id IS NOT NULL").get();
   A('tombstone 记录没有被挂给任何用户', noOwner.n === 0, `wrongly_owned=${noOwner.n}`);
@@ -291,6 +321,15 @@ if (APPLY) {
 db.close();
 
 const failed = assertions.filter(a => !a.ok);
-log(`\n模式: ${APPLY ? 'APPLY' : 'DRY-RUN'} | 断言 ${assertions.length - failed.length}/${assertions.length} PASS`);
+const datasetFailed = datasetChecks.filter(a => !a.ok);
+log(`
+模式: ${APPLY ? 'APPLY' : 'DRY-RUN'} | correctness 断言 ${assertions.length - failed.length}/${assertions.length} PASS`);
+if (datasetChecks.length) {
+  log(`dataset acceptance: ${datasetChecks.length - datasetFailed.length}/${datasetChecks.length} PASS` +
+      `${DATASET_GATE ? '（--dataset-gate：计入退出码）' : '（仅报告，不计入退出码）'}`);
+}
 if (APPLY) log(`回滚依据: 快照 ${snapshot} + legacy_user_map + tombstoned_author_audit`);
-process.exitCode = failed.length ? 1 : 0;
+
+// #18：通用 migration 命令的退出码**只**反映 migration correctness。
+// 数据集专属期望要参与判定，必须显式 --dataset-gate。
+process.exitCode = (failed.length || (DATASET_GATE && datasetFailed.length)) ? 1 : 0;

@@ -62,7 +62,7 @@
 >
 > | ACTIVE_TASK_OWNER | ACTIVE_BRANCH | ACTIVE_PHASE | STARTED_AT | STATUS |
 > |---|---|---|---|---|
-> | （无） | — | — | — | IDLE |
+> | **APP STAGING** | `staging/app-release-candidate` | APP STAGING（部署前准备） | 2026-09-07 | **ACTIVE** |
 >
 > 说明：POST-LEGACY RELEASE RECONCILIATION 已于 2026-09-07 完成并交还写权
 > （main 集成 + GitHub CI 全绿），故本表回到 IDLE。DB-3 由另一条会话完成，
