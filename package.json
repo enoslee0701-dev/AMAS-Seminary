@@ -20,6 +20,7 @@
     "@capacitor/push-notifications": "^8.1.1",
     "@capacitor/status-bar": "^8.0.2",
     "@google/genai": "^1.30.0",
+    "@supabase/supabase-js": "^2.114.0",
     "agora-rtc-sdk-ng": "^4.24.3",
     "i18next": "^26.2.0",
     "livekit-client": "^2.19.0",

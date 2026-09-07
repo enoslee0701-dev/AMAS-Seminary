@@ -1,6 +1,10 @@
 import type { Request, Response, NextFunction } from 'express';
 import crypto from 'node:crypto';
 import { config } from '../config.js';
+import {
+  isSupabaseConfigured, looksLikeSupabaseToken, verifySupabaseAccess,
+  fetchActiveRoles, isAdminRole, resolveDisplayName,
+} from '../auth/supabase.js';
 import { verifyAccess, type AccessPayload } from '../auth/jwt.js';
 import { findById, toPublicUser, type PublicUser } from '../auth/users.js';
 
@@ -121,25 +125,53 @@ export async function requireAuth(
   const match = /^Bearer\s+(.+)$/i.exec(header);
   const presented = match ? match[1].trim() : '';
 
-  // ★ Fail closed。原实现在「无 Authorization 头**且**未配置 APP_SECRET」时
-  //   把请求当作 service principal 放行；一旦部署时忘记设 APP_SECRET，
-  //   任何匿名请求都会拿到机器权限。没有凭据一律 401。
-  //
-  //   这条修复与任何身份供应商无关，**不要**因为回退某次认证改造而恢复
-  //   旧的「无 secret 即开门」逻辑。
+  // ★ AUTH-M2 修复：原实现在「无 Authorization 头且未配置 APP_SECRET」时
+  //   把请求当作 service principal 放行。一旦部署时忘记设 APP_SECRET，
+  //   任何匿名请求都会拿到机器权限。改为 fail closed —— 没有凭据一律 401。
   if (!presented) {
     res.status(401).json({ error: 'Missing bearer token.' });
     return;
   }
 
-  // 1) Try APP_SECRET match (cheap, constant-time).
+  // 1) APP_SECRET（机器对机器），常数时间比较
   if (config.appSecret && constantTimeStringEqual(presented, config.appSecret)) {
     req.principal = { kind: 'service' };
     next();
     return;
   }
 
-  // 2) Try user JWT.
+  // 2) Supabase token（统一身份，D-2B-1 方案 A）
+  //    按 iss 分流：是 Supabase 的就只走 Supabase 验签，失败即 401，
+  //    **绝不回退到 legacy 验签**——迁移期两条链路互不兜底。
+  if (isSupabaseConfigured() && looksLikeSupabaseToken(presented)) {
+    try {
+      const payload = await verifySupabaseAccess(presented);
+      const name = await resolveDisplayName(payload);
+      req.principal = {
+        kind: 'user',
+        user: {
+          id: payload.sub,
+          email: payload.email ?? '',
+          name,
+          // 展示用途；真正的授权在 requireAdmin 内现查 Supabase 角色（R-2）
+          role: 'student',
+          createdAt: typeof payload.iat === 'number' ? payload.iat * 1000 : Date.now(),
+        },
+        payload: payload as unknown as AccessPayload,
+      };
+      next();
+      return;
+    } catch {
+      res.status(401).json({ error: 'Invalid bearer token.' });
+      return;
+    }
+  }
+
+  // 3) Legacy 自签 token（AUTH-M7 删除；可用 AUTH_ACCEPT_LEGACY=false 提前演练）
+  if (!config.supabase.acceptLegacy) {
+    res.status(401).json({ error: 'Legacy tokens are no longer accepted.' });
+    return;
+  }
   try {
     const payload = await verifyAccess(presented);
     const user = findById(payload.sub);
@@ -185,6 +217,21 @@ export async function requireAdmin(
     next();
     return;
   }
+
+  // AUTH-M4：授权以 Supabase 角色为准，**每次现查**（角色撤销即时生效）。
+  // 客户端声明的 role / email / userId 一律不可信；JWT 里的 role 只作展示。
+  if (isSupabaseConfigured() && looksLikeSupabaseToken(
+        (/^Bearer\s+(.+)$/i.exec(req.header('authorization') ?? '') ?? ['', ''])[1].trim())) {
+    const roles = await fetchActiveRoles(principal.user.id);
+    if (!isAdminRole(roles)) {
+      res.status(403).json({ error: 'Admin role required.' });
+      return;
+    }
+    next();
+    return;
+  }
+
+  // Legacy 路径（AUTH-M7 删除）
   if (principal.user.role !== 'admin') {
     res.status(403).json({ error: 'Admin role required.' });
     return;

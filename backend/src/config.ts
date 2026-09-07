@@ -45,6 +45,16 @@ export const config = {
     source: jwtResolved.source,
   },
 
+  // AUTH-M2/M3 · Supabase 统一身份（D-2B-1 方案 A）。
+  // url 一旦配置，后端即接受 Supabase access token；serviceKey 仅用于
+  // 角色现查与 profiles 回落读取，**绝不下发到任何客户端**。
+  supabase: {
+    url: envOr('SUPABASE_URL'),
+    serviceKey: envOr('SUPABASE_SERVICE_ROLE_KEY'),
+    // 迁移开关：设为 'false' 可临时停止接受 legacy 自签 token（AUTH-M7 前的演练）
+    acceptLegacy: envOr('AUTH_ACCEPT_LEGACY', 'true') !== 'false',
+  },
+
   gemini: {
     apiKey: envOr('GEMINI_API_KEY'),
   },
