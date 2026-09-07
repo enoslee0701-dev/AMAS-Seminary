@@ -391,3 +391,40 @@ users 7 个，角色分布 {"student": 7}  ← 0 个 admin
 故 email-only silent matching 是**潜伏问题，不是既成事实**。契约规则仍保留。
 
 **Acceptance level**：只读审计，无实施。不适用 PASS/FAIL 测试口径。
+
+---
+
+## 2026-09-07 — RB-01 DB-6 课程迁移
+
+```
+Acceptance level   Code-stage acceptance（本地隔离 PostgreSQL，非 Supabase）
+验证引擎           PostgreSQL 17.6（gate）+ 18.6（对照）
+website commit     661e7af（起始基线）
+App commit         02903a1（起始基线）
+```
+
+**结论：`DB-6 LOCALLY VERIFIED`**
+
+| 项 | 结果 |
+|---|---|
+| 三源集合比对（只用 code 精确相等） | 67 / 67 / 67，交集 67，三方独有均为 0 |
+| COURSE_MAPPING_MANIFEST | 71 行 = 67 `EXACT_CANONICAL_MATCH` + 4 `RETIRED_REFERENCE` |
+| CONFLICT / BLOCKED | 0 / 0 |
+| 标题、课时数不一致 | 0 / 0 |
+| apply 形式 | 67 UPDATE · **0 INSERT · 0 DELETE**（非 delete+recreate） |
+| 契约测试 | 36/36（17.6）· 36/36（18.6） |
+| DB-3 套件（DB-6 之后） | 53/53（两版） |
+| 幂等 | 连续 3 次 apply，行数与全表 md5 零漂移 |
+| 回退 | 已实测；回退→前滚→36/36 |
+| Portal 自有 9 列 | 与 `0022` 基线 md5 **完全一致** |
+| 两版迁移结果 | 逐行 md5 完全一致 |
+
+**查证澄清**：`migrate-catalog.ts:38` 曾删除 retired 课程的学习进度，
+但迁移前备份（2026-08-28）实测 `courses` 与 `course_progress` **均为 0 行**，
+该语句是空操作 —— **无真实学习历史丢失**。
+
+**新增问题**：DBR-25（`c_healing` 悬空引用）· DBR-26（32 条空串）·
+DBR-27（retired 进度在 DB-3 schema 中不可表示，待 Supervisor 裁定）。
+
+**未做**：未开始 DB-4，未创建任何 Supabase 用户，未解析任何身份，未写 `legacy_user_map`。
+

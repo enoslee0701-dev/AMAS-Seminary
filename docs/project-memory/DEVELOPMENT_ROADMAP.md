@@ -1,3 +1,14 @@
+> ### 阶段顺序已调整（D-36，2026-09-07）
+>
+> 原顺序 `DB-4 身份 → DB-5 角色 → DB-6 课程` 调整为
+> **`DB-6 课程 → DB-4 身份（待 staging Supabase）→ DB-5 角色及其余身份相关阶段`**。
+>
+> 理由：课程迁移不依赖 user identity，且 67↔67 canonical 映射已完全确认。
+> **这是顺序调整，不是并行开发** —— 仍遵守 D-16，同一时刻只有一条 active lineage。
+>
+> 当前进度：`DB-0 ✅ · DB-1 ✅ · DB-2 ✅ · DB-3 ✅ · DB-3.5 ✅ · DB-6 ✅ LOCALLY VERIFIED`
+> 下一个可动的：待 Supervisor 裁定 DBR-27；DB-4 等 staging Supabase。
+
 > ### RB-01 数据库迁移阶段计划（DB-1 定版，2026-09-07）
 >
 > 每一阶段可独立验收与回退。**禁止 32 张表一次搬完再一起测。**
@@ -5,9 +16,10 @@
 > ```
 > DB-2   只读事实采集（schema 基线快照 + 五项扫描），零写入
 > DB-3   0023_app_core.sql：身份扩展 + app_user_profile_ext + migration.* 工具表
+> DB-6   课程合并：course_catalog EXTEND（67 条已 1:1 对齐）      ← D-36 已提前
 > DB-4   身份迁移：crosswalk 填充 + 人工复核（DBR-17 强制）
-> DB-5   角色迁移：ADMIN_ROLE_MIGRATION_MANIFEST 逐人裁定
-> DB-6   课程合并：course_catalog EXTEND（67 条已 1:1 对齐）
+>        ⛔ BLOCKED_BY_EXTERNAL_ENV = STAGING SUPABASE REQUIRED
+> DB-5   角色迁移：ADMIN_ROLE_MIGRATION_MANIFEST 逐人裁定（依赖 DB-4）
 > DB-7   Christian Profile 迁移 + 三层 Gate（双哈希 / 20 regression / 3 snapshot）
 > DB-8   学习数据   DB-9 房间与祷告   DB-10 社群   DB-11 附属
 > DB-12  DAL 切换（repository 接口层 + async 改造 + 事务契约）

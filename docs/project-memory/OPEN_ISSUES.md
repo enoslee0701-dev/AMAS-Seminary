@@ -696,3 +696,86 @@ DB-3 契约测试实测复现的两个陷阱：
    两版的**行为一致**（删除都被挡住），只有错误码不同。
 
 **证据**：DB-3 报告 §11、§15；DB-3.5 报告 §8
+
+---
+
+## #DBR-25 retired 课程 `c_healing` 仍被现役代码引用
+
+```
+status:    OPEN
+severity:  medium
+owner:     unassigned
+phase:     RB-01 / DB-12（App 代码）
+```
+
+`components/CustomTheologyView.tsx:244`：
+
+```ts
+courseIds: ['c_counseling', 'c_healing'], boost: 'ministry',
+```
+
+`c_healing` 是 `RETIRED_COURSE_IDS` 之一，**两侧目录中都已不存在**
+（App `OFFICIAL_CATALOG` 67 门无它，Portal `course_catalog` 67 条也无它）。
+这条推荐规则会指向一门不存在的课程。
+
+其余 3 个 retired id（`c_dr_pastoral` / `c_dr_peter` / `c_dr_johannine`）全仓**零引用**。
+
+**修法待定**：拆分后的对应课程是 `c_healing_word`（神的话语医治）与
+`c_healing_inner`（内在医治），但**哪一门该进这条推荐规则属产品判断，不是迁移能定的**
+（DB-6 已裁定 4 个 retired id 均 `NONE FORMALLY KNOWN`，不做名称猜测）。
+
+**证据**：DB-6 报告 §4、§16
+
+---
+
+## #DBR-26 `thumbnail` 的 32 条空串已逐字迁入
+
+```
+status:    OPEN
+severity:  low
+owner:     unassigned
+phase:     RB-01 / DB-12（App 写入路径）
+```
+
+SQLite `courses.thumbnail` 有 32 条是**空字符串**（不是 NULL），
+恰好就是 `created_by='catalog-migration'` 的那 32 条。
+
+DB-6 **逐字保留**空串迁入 `course_catalog.thumbnail_path` ——
+把 `''` 悄悄改成 `NULL` 是一次未声明的数据改写，会让「App 当时写的是空串」这个事实消失。
+
+应由 App 写入路径在 DB-12 归一（无封面时写 NULL 而不是 `''`），
+归一后再补一次数据清理。
+
+**证据**：DB-6 报告 §7
+
+---
+
+## #DBR-27 retired 课程的学习进度在 DB-3 schema 中无法表示
+
+```
+status:    PENDING_DECISION
+severity:  medium
+owner:     Supervisor 裁定
+phase:     RB-01 / DB-8 前置
+```
+
+**契约与 schema 不一致**：
+
+- DB-1 §4.3 要求：`course_progress.course_id ∈ RETIRED_COURSE_IDS` 的行
+  **「迁入，但标记 `legacy_retired`，不得静默丢弃」**（学习历史属实践证据）。
+- DB-3 实现：`app_course_progress.course_code` 是指向 `course_catalog(code)` 的真实外键，
+  而 retired id 不在 canonical 目录中 —— 这类行**根本插不进去**。
+
+当前 `course_progress = 0` 行，**因此不阻断**；
+且 DB-6 已查证：迁移前备份中 `courses` 与 `course_progress` 同样是 0 行，
+**没有任何真实学习历史丢失**。
+
+两个方向，须 Supervisor 择一：
+
+1. **保持 FK 严格** —— 承认「retired 进度不可表示」，并正式更新 DB-1 §4.3；
+2. **另设 retired 引用登记表** —— 保留历史行但不进 canonical 目录
+   （注意 TASK 3 禁止第二套课程目录，须论证它不构成目录）。
+
+DB-6 **未擅自加表**。现在决定成本最低（0 行数据）。
+
+**证据**：DB-6 报告 §4、§16

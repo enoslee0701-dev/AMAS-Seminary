@@ -7,6 +7,31 @@
 
 ---
 
+> ### RB-01 数据库迁移进度（2026-09-07 更新）
+>
+> ```
+> DB-0  ✅  数据库事实与目标设计
+> DB-1  ✅  目标 schema 与迁移契约
+> DB-2  ✅  只读数据预检（零写入）
+> DB-3  ✅  PostgreSQL schema 实现（0023..0026）
+> DB-3.5 ✅ PG 17.6 目标版本兼容闸门 —— DBR-22 CLOSED
+> DB-6  ✅  课程迁移 LOCALLY VERIFIED（D-36 已提前到 DB-4 之前）
+> DB-4  ⛔  BLOCKED_BY_EXTERNAL_ENV = STAGING SUPABASE REQUIRED
+> DB-5 / DB-7..DB-13   未开始（多数依赖 DB-4 的身份解析）
+> ```
+>
+> **验证环境**：本地 PostgreSQL **17.6**（与 Supabase 目标版本一致）+ 18.6 对照。
+> **仍未验证**：真实 Supabase（Auth / PostgREST / RLS 运行时 / SECURITY DEFINER 上下文 /
+> 托管扩展 / service_role / storage / realtime）—— 一律标 `ENVIRONMENT-UNVERIFIED`。
+>
+> **7 个 legacy 账号的处置**（D-34 / D-35）：
+> 6 个测试装置 = `TEST FIXTURE / DO NOT MIGRATE TO PRODUCTION`；
+> 1 个 `estherzh0528@gmail.com` = `POTENTIAL_REAL_USER / IDENTITY_VERIFICATION_REQUIRED`。
+>
+> 详见 `amas-website/docs/operations/` 下的 DB-0 ～ DB-6 各报告。
+
+---
+
 ## ⚠️ 建立本目录时发现的文档／代码不一致
 
 交接说明称当前阶段为 **P1-1（`5d2df0f`）**，并给出 P1-1 的测试数字。

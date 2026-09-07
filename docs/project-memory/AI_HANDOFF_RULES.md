@@ -11,6 +11,19 @@
 > |---|---|---|---|---|
 > | （无） | — | — | — | IDLE |
 >
+> **最近一次认领与交回**：
+>
+> | OWNER | BRANCH | PHASE | STARTED | ENDED | 结果 |
+> |---|---|---|---|---|---|
+> | Claude | website `master` / App `main` | RB-01 **DB-6** | 2026-09-07 | 2026-09-07 | `DB-6 LOCALLY VERIFIED`，已交回 IDLE |
+> | Claude | website `master` / App `main` | RB-01 **DB-3.5** | 2026-09-07 | 2026-09-07 | `DBR-22 CLOSED`，已交回 IDLE |
+>
+> **当前被冻结、禁止触碰的世系**：`release/post-legacy-gate@e35923b`
+> （`FROZEN LOCAL RELEASE CANDIDATE` —— 禁止 merge / rebase / cherry-pick / 修改）。
+>
+> **DB-4 不是可认领任务**：状态为 `BLOCKED_BY_EXTERNAL_ENV = STAGING SUPABASE REQUIRED`（D-36）。
+> 在真实 staging Supabase 就绪前认领它，只会产出无法验证的身份映射。
+>
 > 认领任务时在本表登记；完成或交接后改回 IDLE。
 >
 > **来源**：2026-09-07 两条会话同时做 AUTH reconciliation，各自产出一条完整

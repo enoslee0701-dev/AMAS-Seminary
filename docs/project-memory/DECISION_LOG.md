@@ -5,6 +5,83 @@
 
 ---
 
+## D-36｜DB-6 先于 DB-4 —— 顺序调整，不是并行开发
+
+```
+日期     2026-09-07
+状态     APPROVED（Supervisor 批准）
+阶段     RB-01
+```
+
+**决策**：迁移执行顺序调整为
+`DB-6 课程 → DB-4 身份（待 staging Supabase）→ DB-5 角色及其余身份相关阶段`。
+DB-4 记为 `DB-4 IMPLEMENTATION PREREQUISITE = STAGING SUPABASE REQUIRED`，
+性质是 **`BLOCKED_BY_EXTERNAL_ENV`，不是失败**。
+
+**理由**：课程迁移不依赖 user identity，67↔67 canonical 映射已完全确认；
+让整条迁移链卡在一个外部环境依赖上没有收益。
+
+**如何应用**：这是**顺序调整**，不是并行。仍然遵守 D-16 ——
+同一时刻只有一条 active implementation lineage。
+
+---
+
+## D-35｜疑似真实身份必须确定性或人工验证
+
+```
+日期     2026-09-07
+状态     APPROVED（Supervisor 裁定）
+阶段     RB-01 / DB-4 前置
+```
+
+**决策**：`estherzh0528@gmail.com` 状态为
+`POTENTIAL_REAL_USER` / `IDENTITY_VERIFICATION_REQUIRED`。
+
+**禁止 `same email -> silently mapped`。** 必须在真实 staging Supabase 中检查：
+
+1. 是否已有 Supabase Auth account；
+2. 是否已有 canonical `profiles.id`；
+3. 是否有 AUTH-M5/M6 确定性映射证据；
+4. 是否存在冲突账号；
+5. 能否确定旧 SQLite 用户与 canonical identity 为同一个人。
+
+映射结论只允许四种：
+`VERIFIED_EXISTING_IDENTITY` · `PROVISIONED_NEW_IDENTITY` ·
+`MANUAL_REVIEW_REQUIRED` · `CONFLICT`。
+**仅邮箱相同 → `MANUAL_REVIEW_REQUIRED`**，不得自动放行。
+
+**理由**：邮箱可复用、可转让、可被他人注册。仅凭邮箱相同就合并身份，
+一旦错了就是把一个人的学习档案交给另一个人。
+
+---
+
+## D-34｜Legacy 测试账号不进入 Production 身份群体
+
+```
+日期     2026-09-07
+状态     APPROVED（Supervisor 裁定）
+阶段     RB-01 / DB-4 前置
+```
+
+**决策**：6 个 legacy identity（3×`@amas.test` + 3×`@amas.local`）正式定义为
+`TEST FIXTURE` / `DO NOT MIGRATE TO PRODUCTION`。
+
+**禁止**为它们：创建 Production Supabase Auth 用户 · 创建 Production `profiles` ·
+写 Production `user_roles` · 迁移成正式 student/person ·
+**为了让 migration count 对齐而制造假用户**。
+
+它们在迁移账本中只保留 `SKIPPED_TEST_ACCOUNT` 作为 audit evidence。
+
+**Staging 测试身份政策**：staging 若需要测试身份，应**重新创建**
+`STAGING-ONLY TEST FIXTURES`，要求：明确 test 标识 · 与 Production population 分离 ·
+可重复创建/销毁 · 不继承旧 SQLite 测试账号的正式迁移身份 ·
+不进入 Production migration manifest。
+
+**理由**：为不存在的人创建生产账号本身就是造假数据（R-7）；
+迁移计数对齐不是制造用户的理由。
+
+---
+
 ## D-33｜目标版本验证不可用「理论兼容」替代
 
 ```
