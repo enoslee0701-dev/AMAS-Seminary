@@ -1,0 +1,108 @@
+{
+  "$comment": [
+    "AUTH-M6 · 显式测试数据清理清单。",
+    "",
+    "★ 只允许按**确定性标识**（具体 row id / 账号 email）清理。",
+    "  严禁按 orphan 猜、按房间不存在就全删、按内容模式猜、按邮箱前缀猜。",
+    "  每一条都必须写明可核实的证据（evidence），供人工复核。",
+    "",
+    "★ 本清单解决的是「测试数据本来就不应该进入正式数据集」。",
+    "  它与工程规则 R-10（真实历史主体消失后怎么办）是两个不同问题，",
+    "  R-10 不因本清单而改变。"
+  ],
+  "version": 1,
+  "updated_at": "2026-09-03",
+
+  "prayer_shares": [
+    {
+      "id": "ac06bdcf6d62b1f150",
+      "classification": "explicit_disposable_fixture",
+      "origin": "SEC-2 negative test",
+      "evidence": [
+        "text = 「写入不存在的房间」——该负向用例的固定断言文案",
+        "room_id = 'no_such_room_9x'，该房间在 rooms 表中不存在（故意构造）",
+        "作者 UUID 17907e6f-48b8-40db-8750-d1b8be64512f 不存在于 users 表"
+      ],
+      "action": "正式迁移时按此 id 删除，不进入生产历史",
+      "must_not": "不得计入 historical tombstone；不得因『看起来像测试』而扩大删除范围"
+    },
+    {
+      "id": "14ac1aea70639211c5",
+      "classification": "explicit_disposable_fixture",
+      "origin": "SEC-2 negative test",
+      "evidence": [
+        "text = 「写入不存在的房间」——该负向用例的固定断言文案",
+        "room_id = 'no_such_room_9x'，该房间在 rooms 表中不存在（故意构造）",
+        "作者 UUID 728c6df5-88c2-490e-a5c9-a9257c33e259 不存在于 users 表"
+      ],
+      "action": "正式迁移时按此 id 删除，不进入生产历史",
+      "must_not": "不得计入 historical tombstone；不得因『看起来像测试』而扩大删除范围"
+    }
+  ],
+
+  "accounts": [
+    {
+      "email": "s1780377335744@amas.test",
+      "classification": "explicit_test_account",
+      "evidence": ["@amas.test 域的自动化注册产物；无任何真实内容关联"]
+    },
+    {
+      "email": "s1780377880150@amas.test",
+      "classification": "explicit_test_account",
+      "evidence": ["同上"]
+    },
+    {
+      "email": "s1780377952749@amas.test",
+      "classification": "explicit_test_account",
+      "evidence": ["同上"]
+    },
+    {
+      "email": "sec2_a_17884084639119eka@amas.local",
+      "classification": "explicit_test_account",
+      "evidence": ["SEC-2 房间授权测试 fixture"]
+    },
+    {
+      "email": "sec2_b_1788408463981p4mn@amas.local",
+      "classification": "explicit_test_account",
+      "evidence": ["SEC-2 房间授权测试 fixture"]
+    },
+    {
+      "email": "sec2_c_1788408464022tn2z@amas.local",
+      "classification": "explicit_test_account",
+      "evidence": ["SEC-2 房间授权测试 fixture"]
+    },
+    {
+      "email": "p4_17884156045797ehq@amas.local",
+      "classification": "explicit_test_account",
+      "evidence": [
+        "祷告室 Phase 4 语音测试 fixture",
+        "2026-09-03T06:06:44 与另外三个账号在同一毫秒批量创建",
+        "display_name = 「语音房主」，四个固定角色之一",
+        "除 refresh_jti（可丢弃会话产物）外零关联数据"
+      ]
+    },
+    {
+      "email": "p4_17884156046633kfc@amas.local",
+      "classification": "explicit_test_account",
+      "evidence": ["同上；display_name = 「语音版主」"]
+    },
+    {
+      "email": "p4_1788415604708tgcj@amas.local",
+      "classification": "explicit_test_account",
+      "evidence": ["同上；display_name = 「语音成员」"]
+    },
+    {
+      "email": "p4_1788415604752nk32@amas.local",
+      "classification": "explicit_test_account",
+      "evidence": ["同上；display_name = 「语音外人」"]
+    }
+  ],
+
+  "real_accounts": [
+    {
+      "email": "estherzh0528@gmail.com",
+      "classification": "real_account",
+      "note": "已在 Supabase provision 并建立 1:1 mapping；凭据须由本人经恢复流程建立（AUTH-M6.5）"
+    }
+  ]
+}

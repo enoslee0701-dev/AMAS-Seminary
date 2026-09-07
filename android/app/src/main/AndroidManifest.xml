@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme">
+
+        <activity
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
+            android:name=".MainActivity"
+            android:label="@string/title_activity_main"
+            android:theme="@style/AppTheme.NoActionBarLaunch"
+            android:launchMode="singleTask"
+            android:exported="true">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- D-AUTH-R3 · AMAS canonical recovery deep link
+                 amas-seminary://auth/recovery
+
+                 ★ 精确限定 scheme + host + path：
+                   用 android:path（**精确**），不用 pathPrefix ——
+                   前缀会让 /recovery-anything 也命中，违背"recovery route 精确匹配"。
+                 ★ custom scheme 不是身份认证本身：它只把用户带回 App，
+                   真正的 recovery credential 由 Supabase 验证，
+                   最终 finalization 由 AMAS Edge 的原子 claim 保证最多执行一次。
+                 ★ autoVerify=false：custom scheme 无需 App Links 验证。
+                   将来有正式域名后可**另加**一条 https 的 autoVerify=true 规则并存，
+                   而不是替换本条。 -->
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="amas-seminary"
+                    android:host="auth"
+                    android:path="/recovery" />
+            </intent-filter>
+
+        </activity>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths"></meta-data>
+        </provider>
+    </application>
+
+    <!-- Permissions -->
+
+    <uses-permission android:name="android.permission.INTERNET" />
+</manifest>

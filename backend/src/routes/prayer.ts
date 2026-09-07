@@ -42,11 +42,11 @@ const stmtUserProfile = db.prepare<[string], { name: string; avatar: string | nu
 
 // ---- 分享 ----
 interface ShareRow {
-  id: string; user_id: string; text: string; is_anonymous: number; created_at: number;
+  id: string; user_id: string | null; author_state: string; text: string; is_anonymous: number; created_at: number;
   hidden_at: number | null; hidden_reason: string | null;
 }
 const stmtShares = db.prepare<[string, number], ShareRow>(
-  `SELECT id, user_id, text, is_anonymous, created_at, hidden_at, hidden_reason
+  `SELECT id, user_id, author_state, text, is_anonymous, created_at, hidden_at, hidden_reason
    FROM prayer_shares WHERE room_id = ? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT ?`,
 );
 const stmtInsertShare = db.prepare<[string, string, string, string, number, number, string | null]>(
@@ -76,7 +76,7 @@ const stmtReportsOfRoom = db.prepare<[string], {
   FROM prayer_share_reports rp JOIN prayer_shares s ON s.id = rp.share_id
   WHERE s.room_id = ? ORDER BY rp.created_at DESC LIMIT 100
 `);
-const stmtGetShare = db.prepare<[string], { id: string; room_id: string; user_id: string }>(
+const stmtGetShare = db.prepare<[string], { id: string; room_id: string; user_id: string | null }>(
   'SELECT id, room_id, user_id FROM prayer_shares WHERE id = ? AND deleted_at IS NULL LIMIT 1',
 );
 const stmtSoftDelete = db.prepare<[number, string]>('UPDATE prayer_shares SET deleted_at = ? WHERE id = ?');
@@ -140,6 +140,8 @@ export function registerPrayerRoutes(app: Express): void {
         id: s.id,
         // 匿名分享不向任何人暴露 user_id——包括 moderator 与房主
         userId: s.is_anonymous ? null : s.user_id,
+        // 作者已注销与作者主动匿名是两回事，前端必须能区分（D-AUTH-1 第 4/5 条）
+        authorState: s.author_state,
         isAnonymous: Boolean(s.is_anonymous),
         isMine,
         text,
