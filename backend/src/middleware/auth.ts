@@ -5,7 +5,7 @@ import {
   isSupabaseConfigured, looksLikeSupabaseToken, verifySupabaseAccess,
   fetchActiveRoles, isAdminRole,
 } from '../auth/supabase.js';
-import { verifyAccess, type AccessPayload } from '../auth/jwt.js';
+import type { AccessPayload } from '../auth/jwt.js';
 import { findById, toPublicUser, type PublicUser } from '../auth/users.js';
 import { resolveCanonicalUserFromSupabase } from '../auth/identity.js';
 
@@ -206,31 +206,15 @@ export async function requireAuth(
     return;
   }
 
-  // 3) Legacy 自签 token（AUTH-M7 删除；可用 AUTH_ACCEPT_LEGACY=false 提前演练）
-  if (!config.supabase.acceptLegacy) {
-    res.status(401).json({ error: 'Legacy tokens are no longer accepted.' });
-    return;
-  }
-  try {
-    const payload = await verifyAccess(presented);
-    const user = findById(payload.sub);
-    if (!user) {
-      res.status(401).json({ error: 'User no longer exists.' });
-      return;
-    }
-    // legacy 自签 token：认证身份与业务身份本来就是同一个 SQLite id。
-    req.principal = {
-      kind: 'user',
-      authSource: 'legacy',
-      authId: user.id,
-      user: toPublicUser(user),
-      payload,
-    };
-    next();
-    return;
-  } catch {
-    res.status(401).json({ error: 'Invalid bearer token.' });
-  }
+  // AUTH-M7（2026-09-07）：legacy 自签 user token 路径已**删除**，不是"默认关闭"。
+  //
+  // 曾经这里是第 3 级：verifyAccess() 校验后端自签的 HS256 token，
+  // 铸出 authSource:'legacy' 的 principal。它是迁移期的双轨兼容，
+  // 现已随注册/登录/刷新端点一并移除 —— Supabase Auth 是唯一 user 认证来源。
+  //
+  // 走到这里说明：token 既不是 APP_SECRET，也不是本 issuer 签发的 Supabase token。
+  // 一律 401，**绝不**回退到任何其他验签方式。
+  res.status(401).json({ error: 'Invalid bearer token.' });
 }
 
 /**

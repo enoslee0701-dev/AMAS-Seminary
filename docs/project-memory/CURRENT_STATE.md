@@ -72,8 +72,9 @@ d8abbd6  P0(其它房间): 拆掉赞美室假播放、举手脚本与四处不�
 ## 测试基线（2026-09-04 实测，非引用）
 
 ```
-frontend tests                PASS 181  FAIL 0  SKIP 0   (20 files)  ← 2026-09-07 canonical
-backend test:local            PASS 142  FAIL 0  SKIP 0   ← 2026-09-07 canonical
+frontend tests                PASS 181  FAIL 0  SKIP 0   (20 files)  ← 2026-09-07 AUTH-M7
+backend test:local            PASS 138  FAIL 0  SKIP 0   ← 2026-09-07 AUTH-M7
+                              （103->96：删 7 项对已移除端点的测试；+3 项 M7 否定式）
 backend test:external         PASS   0  FAIL 0  SKIP 6   ← BLOCKED_BY_ENV（缺 AMAS_ENV）
 
 room presence E2E              54/54

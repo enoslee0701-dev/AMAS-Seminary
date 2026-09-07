@@ -14,15 +14,25 @@ import net from 'node:net';
 import { spawn, type ChildProcess } from 'node:child_process';
 import path from 'node:path';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import Database from 'better-sqlite3';
 import { fileURLToPath } from 'node:url';
 import { WebSocket } from 'ws';
+import { SignJWT } from 'jose';
+import {
+  startFakeSupabase, provisionUser,
+  type FakeSupabase, type ProvisionedUser,
+} from './helpers/supabaseHarness.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const BACKEND_ROOT = path.resolve(__dirname, '../..');
 
 const APP_SECRET = 'test-secret';
+
+// AUTH-M7：后端不再提供注册/登录端点，fixture 用户改由本地假 Supabase 铸造。
+// 这不是 mock —— 真 ES256 密钥对、真 JWKS 端点、真验签，后端跑 100%% 生产路径。
+let fakeSb: FakeSupabase;
 const AUTH_HEADERS = { authorization: `Bearer ${APP_SECRET}` };
 
 /** 本次 run 专用的一次性数据库。绝不复用，绝不留下。 */
@@ -152,6 +162,7 @@ async function waitForReady(timeoutMs = 10_000): Promise<void> {
 }
 
 before(async () => {
+  fakeSb = await startFakeSupabase();
   port = await pickFreePort();
   baseUrl = `http://127.0.0.1:${port}`;
 
@@ -176,6 +187,9 @@ before(async () => {
     // 换成文件不会带来跨轮次污染：路径含本次 run 的随机后缀，
     // before() 里先删干净，after() 里再删一次。
     DB_PATH: TEST_DB_PATH,
+    // AUTH-M7：指向本地假 Supabase。后端仍走真实 JWKS + ES256 验签路径。
+    SUPABASE_URL: fakeSb.origin,
+    SUPABASE_SERVICE_ROLE_KEY: "test-service-role-key",
   };
 
   rmTestDb();
@@ -208,6 +222,7 @@ before(async () => {
 });
 
 after(async () => {
+  if (fakeSb) await fakeSb.stop();
   if (serverProcess && !serverProcess.killed) {
     serverProcess.kill('SIGTERM');
     // give it a moment to die; force-kill if needed
@@ -349,136 +364,89 @@ test('POST /api/rooms/validate 400 when roomId missing', async () => {
 // each test uses a unique email so they don't collide with each other.
 // ---------------------------------------------------------------------------
 
-interface AuthTokens {
-  user: { id: string; email: string; name: string; role: string };
-  accessToken: string;
-  refreshToken: string;
+/**
+ * AUTH-M7 fixture：直接播种 canonical 用户 + 身份映射并签发 Supabase token。
+ * 返回形状与原 fixture 兼容（user + accessToken），因此绝大多数调用点无需改动
+ * —— 换的是**来源**，不是**用法**。refreshToken 不再存在：会话刷新由 Supabase
+ * 客户端 SDK 负责，后端不再签发任何 user token。
+ */
+async function newUser(email: string, name: string, role = 'student'): Promise<ProvisionedUser> {
+  return provisionUser(TEST_DB_PATH, fakeSb, { email, name, role });
 }
 
-test('POST /api/auth/register happy path returns user and tokens', async () => {
-  const r = await request('POST', '/api/auth/register', {
-    email: 'alice@example.com',
-    password: 'goodpassword1',
-    name: 'Alice',
-  });
-  assert.equal(r.status, 200, `expected 200, got ${r.status} body=${r.body}`);
-  const body = r.json<AuthTokens>();
-  assert.equal(body.user.email, 'alice@example.com');
-  assert.equal(body.user.name, 'Alice');
-  assert.equal(typeof body.accessToken, 'string');
-  assert.equal(typeof body.refreshToken, 'string');
-  assert.equal(body.accessToken.split('.').length, 3, 'access token should be a JWT');
-  assert.equal(body.refreshToken.split('.').length, 3, 'refresh token should be a JWT');
-});
+/*
+ * AUTH-M7（2026-09-07）：以下 7 项测试已删除，理由记录在此。
+ *
+ *   POST /api/auth/register  happy path / duplicate email 409 / weak password 400
+ *   POST /api/auth/login     correct password 200 / wrong password 401
+ *   POST /api/auth/refresh   issues new tokens / after logout 401
+ *
+ * 它们测试的是**已经不存在的 active production behavior** —— 后端不再自签
+ * user token，注册 / 登录 / 会话刷新全部由 Supabase Auth 负责，对应端点已移除。
+ *
+ * 这不是"删测试换绿灯"：被删的是对已删功能的断言。等价的安全保证由
+ * `auth-m7-identity.test.ts` 承担（伪造签名 401、过期 401、issuer 不符 401、
+ * 无映射 403、token 自称 admin 无效等 19 项），覆盖面比原来更强。
+ *
+ * 其余把注册当 fixture 的测试没有删除，改为直接播种 canonical 用户 +
+ * 身份映射并签发真实可验证的 Supabase token（见 newUser / supabaseHarness）。
+ */
 
-test('POST /api/auth/register duplicate email returns 409', async () => {
-  // First registration succeeds.
-  const r1 = await request('POST', '/api/auth/register', {
-    email: 'dup@example.com',
-    password: 'goodpassword1',
-    name: 'Dup',
-  });
-  assert.equal(r1.status, 200);
-  // Second registration with same email -> 409.
-  const r2 = await request('POST', '/api/auth/register', {
-    email: 'dup@example.com',
-    password: 'anotherpassword',
-    name: 'Dup2',
-  });
-  assert.equal(r2.status, 409, `expected 409, got ${r2.status} body=${r2.body}`);
-});
+// ---------------------------------------------------------------------------
+// AUTH-M7 · legacy 认证已删除的直接证明
+// ---------------------------------------------------------------------------
 
-test('POST /api/auth/register weak password returns 400', async () => {
-  const r = await request('POST', '/api/auth/register', {
-    email: 'weak@example.com',
-    password: 'short',
-    name: 'Weak',
-  });
-  assert.equal(r.status, 400, `expected 400, got ${r.status} body=${r.body}`);
-});
-
-test('POST /api/auth/login with correct password returns 200 + tokens', async () => {
-  // Register first.
-  const reg = await request('POST', '/api/auth/register', {
-    email: 'bob@example.com',
-    password: 'goodpassword1',
-    name: 'Bob',
-  });
-  assert.equal(reg.status, 200);
-  // Then login.
-  const r = await request('POST', '/api/auth/login', {
-    email: 'bob@example.com',
-    password: 'goodpassword1',
-  });
-  assert.equal(r.status, 200, `expected 200, got ${r.status} body=${r.body}`);
-  const body = r.json<AuthTokens>();
-  assert.equal(body.user.email, 'bob@example.com');
-  assert.equal(typeof body.accessToken, 'string');
-  assert.equal(typeof body.refreshToken, 'string');
-});
-
-test('POST /api/auth/login with wrong password returns 401', async () => {
-  await request('POST', '/api/auth/register', {
-    email: 'carol@example.com',
-    password: 'goodpassword1',
-    name: 'Carol',
-  });
-  const r = await request('POST', '/api/auth/login', {
-    email: 'carol@example.com',
-    password: 'wrongpassword!',
-  });
-  assert.equal(r.status, 401, `expected 401, got ${r.status} body=${r.body}`);
-});
-
-test('POST /api/auth/refresh issues new tokens', async () => {
-  const reg = await request('POST', '/api/auth/register', {
-    email: 'dave@example.com',
-    password: 'goodpassword1',
-    name: 'Dave',
-  });
-  assert.equal(reg.status, 200);
-  const original = reg.json<AuthTokens>();
-  const r = await request('POST', '/api/auth/refresh', {
-    refreshToken: original.refreshToken,
-  });
-  assert.equal(r.status, 200, `expected 200, got ${r.status} body=${r.body}`);
-  const body = r.json<{ accessToken: string; refreshToken: string }>();
-  assert.equal(typeof body.accessToken, 'string');
-  assert.equal(typeof body.refreshToken, 'string');
-  assert.notEqual(body.refreshToken, original.refreshToken, 'refresh token should rotate');
-});
-
-test('POST /api/auth/refresh after logout returns 401', async () => {
-  const reg = await request('POST', '/api/auth/register', {
-    email: 'eve@example.com',
-    password: 'goodpassword1',
-    name: 'Eve',
-  });
-  assert.equal(reg.status, 200);
-  const tokens = reg.json<AuthTokens>();
-  // Logout revokes the refresh jti.
-  const logout = await request(
-    'POST',
-    '/api/auth/logout',
-    { refreshToken: tokens.refreshToken },
-    { authorization: `Bearer ${tokens.accessToken}` },
+test('AUTH-M7 · legacy 自签 HS256 token 被拒（401，且绝不回退验签）', async () => {
+  // 完全按旧实现的方式签一张 legacy access token：HS256 + JWT_SECRET
+  // （测试环境 JWT_SECRET 由 APP_SECRET 派生，与后端一致）。
+  // AUTH-M7 之前它会被 verifyAccess 接受并铸出 authSource:'legacy' 的 principal。
+  const secret = new TextEncoder().encode(
+    crypto.createHash('sha256').update('amas-jwt:' + APP_SECRET).digest('hex'),
   );
-  assert.equal(logout.status, 200, `expected 200, got ${logout.status} body=${logout.body}`);
-  // Now refresh should fail.
-  const r = await request('POST', '/api/auth/refresh', {
-    refreshToken: tokens.refreshToken,
-  });
-  assert.equal(r.status, 401, `expected 401, got ${r.status} body=${r.body}`);
+  const legacy = await new SignJWT({ email: 'legacy@example.com', role: 'student', type: 'access' })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuedAt()
+    .setSubject(crypto.randomUUID())
+    .setExpirationTime('10m')
+    .sign(secret);
+
+  const r = await request('GET', '/api/auth/me', undefined, { authorization: `Bearer ${legacy}` });
+  assert.equal(r.status, 401, `legacy token 必须被拒，实际 ${r.status} body=${r.body}`);
 });
+
+test('AUTH-M7 · 已移除的端点一律 404', async () => {
+  // 这些端点的能力已整体移交 Supabase Auth，后端不再提供。
+  for (const [method, path] of [
+    ['POST', '/api/auth/register'],
+    ['POST', '/api/auth/login'],
+    ['POST', '/api/auth/refresh'],
+    ['POST', '/api/auth/change-password'],
+    ['POST', '/api/auth/logout'],
+  ] as const) {
+    const r = await request(method, path, { email: 'x@y.z', password: 'whatever12' });
+    assert.equal(r.status, 404, `${method} ${path} 应为 404，实际 ${r.status}`);
+  }
+});
+
+test('AUTH-M7 · 畸形 bearer 被拒（401）', async () => {
+  for (const bad of ['Bearer', 'Bearer ', 'Bearer not-a-jwt', 'Basic abc', 'Bearer a.b.c']) {
+    const r = await request('GET', '/api/auth/me', undefined, { authorization: bad });
+    assert.equal(r.status, 401, `畸形 bearer "${bad}" 应为 401，实际 ${r.status}`);
+  }
+});
+
+// AUTH-M7：原 AuthTokens 接口已删除 —— 后端不再签发 accessToken/refreshToken。
+// fixture 统一用 ProvisionedUser（见 helpers/supabaseHarness.ts）。
+
+
+
+
+
+
+
 
 test('GET /api/auth/me with valid access token returns user', async () => {
-  const reg = await request('POST', '/api/auth/register', {
-    email: 'frank@example.com',
-    password: 'goodpassword1',
-    name: 'Frank',
-  });
-  assert.equal(reg.status, 200);
-  const tokens = reg.json<AuthTokens>();
+  const tokens = await newUser('frank@example.com', 'Frank');
   const r = await request(
     'GET',
     '/api/auth/me',
@@ -502,13 +470,7 @@ test('PATCH /api/auth/me without auth returns 401', async () => {
 });
 
 test('PATCH /api/auth/me with valid token updates name', async () => {
-  const reg = await request('POST', '/api/auth/register', {
-    email: 'patch-name@example.com',
-    password: 'goodpassword1',
-    name: 'BeforePatch',
-  });
-  assert.equal(reg.status, 200);
-  const tokens = reg.json<AuthTokens>();
+  const tokens = await newUser('patch-name@example.com', 'BeforePatch');
   const r = await request(
     'PATCH',
     '/api/auth/me',
@@ -523,13 +485,7 @@ test('PATCH /api/auth/me with valid token updates name', async () => {
 });
 
 test('GET /api/auth/me after PATCH reflects the new value', async () => {
-  const reg = await request('POST', '/api/auth/register', {
-    email: 'patch-readback@example.com',
-    password: 'goodpassword1',
-    name: 'OldName',
-  });
-  assert.equal(reg.status, 200);
-  const tokens = reg.json<AuthTokens>();
+  const tokens = await newUser('patch-readback@example.com', 'OldName');
   const patch = await request(
     'PATCH',
     '/api/auth/me',
@@ -546,13 +502,7 @@ test('GET /api/auth/me after PATCH reflects the new value', async () => {
 });
 
 test('PATCH /api/auth/me with empty name returns 400', async () => {
-  const reg = await request('POST', '/api/auth/register', {
-    email: 'patch-invalid@example.com',
-    password: 'goodpassword1',
-    name: 'KeepThis',
-  });
-  assert.equal(reg.status, 200);
-  const tokens = reg.json<AuthTokens>();
+  const tokens = await newUser('patch-invalid@example.com', 'KeepThis');
   const r = await request(
     'PATCH',
     '/api/auth/me',
@@ -605,13 +555,7 @@ test('GET /api/cooperation without auth returns 401', async () => {
 });
 
 test('GET /api/cooperation as non-admin returns 403', async () => {
-  const reg = await request('POST', '/api/auth/register', {
-    email: 'coop-student@example.com',
-    password: 'goodpassword1',
-    name: 'CoopStudent',
-  });
-  assert.equal(reg.status, 200);
-  const tokens = reg.json<AuthTokens>();
+  const tokens = await newUser('coop-student@example.com', 'CoopStudent');
   const r = await request('GET', '/api/cooperation', undefined, {
     authorization: `Bearer ${tokens.accessToken}`,
   });
@@ -645,13 +589,7 @@ test('POST /api/posts without auth returns 401', async () => {
 });
 
 test('POST /api/posts creates a post for the authed user', async () => {
-  const reg = await request('POST', '/api/auth/register', {
-    email: 'poster1@example.com',
-    password: 'goodpassword1',
-    name: 'Poster1',
-  });
-  assert.equal(reg.status, 200);
-  const tokens = reg.json<AuthTokens>();
+  const tokens = await newUser('poster1@example.com', 'Poster1');
   const r = await request('POST', '/api/posts', {
     content: 'My first post',
     category: '神学讨论',
@@ -672,12 +610,7 @@ test('POST /api/posts creates a post for the authed user', async () => {
 
 test('DELETE /api/posts/:id by non-author returns 403', async () => {
   // Author creates a post.
-  const aReg = await request('POST', '/api/auth/register', {
-    email: 'author-a@example.com',
-    password: 'goodpassword1',
-    name: 'AuthorA',
-  });
-  const aTokens = aReg.json<AuthTokens>();
+  const aTokens = await newUser('author-a@example.com', 'AuthorA');
   const create = await request('POST', '/api/posts', {
     content: 'a post',
     category: 'general',
@@ -686,12 +619,7 @@ test('DELETE /api/posts/:id by non-author returns 403', async () => {
   const post = create.json<{ id: string }>();
 
   // A different user tries to delete it.
-  const bReg = await request('POST', '/api/auth/register', {
-    email: 'other-b@example.com',
-    password: 'goodpassword1',
-    name: 'OtherB',
-  });
-  const bTokens = bReg.json<AuthTokens>();
+  const bTokens = await newUser('other-b@example.com', 'OtherB');
   const del = await request('DELETE', `/api/posts/${post.id}`, undefined, {
     authorization: `Bearer ${bTokens.accessToken}`,
   });
@@ -699,12 +627,7 @@ test('DELETE /api/posts/:id by non-author returns 403', async () => {
 });
 
 test('DELETE /api/posts/:id by author returns 200', async () => {
-  const reg = await request('POST', '/api/auth/register', {
-    email: 'author-c@example.com',
-    password: 'goodpassword1',
-    name: 'AuthorC',
-  });
-  const tokens = reg.json<AuthTokens>();
+  const tokens = await newUser('author-c@example.com', 'AuthorC');
   const create = await request('POST', '/api/posts', {
     content: 'to be deleted',
     category: 'general',
@@ -718,12 +641,7 @@ test('DELETE /api/posts/:id by author returns 200', async () => {
 });
 
 test('POST /api/posts/:id/like toggles like for the caller', async () => {
-  const reg = await request('POST', '/api/auth/register', {
-    email: 'liker@example.com',
-    password: 'goodpassword1',
-    name: 'Liker',
-  });
-  const tokens = reg.json<AuthTokens>();
+  const tokens = await newUser('liker@example.com', 'Liker');
   const create = await request('POST', '/api/posts', {
     content: 'likeable',
     category: 'general',
@@ -761,12 +679,7 @@ test('GET /api/announcements is public and returns an array', async () => {
 });
 
 test('POST /api/announcements as student returns 403', async () => {
-  const reg = await request('POST', '/api/auth/register', {
-    email: 'student-ann@example.com',
-    password: 'goodpassword1',
-    name: 'StudentAnn',
-  });
-  const tokens = reg.json<AuthTokens>();
+  const tokens = await newUser('student-ann@example.com', 'StudentAnn');
   const r = await request('POST', '/api/announcements', {
     title: 'should-fail',
     content: 'nope',
@@ -777,23 +690,10 @@ test('POST /api/announcements as student returns 403', async () => {
 test('POST /api/announcements as admin (seeded) returns 200', async () => {
   // 直接给 fixture 数据库播种管理员。曾经这里调用 POST /api/auth/_promote，
   // 那个端点已被移除——见 routes/auth.ts 的说明。
-  const reg = await request('POST', '/api/auth/register', {
-    email: 'admin-ann@example.com',
-    password: 'goodpassword1',
-    name: 'AdminAnn',
-  });
-  assert.equal(reg.status, 200);
-  const tokens = reg.json<AuthTokens>();
-  seedAdminInFixtureDb(tokens.user.id);
-  // Re-login to get a new access token that carries role=admin in its claims.
-  // (Our requireAdmin re-reads role from the user store, so the existing
-  // token would also work — but a fresh login mirrors a real admin flow.)
-  const login = await request('POST', '/api/auth/login', {
-    email: 'admin-ann@example.com',
-    password: 'goodpassword1',
-  });
-  assert.equal(login.status, 200);
-  const adminTokens = login.json<AuthTokens>();
+  // AUTH-M7：直接铸造 admin —— canonical 用户 role=admin，且假 Supabase 的
+  // user_roles 也返回 admin。requireAdmin 走的是真实的"按 authId 现查角色"路径。
+  const adminTokens = await newUser('admin-ann@example.com', 'AdminAnn', 'admin');
+  seedAdminInFixtureDb(adminTokens.user.id);
   assert.equal(adminTokens.user.role, 'admin');
 
   const r = await request('POST', '/api/announcements', {
@@ -822,29 +722,26 @@ test('POST /api/announcements as admin (seeded) returns 200', async () => {
 // ---------------------------------------------------------------------------
 
 test('POST /api/auth/_promote 已移除：带 APP_SECRET 也返回 404', async () => {
-  const reg = await request('POST', '/api/auth/register', {
-    email: 'promote-gone@example.com', password: 'goodpassword1', name: 'PromoteGone',
-  });
-  assert.equal(reg.status, 200);
-  const victim = reg.json<AuthTokens>();
+  const victim = await newUser('promote-gone@example.com', 'PromoteGone');
 
   // 用最高凭据去打：service token。端点不存在就是不存在。
   const r = await request('POST', '/api/auth/_promote', { userId: victim.user.id }, AUTH_HEADERS);
   assert.equal(r.status, 404, `expected 404, got ${r.status} body=${r.body}`);
 
-  // 更要紧的是：该账号确实没有被提权
-  const login = await request('POST', '/api/auth/login', {
-    email: 'promote-gone@example.com', password: 'goodpassword1',
-  });
-  assert.equal(login.status, 200);
-  assert.equal(login.json<AuthTokens>().user.role, 'student');
+  // 更要紧的是：该账号确实没有被提权。
+  // AUTH-M7：不再有登录端点可用来复核，改为直接查 fixture 库 ——
+  // 这比经 HTTP 更直接，也排除了"端点返回了缓存角色"这种假阴性。
+  const d = new Database(TEST_DB_PATH);
+  try {
+    const row = d.prepare('SELECT role FROM users WHERE id = ?').get(victim.user.id) as { role: string } | undefined;
+    assert.equal(row?.role, 'student', '账号不得被提权');
+  } finally {
+    d.close();
+  }
 });
 
 test('普通用户仍然无法访问 admin 端点（403）', async () => {
-  const reg = await request('POST', '/api/auth/register', {
-    email: 'plain-user@example.com', password: 'goodpassword1', name: 'PlainUser',
-  });
-  const t = reg.json<AuthTokens>();
+  const t = await newUser('plain-user@example.com', 'PlainUser');
   const r = await request('POST', '/api/announcements',
     { title: 'nope', content: 'nope', type: 'important' },
     { authorization: `Bearer ${t.accessToken}` });
@@ -865,13 +762,7 @@ test('GET /api/courses returns array (initially)', async () => {
 });
 
 test('POST /api/courses as student returns 403', async () => {
-  const reg = await request('POST', '/api/auth/register', {
-    email: 'student-courses@example.com',
-    password: 'goodpassword1',
-    name: 'StudentCourses',
-  });
-  assert.equal(reg.status, 200);
-  const tokens = reg.json<AuthTokens>();
+  const tokens = await newUser('student-courses@example.com', 'StudentCourses');
   const r = await request('POST', '/api/courses', {
     title: 'X', instructor: 'Y', category: '系统神学', level: 'B.Th',
     thumbnail: '', totalLessons: 10,
@@ -951,13 +842,7 @@ test('POST /api/courses/:id/progress as authed user saves progress', async () =>
   const { id: courseId } = create.json<{ id: string }>();
 
   // Register a student.
-  const reg = await request('POST', '/api/auth/register', {
-    email: 'progress-user-1@example.com',
-    password: 'goodpassword1',
-    name: 'ProgressUser1',
-  });
-  assert.equal(reg.status, 200);
-  const tokens = reg.json<AuthTokens>();
+  const tokens = await newUser('progress-user-1@example.com', 'ProgressUser1');
 
   const r = await request('POST', `/api/courses/${courseId}/progress`, {
     progress: 42,
@@ -981,12 +866,7 @@ test('GET /api/courses/:id/progress returns the saved value for that user', asyn
   }, AUTH_HEADERS);
   const { id: courseId } = create.json<{ id: string }>();
 
-  const reg = await request('POST', '/api/auth/register', {
-    email: 'progress-user-2@example.com',
-    password: 'goodpassword1',
-    name: 'ProgressUser2',
-  });
-  const tokens = reg.json<AuthTokens>();
+  const tokens = await newUser('progress-user-2@example.com', 'ProgressUser2');
 
   await request('POST', `/api/courses/${courseId}/progress`, {
     progress: 75,
@@ -1015,24 +895,14 @@ test('GET /api/courses/:id/progress for a DIFFERENT user is independent', async 
   const { id: courseId } = create.json<{ id: string }>();
 
   // User A saves progress.
-  const regA = await request('POST', '/api/auth/register', {
-    email: 'multi-user-A@example.com',
-    password: 'goodpassword1',
-    name: 'MultiUserA',
-  });
-  const tokensA = regA.json<AuthTokens>();
+  const tokensA = await newUser('multi-user-A@example.com', 'MultiUserA');
   await request('POST', `/api/courses/${courseId}/progress`, {
     progress: 88,
     completedLessons: 9,
   }, { authorization: `Bearer ${tokensA.accessToken}` });
 
   // User B has not interacted with this course at all.
-  const regB = await request('POST', '/api/auth/register', {
-    email: 'multi-user-B@example.com',
-    password: 'goodpassword1',
-    name: 'MultiUserB',
-  });
-  const tokensB = regB.json<AuthTokens>();
+  const tokensB = await newUser('multi-user-B@example.com', 'MultiUserB');
 
   // User B sees zeros — not user A's 88.
   const rB = await request('GET', `/api/courses/${courseId}/progress`, undefined, {
@@ -1065,12 +935,7 @@ test('GET /api/courses/progress batch endpoint returns this user\'s progress map
   const id1 = c1.json<{ id: string }>().id;
   const id2 = c2.json<{ id: string }>().id;
 
-  const reg = await request('POST', '/api/auth/register', {
-    email: 'batch-progress@example.com',
-    password: 'goodpassword1',
-    name: 'BatchProgress',
-  });
-  const tokens = reg.json<AuthTokens>();
+  const tokens = await newUser('batch-progress@example.com', 'BatchProgress');
   await request('POST', `/api/courses/${id1}/progress`,
     { progress: 10, completedLessons: 1 },
     { authorization: `Bearer ${tokens.accessToken}` });
@@ -1096,14 +961,10 @@ test('GET /api/courses/progress batch endpoint returns this user\'s progress map
 // state in the in-memory store doesn't bleed across the scenarios.
 // ---------------------------------------------------------------------------
 
-async function registerFriendUser(prefix: string, suffix: string): Promise<AuthTokens> {
-  const r = await request('POST', '/api/auth/register', {
-    email: `${prefix}-${suffix}@example.com`,
-    password: 'goodpassword1',
-    name: `${prefix}-${suffix}`,
-  });
-  assert.equal(r.status, 200, `register failed: ${r.body}`);
-  return r.json<AuthTokens>();
+async function registerFriendUser(prefix: string, suffix: string): Promise<ProvisionedUser> {
+  // AUTH-M7：不再经 POST /api/auth/register（该端点已移除）。
+  // 直接播种 canonical 用户 + 身份映射并签发 Supabase token。
+  return newUser(`${prefix}-${suffix}@example.com`, `${prefix}-${suffix}`);
 }
 
 test('POST /api/friends/requests A->B returns 200', async () => {
@@ -1238,14 +1099,9 @@ test('DELETE /api/friends/:userId unfriends both sides', async () => {
 // so the in-memory token store doesn't bleed between scenarios.
 // ---------------------------------------------------------------------------
 
-async function registerPushUser(suffix: string): Promise<AuthTokens> {
-  const r = await request('POST', '/api/auth/register', {
-    email: `push-${suffix}@example.com`,
-    password: 'goodpassword1',
-    name: `Push-${suffix}`,
-  });
-  assert.equal(r.status, 200, `register failed: ${r.body}`);
-  return r.json<AuthTokens>();
+async function registerPushUser(suffix: string): Promise<ProvisionedUser> {
+  // AUTH-M7：同上，改为直接播种 + 签发。
+  return newUser(`push-${suffix}@example.com`, `Push-${suffix}`);
 }
 
 test('POST /api/push/register without auth returns 401', async () => {
@@ -1326,13 +1182,7 @@ test('POST /api/posts still succeeds when APNs is unconfigured (regression)', as
   // The fire-and-forget broadcast inside POST /api/posts must NEVER make
   // the response fail, even when APNs has no credentials (which is the
   // case for this entire test run).
-  const reg = await request('POST', '/api/auth/register', {
-    email: 'push-regression-post@example.com',
-    password: 'goodpassword1',
-    name: 'PushRegression',
-  });
-  assert.equal(reg.status, 200);
-  const tokens = reg.json<AuthTokens>();
+  const tokens = await newUser('push-regression-post@example.com', 'PushRegression');
   // Also register a fake iOS device so the broadcast has at least one
   // target to enumerate — exercises the "tokens present but no creds"
   // path which is where a wiring typo would most likely surface.
@@ -1355,13 +1205,7 @@ test('POST /api/announcements still succeeds when APNs is unconfigured (regressi
   // announcements.ts also fires broadcastToAllUsers fire-and-forget; the
   // create response must not fail when APNs has no credentials. Register a
   // user + iOS token first so the broadcast has a target to enumerate.
-  const reg = await request('POST', '/api/auth/register', {
-    email: 'push-regression-ann@example.com',
-    password: 'goodpassword1',
-    name: 'PushRegressionAnn',
-  });
-  assert.equal(reg.status, 200);
-  const tokens = reg.json<AuthTokens>();
+  const tokens = await newUser('push-regression-ann@example.com', 'PushRegressionAnn');
   const dev = await request('POST', '/api/push/register', {
     token: 'apns-token-ffffffffffffffff',
     platform: 'ios',
@@ -1543,13 +1387,7 @@ test('GET /api/library/books initially returns an array', async () => {
 });
 
 test('POST /api/library/books as student returns 403', async () => {
-  const reg = await request('POST', '/api/auth/register', {
-    email: 'student-library@example.com',
-    password: 'goodpassword1',
-    name: 'StudentLibrary',
-  });
-  assert.equal(reg.status, 200);
-  const tokens = reg.json<AuthTokens>();
+  const tokens = await newUser('student-library@example.com', 'StudentLibrary');
   const r = await request('POST', '/api/library/books', {
     title: 'X', author: 'Y', category: '神学藏书',
   }, { authorization: `Bearer ${tokens.accessToken}` });
@@ -1616,13 +1454,7 @@ test('POST /api/library/favorites/:id toggles on then off for the same user', as
   const { id: bookId } = create.json<{ id: string }>();
 
   // Register a user.
-  const reg = await request('POST', '/api/auth/register', {
-    email: 'library-fav@example.com',
-    password: 'goodpassword1',
-    name: 'LibraryFav',
-  });
-  assert.equal(reg.status, 200);
-  const tokens = reg.json<AuthTokens>();
+  const tokens = await newUser('library-fav@example.com', 'LibraryFav');
 
   // First call: favorited=true, count=1.
   const r1 = await request('POST', `/api/library/favorites/${bookId}`, undefined, {
@@ -1654,13 +1486,7 @@ test('GET /api/library/favorites returns the favorited book ids', async () => {
   const { id: bookId } = create.json<{ id: string }>();
 
   // Register a user.
-  const reg = await request('POST', '/api/auth/register', {
-    email: 'library-fav-list@example.com',
-    password: 'goodpassword1',
-    name: 'LibraryFavList',
-  });
-  assert.equal(reg.status, 200);
-  const tokens = reg.json<AuthTokens>();
+  const tokens = await newUser('library-fav-list@example.com', 'LibraryFavList');
 
   // Mark favorited.
   const fav = await request('POST', `/api/library/favorites/${bookId}`, undefined, {
@@ -1688,13 +1514,7 @@ test('GET /api/pt/state without auth returns 401', async () => {
 });
 
 test('PT state round-trip: empty → PUT → GET returns the same state', async () => {
-  const reg = await request('POST', '/api/auth/register', {
-    email: 'pt-sync@example.com',
-    password: 'goodpassword1',
-    name: 'PtSync',
-  });
-  assert.equal(reg.status, 200);
-  const tokens = reg.json<AuthTokens>();
+  const tokens = await newUser('pt-sync@example.com', 'PtSync');
   const auth = { authorization: `Bearer ${tokens.accessToken}` };
 
   // Fresh user → no row yet.
@@ -1726,29 +1546,17 @@ test('PT state round-trip: empty → PUT → GET returns the same state', async 
 });
 
 test('PUT /api/pt/state rejects non-object state with 400', async () => {
-  const reg = await request('POST', '/api/auth/register', {
-    email: 'pt-bad@example.com',
-    password: 'goodpassword1',
-    name: 'PtBad',
-  });
-  assert.equal(reg.status, 200);
-  const tokens = reg.json<AuthTokens>();
+  const tokens = await newUser('pt-bad@example.com', 'PtBad');
   const auth = { authorization: `Bearer ${tokens.accessToken}` };
   const r = await request('PUT', '/api/pt/state', { state: 'not-an-object' }, auth);
   assert.equal(r.status, 400, `expected 400, got ${r.status} body=${r.body}`);
 });
 
 test('PT state is per-user: user B does not see user A state', async () => {
-  const regA = await request('POST', '/api/auth/register', {
-    email: 'pt-user-a@example.com', password: 'goodpassword1', name: 'PtA',
-  });
-  const regB = await request('POST', '/api/auth/register', {
-    email: 'pt-user-b@example.com', password: 'goodpassword1', name: 'PtB',
-  });
-  assert.equal(regA.status, 200);
-  assert.equal(regB.status, 200);
-  const authA = { authorization: `Bearer ${regA.json<AuthTokens>().accessToken}` };
-  const authB = { authorization: `Bearer ${regB.json<AuthTokens>().accessToken}` };
+  const regA = await newUser('pt-user-a@example.com', 'PtA');
+  const regB = await newUser('pt-user-b@example.com', 'PtB');
+  const authA = { authorization: `Bearer ${regA.accessToken}` };
+  const authB = { authorization: `Bearer ${regB.accessToken}` };
 
   const put = await request('PUT', '/api/pt/state', { state: { xp: 999 } }, authA);
   assert.equal(put.status, 200);
@@ -1764,16 +1572,10 @@ test('GET /api/growth/state without auth returns 401', async () => {
 });
 
 test('Growth state round-trip and per-user isolation', async () => {
-  const regA = await request('POST', '/api/auth/register', {
-    email: 'growth-a@example.com', password: 'goodpassword1', name: 'GrowthA',
-  });
-  const regB = await request('POST', '/api/auth/register', {
-    email: 'growth-b@example.com', password: 'goodpassword1', name: 'GrowthB',
-  });
-  assert.equal(regA.status, 200);
-  assert.equal(regB.status, 200);
-  const authA = { authorization: `Bearer ${regA.json<AuthTokens>().accessToken}` };
-  const authB = { authorization: `Bearer ${regB.json<AuthTokens>().accessToken}` };
+  const regA = await newUser('growth-a@example.com', 'GrowthA');
+  const regB = await newUser('growth-b@example.com', 'GrowthB');
+  const authA = { authorization: `Bearer ${regA.accessToken}` };
+  const authB = { authorization: `Bearer ${regB.accessToken}` };
 
   const state = {
     v: 2,
@@ -1862,20 +1664,15 @@ test('WS /api/gemini/live accepts upgrade and emits error or closed', async () =
 // 都是 DELETE，只存当下不存历史，这些数字拿不回来，也就不许假装拿得回来。
 // ---------------------------------------------------------------------------
 
-async function p5User(suffix: string): Promise<AuthTokens> {
-  const r = await request('POST', '/api/auth/register', {
-    email: `p5-${suffix}@example.com`,
-    password: 'goodpassword1',
-    name: `p5-${suffix}`,
-  });
-  assert.equal(r.status, 200, `register failed: ${r.body}`);
-  return r.json<AuthTokens>();
+async function p5User(suffix: string): Promise<ProvisionedUser> {
+  // AUTH-M7：改为直接播种 + 签发，不再经已移除的注册端点。
+  return newUser(`p5-${suffix}@example.com`, `p5-${suffix}`);
 }
 
-const bearer = (t: AuthTokens) => ({ authorization: `Bearer ${t.accessToken}` });
+const bearer = (t: ProvisionedUser) => ({ authorization: `Bearer ${t.accessToken}` });
 
 /** 建房 + 拉人进房。返回 roomId。 */
-async function p5Room(suffix: string, host: AuthTokens, members: AuthTokens[] = []): Promise<string> {
+async function p5Room(suffix: string, host: ProvisionedUser, members: ProvisionedUser[] = []): Promise<string> {
   const roomId = `p5-room-${suffix}`;
   const c = await request('POST', '/api/rooms', { roomId, hostId: host.user.id }, bearer(host));
   assert.equal(c.status, 200, `create room failed: ${c.body}`);
@@ -1891,7 +1688,7 @@ interface SessionView {
 }
 
 /** 建会 → 开始。返回 { sessionId, revision, itemIds }。 */
-async function p5StartSession(roomId: string, host: AuthTokens, titles: string[]) {
+async function p5StartSession(roomId: string, host: ProvisionedUser, titles: string[]) {
   const c = await request('POST', `/api/rooms/${roomId}/prayer-sessions`,
     { title: '晨祷', items: titles.map(t => ({ title: t })) }, bearer(host));
   assert.ok(c.status === 200 || c.status === 201, `create session failed: ${c.status} ${c.body}`);
@@ -1908,7 +1705,7 @@ async function p5StartSession(roomId: string, host: AuthTokens, titles: string[]
   };
 }
 
-async function p5Command(roomId: string, sessionId: string, host: AuthTokens,
+async function p5Command(roomId: string, sessionId: string, host: ProvisionedUser,
   action: string, expectedRevision: number, extra: Record<string, unknown> = {}) {
   const r = await request('POST',
     `/api/rooms/${roomId}/prayer-sessions/${sessionId}/${action}`,
@@ -2016,7 +1813,7 @@ test('Phase 5 · 会中分享按时间窗归属；会前会后的分享不算进
   const guest = await p5User('h5g');
   const roomId = await p5Room('window', host, [guest]);
 
-  const share = async (t: AuthTokens, text: string, isAnonymous = false) => {
+  const share = async (t: ProvisionedUser, text: string, isAnonymous = false) => {
     const r = await request('POST', `/api/rooms/${roomId}/prayer/shares`,
       { text, isAnonymous }, bearer(t));
     assert.equal(r.status, 200, r.body);
@@ -2045,7 +1842,7 @@ test('Phase 5 · 历史不是治理后门：已删除与已隐藏的分享不得
   const roomId = await p5Room('governance', host, [guest]);
   const { sessionId, revision } = await p5StartSession(roomId, host, ['守望']);
 
-  const mk = async (t: AuthTokens, text: string) => {
+  const mk = async (t: ProvisionedUser, text: string) => {
     const r = await request('POST', `/api/rooms/${roomId}/prayer/shares`, { text }, bearer(t));
     assert.equal(r.status, 200, r.body);
     return r.json<{ id: string }>().id;

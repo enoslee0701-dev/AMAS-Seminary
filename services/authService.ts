@@ -55,13 +55,8 @@ export interface PublicUser {
   bio?: string;
 }
 
-interface IssuedTokens {
-  user?: PublicUser;
-  accessToken: string;
-  refreshToken: string;
-  accessExpiresAt?: number;
-  refreshExpiresAt?: number;
-}
+// AUTH-M7：原 IssuedTokens 接口已删除 —— 后端不再签发 accessToken/refreshToken。
+// Supabase 会话由其客户端 SDK 持有与刷新，本模块不再落盘任何自签 token。
 
 const STORAGE_KEYS = {
   access: 'amas_access_token',
@@ -134,12 +129,6 @@ function loadTokens(): { access: string | null; refresh: string | null } {
     access: read<string>(STORAGE_KEYS.access),
     refresh: read<string>(STORAGE_KEYS.refresh),
   };
-}
-
-function saveTokens(tokens: IssuedTokens): void {
-  write(STORAGE_KEYS.access, tokens.accessToken);
-  write(STORAGE_KEYS.refresh, tokens.refreshToken);
-  if (tokens.user) write(STORAGE_KEYS.user, tokens.user);
 }
 
 export function getAccessToken(): string | null {
@@ -229,6 +218,17 @@ async function patchJson<T>(path: string, body: unknown, headers: Record<string,
 
 // --- Public API --------------------------------------------------------------
 
+function requireSupabase(): never {
+  // AUTH-M7：后端已不再提供 /api/auth/{register,login,refresh,change-password,logout}。
+  // Supabase Auth 是唯一 user 认证来源；未配置就是**不能用**，
+  // 而不是悄悄回落到一条已经不存在的链路上（那只会拿到一堆 404）。
+  throw makeError(
+    503,
+    'Supabase 未配置（VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY）。' +
+    'AUTH-M7 之后本应用只支持 Supabase Auth 登录。',
+  );
+}
+
 export async function register(email: string, password: string, name: string): Promise<PublicUser> {
   if (supabaseEnabled) {
     const { data, error } = await supabase().auth.signUp({
@@ -241,9 +241,7 @@ export async function register(email: string, password: string, name: string): P
     write(STORAGE_KEYS.user, pub);
     return pub;
   }
-  const result = await postJson<IssuedTokens>('/api/auth/register', { email, password, name });
-  saveTokens(result);
-  return result.user as PublicUser;
+  requireSupabase();
 }
 
 export async function login(email: string, password: string): Promise<PublicUser> {
@@ -256,9 +254,7 @@ export async function login(email: string, password: string): Promise<PublicUser
     write(STORAGE_KEYS.user, pub);
     return pub;
   }
-  const result = await postJson<IssuedTokens>('/api/auth/login', { email, password });
-  saveTokens(result);
-  return result.user as PublicUser;
+  requireSupabase();
 }
 
 export async function me(): Promise<PublicUser> {
@@ -326,19 +322,8 @@ export async function logout(): Promise<void> {
     clear();
     return;
   }
-  const refresh = getRefreshToken();
-  const access = getAccessToken();
-  if (access && refresh) {
-    try {
-      await postJson<{ ok: true }>(
-        '/api/auth/logout',
-        { refreshToken: refresh },
-        { authorization: `Bearer ${access}` },
-      );
-    } catch {
-      // Even if server-side revocation fails, we still clear locally.
-    }
-  }
+  // AUTH-M7：不再有服务端 logout 端点可调（会话由 Supabase 管理）。
+  // 未配置 Supabase 时也要能清本地状态，因此这里不抛错，只清理。
   clear();
 }
 
@@ -347,15 +332,13 @@ export async function logout(): Promise<void> {
 let refreshInFlight: Promise<string | null> | null = null;
 
 async function performRefresh(): Promise<string | null> {
-  const refresh = getRefreshToken();
-  if (!refresh) return null;
+  // AUTH-M7：后端不再签发 token，也就没有可刷新的东西。
+  // Supabase 会话由其客户端 SDK 自动刷新（见 supabaseAuth.ts），
+  // 这条路径只在未配置 Supabase 时被走到 —— 此时没有会话，返回 null。
   try {
-    const result = await postJson<IssuedTokens>('/api/auth/refresh', { refreshToken: refresh });
-    write(STORAGE_KEYS.access, result.accessToken);
-    write(STORAGE_KEYS.refresh, result.refreshToken);
-    return result.accessToken;
+    clear();
+    return null;
   } catch {
-    // Refresh failed — clear tokens. Caller should redirect to login.
     clear();
     return null;
   }

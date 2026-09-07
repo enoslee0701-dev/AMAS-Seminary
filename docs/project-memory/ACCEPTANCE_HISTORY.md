@@ -250,3 +250,56 @@ auth adapter guard  7/7（新增）
 
 **Acceptance level**：`CANONICALIZED / LOCALLY VERIFIED`。
 未在真实环境验证，不得写成 INTEGRATION / STAGING / PRODUCTION VERIFIED。
+
+---
+
+## 2026-09-07 — AUTH-M7：legacy user authentication 删除
+
+**Branch**：`main`（canonical）
+**Result**：PASS（本地） **FAIL**：0
+
+### 测试分项（SKIP 不并入 PASS）
+
+```
+前端                PASS 181   FAIL 0   SKIP 0    (20 files)
+后端 test:local     PASS 138   FAIL 0   SKIP 0
+后端 test:external  PASS   0   FAIL 0   SKIP 6    ← BLOCKED_BY_ENV
+typecheck           前端 clean · 后端 clean
+build               exit 0
+Christian Profile   20/20，3 个 golden snapshot 未变
+```
+
+### 测试增减（全部可解释，无一被删以换绿灯）
+
+```
+删除 7 项：对 /api/auth/{register,login,refresh} 的直接测试
+          —— 它们测的是已经不存在的 active production behavior
+新增 3 项：legacy HS256 token 被拒 401 · 5 个已移除端点均 404 · 畸形 bearer 401
+后端 103 -> 96 -> 99（smoke）；test:local 总计 135 -> 138
+```
+
+### 关键改动
+
+```
+routes/auth.ts        316 行 -> 86 行，只剩 GET/PATCH /api/auth/me，改用 requireAuth
+middleware/auth.ts    legacy 验签分支删除，无凭据一律 401，绝不回退
+config.ts             acceptLegacy / AUTH_ACCEPT_LEGACY 删除
+auth/jwt.ts           190 行 -> 41 行，仅剩 AccessPayload 类型
+services/authService  前端 legacy 分支删除，未配置 Supabase 时抛 503 并说明
+```
+
+### 测试装置变更
+
+新增 `backend/src/test/helpers/supabaseHarness.ts`：本地假 Supabase
+（真 ES256 密钥对 + 真 JWKS 端点 + 真验签 + user_roles REST）。
+**不是 mock** —— 后端跑 100% 生产代码路径，只有 issuer 地址指向本地。
+
+过程中发现一处真实陷阱：SQLite `users.role` 用 `'admin'`，
+而 Supabase `user_roles` 的管理角色词表是
+`{registrar, academic_admin, super_admin}`（与 Portal `is_admin_any` 对齐）。
+直接把 `'admin'` 写进 user_roles 不会被 `isAdminRole` 认可，会**静默 403**。
+装置已做显式转换并注释说明。
+
+**Acceptance level**：`AUTH-M7 IMPLEMENTED / LOCALLY VERIFIED`。
+真实 Supabase 环境未验证 —— 6 个 external AUTH 测试仍 BLOCKED_BY_ENV。
+**不得**写成 INTEGRATION / STAGING / PRODUCTION VERIFIED。

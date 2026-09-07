@@ -395,3 +395,54 @@ severity:  low
 - `checkWsAuthToken` ← `routes/gemini.ts:48`（Gemini WebSocket 代理，真实使用）
 
 按 Supervisor 指令，本轮只标记不删除，避免扩大 scope。
+
+
+---
+
+## #RB-26 AUTH-M7 已实施，但未在真实 Supabase 环境验证
+
+```
+status:    OPEN
+severity:  medium
+owner:     用户（需 Supabase staging）
+phase:     AUTH-M7
+```
+
+legacy user authentication 已从 active production code **删除**（不是默认关闭）：
+后端不再签发任何 user token，`/api/auth/{register,login,refresh,change-password,logout}`
+全部移除，`middleware/auth.ts` 的 legacy 验签分支删除，`auth/jwt.ts` 190 行降为
+41 行的纯类型模块，前端 legacy 分支同步移除。
+
+**但**：全部验证均在本地假 Supabase（真 ES256 密钥对 + 真 JWKS + 真验签，
+后端跑 100% 生产代码路径）上完成。真实 Supabase 项目上的行为**未验证**。
+
+状态：`AUTH-M7 IMPLEMENTED / LOCALLY VERIFIED`。
+**不得**升级为 INTEGRATION VERIFIED，直到有可用 staging 环境。
+
+---
+
+## #RB-27 refresh_jti 表已无写入方
+
+```
+status:    OPEN（本轮刻意不处理）
+severity:  low
+```
+
+AUTH-M7 删除 refresh token 签发后，`db.ts` 中的 `refresh_jti` 表不再有任何写入方。
+**未删除** —— 删表属 destructive migration，本轮明令禁止。
+可在后续独立迁移中清理，届时需确认无历史数据依赖。
+
+---
+
+## #RB-28 前端在 Supabase 未配置时不可登录（预期行为）
+
+```
+status:    BY DESIGN（需部署时注意）
+severity:  medium
+```
+
+AUTH-M7 之后 `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` 成为**硬依赖**。
+未配置时 `register` / `login` 抛 503 并说明原因（`requireSupabase()`），
+不再静默回落到已经不存在的 legacy 端点。
+
+这是目标态而非缺陷，但**部署清单必须包含这两个变量** —— 否则 App 登录不可用。

@@ -5,6 +5,27 @@
 
 ---
 
+## D-17｜AUTH-M7 必须先于 RB-01 数据库迁移完成
+
+```
+日期     2026-09-07
+状态     APPROVED
+```
+
+**决策**：AUTH-M7（删除 legacy user authentication）必须在 RB-01
+（SQLite → PostgreSQL 迁移）之前完成。RB-01 期间不得并行进行 DAL 重构。
+
+**理由**：canonical identity 必须先稳定，才能把用户所属数据迁往 PostgreSQL。
+若身份来源仍是双轨（legacy 自签 + Supabase），迁移时无法确定每行数据的
+canonical owner —— 迁完再改身份，等于要把所有归属关系重做一遍。
+
+**执行结果**（2026-09-07）：AUTH-M7 已实施完成，见
+`amas-website/docs/operations/AUTH-M7-COMPLETION-REPORT.md`。
+状态 `AUTH-M7 IMPLEMENTED / LOCALLY VERIFIED` —— 尚未在真实 Supabase
+staging 验证，**不得**写成 INTEGRATION VERIFIED。
+
+---
+
 ## D-16｜One Active Implementation Lineage Per Task
 
 ```
