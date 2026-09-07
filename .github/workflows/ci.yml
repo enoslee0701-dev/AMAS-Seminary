@@ -65,6 +65,43 @@ jobs:
       - name: Build
         run: npm run build
 
+  regression:
+    # ── 为什么必须有这个 job ───────────────────────────────────────
+    # 2026-09-07 出过一次真实事故：AUTH-M7 删掉 POST /api/auth/register 之后，
+    # 五个 App 回归脚本全部启动即崩、199 项断言一条都没执行，而 CI 依旧全绿 ——
+    # 因为那五套从来不在 `npm test` 里。「npm test green + 199 项回归从未运行」
+    # 是本项目最危险的假绿，这个 job 就是为了让它不可能再无声发生。
+    #
+    # 只跑 local gate：external（真实 Supabase / SMTP / LiveKit / 真机）不进
+    # 绿色判据 —— 本 runner 不持有那些前提，混进来只会制造另一种假信号。
+    name: Release gate (verify:local-release)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies (root + backend)
+        run: |
+          npm ci
+          npm ci --prefix backend
+
+      # rooms-render 与 phase5 要拉起真实 headless 浏览器；ubuntu-latest 自带
+      # Chrome，显式指到它，避免脚本回落到"找不到浏览器"的静默跳过。
+      - name: Resolve Chrome for browser regressions
+        run: echo "CHROME_PATH=$(which google-chrome || which chromium-browser)" >> "$GITHUB_ENV"
+
+      # 聚合门禁：backend test:local + 双 typecheck + 前端单测 + build + 五套 App 回归。
+      # fail-fast 由 && 串联保证；**不得**加 || true / continue-on-error，
+      # 也不得吞掉 exit code —— 任何一套回归失败都必须让 CI 变红。
+      - name: Verify local release gate
+        run: npm run verify:local-release
+
   ios:
     name: iOS Simulator smoke build
     needs: frontend
