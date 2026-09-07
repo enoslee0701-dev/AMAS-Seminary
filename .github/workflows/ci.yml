@@ -110,10 +110,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node 20
+      # Capacitor CLI 8.x 要求 Node >= 22 —— Node 20 下 `npx cap sync ios`
+      # 会直接 fatal 退出。此前该 job 一直因前置 job 失败而 skipped，
+      # 所以这条不兼容从未暴露；前置修绿之后它第一次真正执行就崩了。
+      # 其余 job 保持 Node 20：它们不碰 Capacitor，没必要跟着动。
+      - name: Setup Node 22 (Capacitor CLI requires >= 22)
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Install dependencies
