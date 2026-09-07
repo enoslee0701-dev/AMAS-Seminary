@@ -9,7 +9,7 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "test": "npm run test:local",
-    "test:local": "tsx --test src/test/smoke.test.ts src/test/startup-guard.test.ts src/test/auth-m7-identity.test.ts",
+    "test:local": "tsx --test src/test/smoke.test.ts src/test/startup-guard.test.ts src/test/auth-m7-identity.test.ts src/test/auth-adapter-presence.test.ts",
     "test:external": "tsx --test src/test/supabase-auth.test.ts src/test/identity-migration.test.ts src/test/credential-recovery.test.ts src/test/credential-recovery-expiry.test.ts src/test/password-change-reauth.test.ts src/test/redirect-matrix.test.ts"
   },
   "dependencies": {

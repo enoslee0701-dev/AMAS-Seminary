@@ -51,8 +51,27 @@ export const config = {
   supabase: {
     url: envOr('SUPABASE_URL'),
     serviceKey: envOr('SUPABASE_SERVICE_ROLE_KEY'),
-    // 迁移开关：设为 'false' 可临时停止接受 legacy 自签 token（AUTH-M7 前的演练）
-    acceptLegacy: envOr('AUTH_ACCEPT_LEGACY', 'true') !== 'false',
+    // 迁移开关：是否继续接受 legacy 自签 user token。
+    //
+    // ★ 缺省按环境分流（R1-3 政策，2026-09-07 Supervisor 要求）：
+    //     production            → 默认 **关闭**
+    //     development / test    → 默认 开启
+    //
+    //   目标态是 Supabase Auth 作为唯一 user authentication source，
+    //   legacy 只能是**临时迁移兼容**，不得成为长期双轨架构。
+    //   因此生产环境**不得因为环境变量缺失而默认打开** —— 要在生产保留 legacy，
+    //   必须显式写 AUTH_ACCEPT_LEGACY=true。
+    //
+    //   开发与测试保持默认开启，避免断掉现有迁移链（现有测试仍依赖 legacy token）。
+    //
+    // ⚠ 本开关是过渡设施。真正的 AUTH-M7（按 D-15 定义 = **删除** legacy user
+    //   authentication，而不只是默认关闭）尚未实施。届时本开关与
+    //   middleware 中的 legacy 分支一并整体移除。
+    acceptLegacy: (() => {
+      const raw = envOr('AUTH_ACCEPT_LEGACY');
+      if (raw) return raw !== 'false';                       // 显式设置优先
+      return (process.env.NODE_ENV ?? '').trim() !== 'production';
+    })(),
   },
 
   gemini: {
