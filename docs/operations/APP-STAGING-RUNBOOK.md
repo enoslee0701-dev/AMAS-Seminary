@@ -213,18 +213,33 @@ security advisor findings   PENDING REVIEW（见 §8.6）
 
 ## 8.6 Security Advisor 现状与待处置
 
-**根因**：`0003_hardening.sql` 的批量收口
+**根因**：`0003_hardening.sql:141` 的批量收口
 `revoke execute on all functions in schema public from public, anon`
-只作用于执行那一刻已存在的函数。**0004 之后新建的每一个函数**都回到
-PostgreSQL 默认的 `PUBLIC EXECUTE`（PUBLIC 覆盖 anon 与 authenticated），
-除非该迁移自己再 revoke 一次 —— 而 13 个函数没有。
+只作用于执行那一刻已存在的函数。之后要看两条 PostgreSQL 语义：
+
+1. `CREATE FUNCTION`（**全新**函数）→ 默认 `PUBLIC EXECUTE`，PUBLIC 覆盖
+   anon 与 authenticated。
+2. `CREATE OR REPLACE FUNCTION`（替换已存在的函数）→ **保留原有 ACL**，
+   不会把权限退回去。
+
+逐文件核对 0001–0025 的结果（**按语义判定，不是按名字 grep**）：
 
 ```
-A. TRIGGER ONLY（10）   handle_new_user · tvr_validate_transition ·
-                        application_validate_transition · application_strip_forbidden ·
+0003 之后新建的函数                          = 46
+其中在本文件或后续 migration 中自行 revoke   = 34
+→ 仍持有 PUBLIC / anon / authenticated EXECUTE = 12
+```
+
+也就是说，website 的迁移其实相当自律 —— 绝大多数 RPC 都自己 revoke 了；
+真正漏掉的是下面这 12 个：
+
+```
+A. TRIGGER ONLY（9）    tvr_validate_transition · application_validate_transition ·
+                        application_protect_locked · application_strip_forbidden ·
                         student_guard · sync_alias_on_role_revoke ·
-                        application_protect_locked · append_only_guard ·
-                        course_catalog_guard · app_rooms_mark_host_orphaned
+                        append_only_guard · course_catalog_guard ·
+                        app_rooms_mark_host_orphaned（0025，staging 大概率不存在）
+                        → 返回类型均已核对为 `returns trigger`
                         → PostgreSQL 本身拒绝直接调用，实际可利用性低；
                           但保留授权无用途，应收口
 
@@ -232,21 +247,44 @@ D. INTERNAL HELPER（3）  application_validate_program · application_validate_
                         normalize_student_number
                         → 客户端从不直接调用；调用链经 submit_application
                           （SECURITY DEFINER）执行，撤销 authenticated 不破坏产品
+```
 
-★ 角色 helper           has_active_role(p_user uuid, p_role text)
-                        SECURITY DEFINER + 任意 UUID + 授予 authenticated + 无归属校验
-                        → **任何已登录用户可探测他人角色**（可枚举管理员的布尔预言机）
-                        信息泄漏，非提权。RLS 策略对它 0 引用 → 可安全 revoke
+**不在这 12 个里、但必须澄清的三个 trigger function**：
+`handle_new_user` / `handle_user_email_confirmed` / `handle_user_email_changed`
+在 0003:141 之前就已存在，**已被那次批量 revoke 覆盖**；0006 对
+`handle_new_user` 只是 `CREATE OR REPLACE`，按语义 2 保留了收紧后的 ACL。
+它们无需处置 —— 不要因为 Supervisor 在任务里点了名就顺手加进 patch。
 
-★ 角色 helper           is_admin_any(p_user uuid)
-                        被 13 处 RLS 策略引用（形式恒为 is_admin_any(auth.uid())）
-                        → **不能 revoke**，否则策略失效；改为在函数内加归属门禁
+**真正的安全发现（与上面的 PUBLIC EXECUTE 问题是两回事）**：
+
+```
+★ has_active_role(p_user uuid, p_role text)
+   建于 0002，已被 0003:141 覆盖；但 0003:144 又**显式**授回 authenticated。
+   SECURITY DEFINER + 调用方任意指定 UUID + 无 auth.uid() 归属校验
+   → 任何已登录用户可逐个探测他人角色（可枚举管理员的布尔预言机）
+   → 信息泄漏，非提权（只读、只返回 boolean）
+   → RLS 策略对它 0 引用；仅被 current_user_has_role / is_admin_any 内部调用
+     （两者皆 SECURITY DEFINER，内部调用按 owner 校验）→ 可安全 revoke
+
+★ is_admin_any(p_user uuid)
+   被 13 处 RLS 策略引用，形式恒为 is_admin_any(auth.uid())。
+   策略表达式以调用者身份求值 → **不能 revoke**，否则策略成片失效。
+   改为在函数内加归属门禁：只答"我自己"，问别人一律 false。
+   替换定义必须沿用 0003 的空 search_path（写成 = public 是加固回退）。
+
+○ current_user_has_role(p_role text)
+   无 p_user 参数，内部固定 auth.uid()，天然只能问"我自己" → 保持现状。
 ```
 
 处置方案见 `docs/operations/patches/0027_function_execute_hardening.sql`，
 状态 **PROPOSED — DO NOT APPLY**，含七步验证计划（before grants / apply /
 after grants / trigger behavior / Portal RPC regression / 越权探测复测 / advisor rerun）。
 批准后移动到 `amas-website/supabase/migrations/` 再执行。
+
+**执行前提醒**：staging 的 migration history 只登记到 0010，但 0012 的
+`student_guard` / `sync_alias_on_role_revoke` 实测已存在 —— 说明 0012+ 是
+**带外执行**（控制台 SQL Editor 不写迁移历史）。因此"对象是否存在"必须以
+验证计划 ① 的 `pg_proc` 实查为准，不能拿迁移历史推断。
 
 ## 8.7 STAGING SECURITY CONFIG TODO
 
