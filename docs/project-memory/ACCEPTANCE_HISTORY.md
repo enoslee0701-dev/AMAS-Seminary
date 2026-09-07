@@ -300,6 +300,58 @@ test:regression     PASS 199   FAIL 0
 
 ---
 
+## 2026-09-07 — POST-LEGACY MAIN INTEGRATION
+
+**Result**：`MAIN INTEGRATED / LOCAL + GITHUB CI VERIFIED`  **FAIL**：0
+
+```
+origin/main   be15376（集成 1c2e83e → CI 修复 24aa6c7 → iOS Node 修复 be15376）
+GitHub CI     run 34120612718 · 结论 success
+  Frontend (type-check + build + test)      GREEN
+  Backend  (type-check + test + build)      GREEN
+  Release gate (verify:local-release)       GREEN
+  iOS Simulator smoke build                 GREEN
+```
+
+### GitHub ubuntu runner 上的真实执行证据（非本地数字）
+
+```
+CHROME_PATH: /usr/bin/google-chrome        ← 浏览器真实解析，无 silent skip
+frontend unit        187 passed (21 files)
+backend test:local   159 pass · 0 fail · 0 skipped
+build                ✓ built in 9.83s
+presence             54/54 PASS
+reading              44/44 PASS
+rooms render         51/51 PASS   ← 真实 headless Chrome
+phase5               24/24 PASS   ← 真实 headless Chrome
+system moderator     26/26 PASS
+合计                 199/199，无 timeout / OOM / port collision / silent skip
+```
+
+### 本轮修掉的两类 CI 缺陷（均先于本次集成存在）
+
+```
+CI-1  @types/react / @types/react-dom 从未声明，react@19 不带 .d.ts
+      → React 被当成 any，整个前端的 React API 此前根本没被类型检查。
+        实测：加类型前故意写 this.props.nonexistent 不报错，加后立刻 TS2339。
+CI-2  根 tsconfig 无 include/exclude → 根 tsc 扫进 backend/ 与 scripts/，
+      clean CI 必报 ~48 条 TS2307。已建立边界：根管前端，backend/tsconfig 管后端。
+CI-3  iOS job 在 Node 20 下 `npx cap sync` fatal（Capacitor CLI 要求 >= 22）。
+      该 job 此前因前置失败一直 skipped，前置修绿后才第一次暴露。
+```
+
+**Known limitations**
+- 外部验收全部未跑：真实 Supabase staging / SMTP / credential recovery /
+  redirect matrix / LiveKit / Android 真机 / 真实人口 cutover。
+- 迁移映射在真实环境仍未建立（OPEN_ISSUES #17，cutover blocker）。
+- Deep Link 仍 IMPLEMENTED / NOT WIRED。
+
+**Acceptance level**：`MAIN INTEGRATED / LOCAL + GITHUB CI VERIFIED`。
+**不得**写成 STAGING VERIFIED / PRODUCTION VERIFIED —— GitHub CI 绿只证明
+本地门禁在干净 runner 上可重复，不涉及任何真实外部环境。
+
+---
+
 <!--
 下一条追加模板：
 
