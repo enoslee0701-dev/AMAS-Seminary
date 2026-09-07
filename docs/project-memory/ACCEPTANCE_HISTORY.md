@@ -249,6 +249,57 @@ test:regression     PASS 199   FAIL 0
 
 ---
 
+## 2026-09-07 — POST-LEGACY CANONICAL INTEGRATION（integration/post-legacy-canonical）
+
+**Canonical base**：`main@3852384`  **未合入 main、未 push origin、未部署。**
+`release/post-legacy-gate@e35923b` 保持冻结不动，本轮从它新建分支后 rebase。
+
+**Result**：PASS（本地） **FAIL**：0
+
+### 测试分项（SKIP 不并入 PASS，均为本 integration HEAD 实测）
+
+```
+后端 test:local     PASS 159   FAIL 0   SKIP 0
+  smoke 99 · startup-guard 13 · auth-m7-identity 19 ·
+  auth-adapter-presence 7 · auth-post-legacy-audit 10 · auth-migration-cutover 11
+后端 typecheck      clean
+前端单测            PASS 181   FAIL 0   SKIP 0   (20 files)
+前端 typecheck      clean
+build               PASS
+test:regression     PASS 199   FAIL 0
+  presence 54/54 · reading 44/44 · rooms render 51/51 ·
+  phase5 24/24 · system moderator 26/26
+后端 test:external  PASS 0     FAIL 0   SKIP 6   ← BLOCKED_BY_ENV
+```
+
+**Major verified behavior**
+- rebase 到 `3852384` 无冲突；随后逐项语义审计 **17/17 保全**：
+  main 侧 8 项（DB-2 预检脚本 · D-22~D-32 · DBR-18~24 · AUTH-M7 ·
+  legacy 删除 · /api/auth/me GET+PATCH · adapter guard · base harness）
+  与 release 侧 9 项（五套回归修复 · test:regression · verify:local-release ·
+  migration cutover · 幂等证明 · 迁移后登录证明 · post-legacy auth audit ·
+  requireAdmin 死代码删除 · harness admin API）全部同时存在。
+  **不只看 CONFLICT=0** —— 逐文件核对内容。
+- 五套 App 回归确认不再依赖已删除的 `POST /api/auth/register`（命中 0），
+  走的是 Supabase harness → canonical SQLite user → legacy_user_map →
+  Supabase token → 生产 requireAuth 路径。
+- CI 新增 `regression` job 执行 `npm run verify:local-release`，
+  无 `|| true`、无 `continue-on-error`、不吞 exit code。
+
+**Known limitations**
+- **MIGRATION PROCESS: LOCAL VERIFIED**，**不是** PRODUCTION USERS MIGRATED。
+  不存在权威 production 用户人口；`legacy_user_map` 在本机开发库仍 0 行。
+- OPEN_ISSUES #18（迁移 apply 的 dataset-specific 断言污染退出码）保持
+  **STAGING CUTOVER BLOCKER**：LOCAL release gate 不受影响
+  （迁移验收断言的是行为而非退出码），但 staging 自动化被阻断。本轮未扩大 scope 修它。
+- Deep Link 仍 IMPLEMENTED / NOT WIRED。
+- 外部 8 类验收全部 NOT RUN。
+
+**Acceptance level**：`LOCAL VERIFIED`。
+**不得**写成 INTEGRATION / STAGING / PRODUCTION VERIFIED。
+
+---
+
 <!--
 下一条追加模板：
 

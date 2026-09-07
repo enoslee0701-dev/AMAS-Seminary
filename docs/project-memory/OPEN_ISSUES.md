@@ -238,18 +238,26 @@ phase:     独立 hardening
 
 ---
 
-## #14 /api/auth/me 不走 requireAuth
+## #14 /api/auth/me 不走 requireAuth — `CLOSED`
 
 ```
-status:    OPEN
+status:    CLOSED（d564c4c，2026-09-07）
 severity:  P3（fail closed，不是安全漏洞）
-owner:     unassigned
-phase:     AUTH-M7 之后
 ```
 
-该端点自己 `verifyAccess(token)`，只认 legacy 自签 token。Supabase 用户访问会 401。
-统一边界（requireAuth → identity resolution → 业务路由）上的一个洞。
-建议下一轮并入 requireAuth。
+该端点原先自己 `verifyAccess(token)`，只认 legacy 自签 token，Supabase 用户会 401 ——
+统一边界上的一个洞。`d564c4c` 已把 **GET 与 PATCH 双双**接入 `requireAuth`，
+直接返回 `principal.user`，不再自建第二套身份解析。
+
+验证：`smoke`（GET/PATCH 正常路径）+ `auth-post-legacy-audit`
+（越权面：请求体的 id / role / email / authId 一律不可写；ghost → 403；
+token 里的 name/avatar/role 不得冒充 canonical 资料）。
+
+> **编号说明（审计留痕）**：`#15`（PATCH /api/auth/me 未统一）曾登记在
+> `release/auth-final-gate` 分支上。该分支已判定 DEPRECATED / DO NOT MERGE
+> （它建立在 legacy auth 仍存在的架构上），其记录未进入 canonical main，
+> 因此本文件的数字序列从 #14 直接跳到 #16。**这是有意的断层，不是遗漏。**
+> #15 描述的问题本身已由 `d564c4c` 一并解决（PATCH 同样接入 requireAuth）。
 
 ---
 

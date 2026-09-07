@@ -12,6 +12,28 @@
 
 ---
 
+## 2026-09-07（POST-LEGACY CANONICAL INTEGRATION）
+
+- **确立：rebase 之后必须做语义保全审计，`CONFLICT = 0` 不构成证据。**
+  本项目已两次证明 git 不报冲突却静默丢语义（`d3e860d` 世系陷阱、
+  AUTH 资产被无冲突删除）。本轮 rebase 后逐项核对 17 项能力（main 侧 8 +
+  release 侧 9）是否同时存在，而不是只看 rebase 退出码。
+- **确立：ACTIVE TASK OWNER 必须真的登记。** 此前 `AI_HANDOFF_RULES` 的表长期
+  停在「（无）/ IDLE」，而 DB-3 早已被另一条会话做完 —— 「实际 ACTIVE、文档 IDLE」
+  正是 D-16 要防的状态。本轮登记 POST-LEGACY RELEASE RECONCILIATION 为当前 owner，
+  并写明与 DB-3 世系正交；交还写权时改回 IDLE。
+- **CI 正式承担 release gate。** 新增 `regression` job 执行
+  `npm run verify:local-release`（backend test:local + 双 typecheck + 前端单测 +
+  build + 五套 App 回归）。**禁止** `|| true` / `continue-on-error` / 吞 exit code。
+  external（真实 Supabase / SMTP / LiveKit / 真机）不进本地绿色判据 ——
+  runner 不持有那些前提，混进来只会制造另一种假信号。
+- **口径固定：MIGRATION PROCESS: LOCAL VERIFIED ≠ PRODUCTION USERS MIGRATED。**
+  迁移流程已端到端跑通（dry-run → apply → 幂等 → 迁移后真的能登录），
+  但不存在权威 production 用户人口，真实 cutover 从未执行。
+- **迁移退出码债（#18）分级明确**：`LOCAL release gate unaffected` /
+  `STAGING automation blocked`。通用 migration 执行器的退出码只能由
+  migration correctness 决定，dataset-specific 断言必须拆到独立的验收层。
+
 ## 2026-09-07（POST-LEGACY RELEASE BLOCKER CLOSURE）
 
 - **确立：删关键 API 必须同时修回归套件，且回归套件必须挂在会红的入口上。**
