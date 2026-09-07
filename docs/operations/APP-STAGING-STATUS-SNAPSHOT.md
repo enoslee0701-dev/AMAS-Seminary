@@ -41,6 +41,11 @@ NOT STAGING VERIFIED
 | [`docs/project-memory/CURRENT_STATE.md`](../project-memory/CURRENT_STATE.md) | 阶段状态与禁令 |
 | [`docs/project-memory/OPEN_ISSUES.md`](../project-memory/OPEN_ISSUES.md) | `#19` 是外部前提的权威记录 |
 | [`docs/project-memory/AI_HANDOFF_RULES.md`](../project-memory/AI_HANDOFF_RULES.md) | D-38 canonical writer + 写代码前必读的阶段状态 |
+| [`STAGING-1A-EXISTING-SUPABASE-ADOPTION-REPORT.md`](./STAGING-1A-EXISTING-SUPABASE-ADOPTION-REPORT.md) | **STAGING-1A 阶段产出** —— 既有 staging 采纳审计（只读）。状态 `BLOCKED BY CREDENTIAL HANDOFF`；含 0027 评估、凭据交付契约、`db push` 安全判定、fixtures 计划 |
+
+> **Owner 已批准 `amas-staging` 为正式 APP STAGING Supabase 目标（D-41）**，
+> 不得创建第二个。凭据口径：`STAGING PROJECT EXISTS` /
+> `RUNTIME CREDENTIALS NOT YET PROVISIONED` —— 两句不矛盾，不再作为文档矛盾重开。
 
 > 较早的 `amas-website/docs/operations/STAGING-0-READINESS-REPORT.md`
 > **不是当前口径** —— 它是 STAGING-0 阶段的设计文档，已被 APP STAGING 取代。

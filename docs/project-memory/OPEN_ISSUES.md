@@ -1008,3 +1008,88 @@ frontend   VITE_SUPABASE_URL           （services/supabaseAuth.ts）
 **处置**：认证部分关闭；官网数据库通道转为 STAGING ENTRY CHECKLIST 的检查项。
 
 **证据**：STAGING-0 报告 §14
+
+---
+
+## #21 canonical HEAD 的 CI 假红（端口抢占）
+
+```
+status:    FIXED PENDING CI（2026-09-07，e2b801e）
+severity:  medium（不是代码回归，但 canonical HEAD 红灯会掩盖真实回归）
+owner:     unassigned
+phase:     STAGING-1A 发现
+```
+
+**修复**：`e2b801e` 把 `backend/package.json` 的 `test:local` 加上
+`--test-concurrency=1`，让测试文件串行执行。
+
+**根因（比首次诊断更准确）**：`test:local` 并行跑 7 个测试文件，其中多个
+各自拉起一个 backend 进程；两个撞到同一端口时后者永远起不来，
+撞上 20 秒就绪超时 → 报「server 未就绪」。
+这解释了偶发性、为何只影响那两个启动真实 server 的文件、
+以及为何本机串行环境下 166/166 恒绿。
+
+> 我在 STAGING-1A 首次诊断时只判到「20 秒就绪超时、慢 runner 上偶发」，
+> **机制没查到底**；`e2b801e` 补上了这一层。记此以免后来者停在同一深度。
+
+**待确认**：`e2b801e` 的 CI 在记录时仍 `RUNNING`，结论未知。
+连续两次绿灯后可改为 `CLOSED`。
+
+**原记录**（保留）：
+
+`6a7d68f`（纯文档提交）的 CI 结论为 **failure**。四个 job 中只有
+`Backend (type-check + test + build)` 失败：**166 tests · 156 pass · 10 fail**。
+
+失败的 10 条全部来自 `auth-post-legacy-audit.test.ts` 与
+`auth-migration-cutover.test.ts`，`failureType: 'hookFailed'`，`duration_ms ≈ 20137`
+—— 即撞上这两处的 20 秒就绪超时：
+
+```
+backend/src/test/auth-post-legacy-audit.test.ts:123
+backend/src/test/auth-migration-cutover.test.ts:169
+  if (Date.now() - start > 20_000) throw new Error(`server 未就绪：
+${stderr}`);
+```
+
+**不是代码回归**，三条证据：
+
+1. `express-rate-limit@8.5.2` 的校验器被包在 `try/catch` 中，
+   捕获后 `logger.error`，**从不抛出** —— stderr 里那条 `ValidationError` 是噪音；
+2. 本机同一代码同一 lockfile 跑 `test:local` **166/166 全过**；
+3. 同一份代码在 `43805b9` 与 `5ea70f6` 的 CI 上**两次通过**。
+
+**待定方向**（属工程决定，STAGING-1A 未擅自修改）：
+重跑一次确认偶发 / 放宽这两处的就绪超时 / 让 harness 在超时时区分
+「进程已退出」与「进程还活着但未就绪」。
+
+**证据**：STAGING-1A 报告 §1
+
+---
+
+## #22 `rateLimit.ts` 的自定义 keyGenerator 未做 IPv6 归一
+
+```
+status:    OPEN
+severity:  low-medium（影响面受限，但属真实绕过面）
+owner:     unassigned
+phase:     STAGING-1A 发现
+```
+
+`backend/src/middleware/rateLimit.ts:101` 的 `byUser()`：
+
+```ts
+const id = p && p.kind === 'user' && p.user ? p.user.id : (req.ip ?? 'anon');
+```
+
+未认证请求回落到 `req.ip`，**未经 `ipKeyGenerator` 归一化**。
+`express-rate-limit` 的校验器据此报 `ERR_ERL_KEY_GEN_IPV6`：
+**IPv6 客户端可能绕过这一层限流**（同一 /64 内换地址即换 key）。
+
+影响面受限 —— 代码注释本身写明「未认证请求回落到 IP
+（此时 Layer A 才是主要防线）」，Layer A 的 IP 限流仍在。
+但这一层的回落形同虚设，且会持续污染日志。
+
+**修法**：对 IP 回落分支改用 `ipKeyGenerator(req.ip)`，
+或显式声明 `ipv6Subnet`。**本轮只报告，未修改代码。**
+
+**证据**：STAGING-1A 报告 §1

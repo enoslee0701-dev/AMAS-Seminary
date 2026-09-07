@@ -5,6 +5,41 @@
 
 ---
 
+## D-41｜`amas-staging` 是获批的 APP STAGING Supabase 目标
+
+```
+日期     2026-09-07
+状态     APPROVED（Owner 决定）
+阶段     STAGING-1A
+```
+
+**决策**：既有 `amas-staging` 获批为正式的 **APP STAGING SUPABASE TARGET**。
+
+```
+status     ACTIVE_HEALTHY
+region     ap-southeast-1
+Postgres   17.6
+```
+
+**不得创建第二个 staging Supabase project。**
+
+**凭据口径**（Owner 澄清，以下两句**不矛盾**，不再作为文档矛盾重开）：
+
+```
+STAGING PROJECT EXISTS
+RUNTIME CREDENTIALS NOT YET PROVISIONED
+```
+
+前者说的是 Supabase 项目侧对象存在；
+后者说的是这些值尚未交付到前端构建环境 / 后端运行时 / CI 三个消费位。
+
+**如何应用**：任何「要不要再建一个 staging」的讨论到此为止；
+缺的是把凭据送到 §9 定义的目的地，不是缺项目。
+
+**证据**：`docs/operations/STAGING-1A-EXISTING-SUPABASE-ADOPTION-REPORT.md` §2
+
+---
+
 ## D-40｜Staging 与 Production 相互隔离
 
 ```
