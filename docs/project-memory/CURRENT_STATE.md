@@ -20,7 +20,12 @@
 >          前端 187/187（含新增课程引用闸门）· 后端 159/159 · build OK
 > DB-4  ⛔  BLOCKED_BY_EXTERNAL_ENV = STAGING SUPABASE REQUIRED
 > DB-5 / DB-7..DB-13   未开始（多数依赖 DB-4 的身份解析）
-> STAGING-0  下一阶段（Supabase staging 就绪度）—— 尚未开始
+> STAGING-0 ✅ 就绪度设计完成 —— **STAGING-0 NEEDS OWNER ACTION**
+>           迁移交付通道已实测：supabase db push --db-url 无需 Docker，
+>           接受现有 0001_ 命名，26/26 应用，幂等，写入官方 schema_migrations，
+>           产出与 psql 通道 md5 一致且契约 53/53。
+>           入场清单：READY 7 · NEEDS_OWNER 5 · BLOCKED 2 · NOT_REQUIRED 4
+> STAGING-1  未开始（连真实 Supabase + 应用 26 个 migration + 验证 89 条契约）
 > ```
 >
 > **验证环境**：本地 PostgreSQL **17.6**（与 Supabase 目标版本一致）+ 18.6 对照。
@@ -36,7 +41,10 @@
 > `release/post-legacy-gate@e35923b` 状态为 `RELEASE CANDIDATE SUPERSEDED`
 > （8/8 能力已在 main），保留为 recovery ref，不删除、不合并。
 >
-> 详见 `amas-website/docs/operations/` 下的 DB-0 ～ DB-6.1 各报告。
+> **D-39**：Docker 不是 staging 前置条件（已实测）。
+> **D-40**：staging 与 production 基础设施与数据群体相互隔离。
+>
+> 详见 `amas-website/docs/operations/` 下的 DB-0 ～ DB-6.1 与 STAGING-0 各报告。
 
 ---
 

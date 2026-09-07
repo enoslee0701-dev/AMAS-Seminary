@@ -5,6 +5,68 @@
 
 ---
 
+## D-40｜Staging 与 Production 相互隔离
+
+```
+日期     2026-09-07
+状态     APPROVED（Supervisor 裁定）
+阶段     STAGING-0
+```
+
+**决策**：Staging 与 Production 的**基础设施与数据群体相互隔离**。
+Staging fixtures **默认永不**成为 Production 身份。
+
+必须是不同的 Supabase project · 不同的部署目标 · **不同的构建产物** ——
+`anonKey` 会被打进前端 bundle，一次构建复用两个环境
+等于让 staging 前端连 production 库。
+
+**理由**：与 D-34 同源。测试装置一旦被当成「迁移成功人口」，
+就会在正式环境里产生没有真人对应的账号（R-7）。
+
+---
+
+## D-39｜Docker 不是 Staging 的前置条件
+
+```
+日期     2026-09-07
+状态     APPROVED（Supervisor 裁定）
+阶段     STAGING-0
+```
+
+**决策**：**不把安装 Docker 作为 AMAS Staging 的前置条件。**
+
+本地 PostgreSQL 17.6 已足以承担：
+`schema development` · `migration replay` · `rollback testing` · `contract testing`。
+
+真正的 staging migration 走：
+
+```
+版本化 SQL migrations
+  → 受控 migration runner / CI
+  → Supabase Staging PostgreSQL
+```
+
+或经批准的 `psql` 直连。**不得因为 `supabase start` 跑不起来就让项目停摆。**
+
+**实测证据**（靶子是本地 PG 17.6，不是任何真 Supabase）：
+
+```
+supabase db push --db-url   不需要 Docker、不需要 link
+接受现有 0001_ 命名          26/26 应用成功
+版本记账                     写入官方 supabase_migrations.schema_migrations（26 行）
+幂等重放                     {"upToDate":true,"migrations":[]}
+差异查询                     supabase migration list --db-url 给出 local vs remote
+产出一致性                   与 psql 通道的 information_schema.columns 全表 md5 完全相同
+                            且在该库上跑 DB-3 契约 53/53 PASS
+```
+
+**如何应用**：本仓的离线迁移工具继续只产出 SQL 与 manifest（D-27），
+由通道负责施加；不要在工具里内嵌数据库连接。
+
+**证据**：`amas-website/docs/operations/STAGING-0-READINESS-REPORT.md` §4–§6
+
+---
+
 ## D-38｜ONE CANONICAL WRITER PER REPOSITORY
 
 ```

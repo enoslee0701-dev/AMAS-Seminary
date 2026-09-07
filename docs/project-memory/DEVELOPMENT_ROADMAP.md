@@ -16,6 +16,17 @@
 > `AUTH external tests BLOCKED_BY_ENV` · `RLS runtime ENVIRONMENT-UNVERIFIED`。
 >
 > ⚠ 不建议继续绕开环境做更多数据迁移。
+>
+> **STAGING-0 已完成（2026-09-07）**：状态 `NEEDS OWNER ACTION`。
+> 技术侧无阻塞项 —— 迁移通道已实测跑通（D-39），schema 验证工具就绪，
+> DB-4 演练闭环 / AUTH 外部测试矩阵 / RLS 否定式矩阵均已设计完成。
+> 剩下的 5 项全部需要 Product Owner 提供资源（staging Supabase / backend 托管 /
+> staging 网址 / SMTP 决策 / 凭据）。
+>
+> 下一阶段建议 **STAGING-1**：只做「连通 + 应用 0001–0026 + 验证 89 条契约」，
+> **不碰身份、不碰数据** —— 第一次连真实 Supabase 会暴露一批本地看不见的东西
+> （TLS / 连接池 / 平台角色 / 扩展差异 / 备份耗时），
+> 与身份迁移混在一起就分不清是环境问题还是逻辑问题。
 
 > ### RB-01 数据库迁移阶段计划（DB-1 定版，2026-09-07）
 >

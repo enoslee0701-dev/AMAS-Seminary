@@ -34,6 +34,7 @@
 >
 > | OWNER | REPO | TASK | BASE | STARTED | ENDED | 结果 |
 > |---|---|---|---|---|---|---|
+> | Claude | 两仓 | **STAGING-0** | App `47bd23d` / web `a12078b` | 2026-09-07 | 2026-09-07 | `STAGING-0 NEEDS OWNER ACTION`，已交回 IDLE |
 > | Claude | 两仓 | RB-01 **DB-6.1** | App `51bfd11` / web `fb0e444` | 2026-09-07 | 2026-09-07 | `DB-6.1 LOCALLY VERIFIED`，已交回 IDLE |
 > | Claude | 两仓 | RB-01 **DB-6** | App `02903a1` / web `661e7af` | 2026-09-07 | 2026-09-07 | `DB-6 LOCALLY VERIFIED`；push 时遇 main 漂移，已做 lineage reconciliation |
 > | Claude | 两仓 | RB-01 **DB-3.5** | — | 2026-09-07 | 2026-09-07 | `DBR-22 CLOSED` |
@@ -43,6 +44,10 @@
 > **保留为 recovery ref，不删除、不合并。**
 >
 > **DB-4 不是可认领任务**：`BLOCKED_BY_EXTERNAL_ENV = STAGING SUPABASE REQUIRED`（D-36）。
+>
+> **STAGING-1 也暂不可认领**：需先由 Product Owner 提供 staging Supabase 与凭据
+> （见 STAGING-0 报告 §20）。**D-39**：不必为此安装 Docker ——
+> 迁移通道是 `supabase db push --db-url`，已实测无需 Docker。
 
 ---
 

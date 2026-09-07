@@ -895,3 +895,55 @@ active `course_progress` 只能引用 canonical `course_catalog`；
 DB-6 **未擅自加表**。现在决定成本最低（0 行数据）。
 
 **证据**：DB-6 报告 §4、§16
+
+---
+
+## #RB-29 `.env.example` 缺少全部 `SUPABASE_*` 变量
+
+```
+status:    OPEN
+severity:  medium（上手阻塞，非运行期缺陷）
+owner:     unassigned
+phase:     STAGING-0 之后的实施阶段
+```
+
+两份示例文件都**没有**列出前后端实际依赖的 Supabase 变量：
+
+```
+App/.env.example        GEMINI_API_KEY · VITE_API_BASE_URL · VITE_APP_SECRET · VITE_VOICE_TRANSPORT
+backend/.env.example    PORT · APP_SECRET · JWT_SECRET · CORS_ORIGINS · GEMINI_API_KEY
+                        LIVEKIT_* · AGORA_* · ROOM_STORE_URL · DB_PATH · APNS_*
+```
+
+但实际必需的是：
+
+```
+backend    SUPABASE_URL                （config.ts:52）
+           SUPABASE_SERVICE_ROLE_KEY   （config.ts:53，高敏，绝不下发客户端）
+frontend   VITE_SUPABASE_URL           （services/supabaseAuth.ts）
+           VITE_SUPABASE_ANON_KEY      （同上）
+```
+
+**后果**：照着示例配置的人会得到一个「登录直接 503」的环境，
+而 503 的提示虽然写明了缺哪两个变量（`authService.ts:221` `requireSupabase()`），
+示例文件里却找不到它们 —— 上手时会以为是 bug。
+
+**未在 STAGING-0 修复的原因**：该阶段的约束是「除文档更新外不改业务代码」，
+`.env.example` 属配置文件，留待下一个有写权限的实施阶段一并补。
+
+**证据**：STAGING-0 报告 §3
+
+---
+
+## #RB-28 复核结论（2026-09-07，STAGING-0）
+
+原记录担心「missing Supabase config → silent fallback」。逐处核对后：
+
+| 位置 | 实际行为 | 判定 |
+|---|---|---|
+| App 认证 `services/authService.ts:221` | `requireSupabase()` **抛 503 并附明确提示**，注释写明「未配置就是不能用，而不是悄悄回落到一条已经不存在的链路上」 | ✅ **已修好**，认证部分可关闭 |
+| Portal 官网 `assets/js/main.js:861` | `if(!S.url || !S.anonKey) return;` 静默跳过 | ⚠ **设计如此且有文档** —— 该通道是邮件通道之外的**次要**数据库通道（`supabase-config.js` 注释：「留空 = 仅邮件通道，网站正常工作」）。不是缺陷，但**是 staging 配置清单项**：忘了填就没有任何提示，官网提交不会入库 |
+
+**处置**：认证部分关闭；官网数据库通道转为 STAGING ENTRY CHECKLIST 的检查项。
+
+**证据**：STAGING-0 报告 §14

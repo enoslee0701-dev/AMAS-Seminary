@@ -572,3 +572,40 @@ D-38（ONE CANONICAL WRITER PER REPOSITORY）。
 **未做**：未开始 DB-4，未开始 STAGING-0，未新增任何 legacy-retired 业务表，
 未对 `thumbnail` 空串做任何归一化。
 
+---
+
+## 2026-09-07 — STAGING-0 Supabase Staging 就绪度
+
+```
+Acceptance level   Design / audit only（本阶段不创建任何资源）
+App base commit    47bd23d
+website base       a12078b
+```
+
+**结论：`STAGING-0 NEEDS OWNER ACTION`**
+
+**本轮唯一的实测项 —— 迁移交付通道**（靶子是本地 PG 17.6，非任何真 Supabase）：
+
+| 检验 | 结果 |
+|---|---|
+| `supabase db push --db-url` 是否需要 Docker | **不需要**（只有 `supabase start` 需要） |
+| 是否接受现有 `0001_` 命名 | ✅ 26 个全部按序识别 |
+| 实际应用 | ✅ 26/26 |
+| 版本记账 | ✅ 官方 `supabase_migrations.schema_migrations`，26 行 |
+| 幂等重放 | ✅ `{"upToDate":true,"migrations":[]}` |
+| 差异查询 | ✅ `migration list --db-url` 给出 local vs remote |
+| 与 psql 通道产出一致性 | ✅ `information_schema.columns` 全表 md5 **完全相同** |
+| 该库上的 DB-3 契约 | ✅ **53/53 PASS** |
+
+**决策**：D-39（Docker 不是 staging 前置条件）· D-40（staging 与 production 隔离）。
+
+**新增问题**：RB-29（`.env.example` 缺全部 `SUPABASE_*`）。
+**澄清**：RB-28 的认证部分实际已修好（`requireSupabase()` 抛 503，非静默回落）；
+官网次要数据库通道的静默跳过是设计如此且有文档，转为 staging 配置检查项。
+
+**入场清单**：`READY` 7 · `NEEDS_OWNER` 5 · `BLOCKED` 2 · `NOT_REQUIRED` 4。
+两个 BLOCKED 都只是依赖前面的 NEEDS_OWNER，**技术侧已无挡路项**。
+
+**未做**：未创建任何资源 · 未申请付费服务 · 未创建/查询任何真实账号 ·
+未开始 DB-4 · 未开始 STAGING-1 · 未把任何状态写成 STAGING VERIFIED。
+
