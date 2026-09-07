@@ -181,6 +181,82 @@ STG-GHOST     真实 Supabase user，**故意不建 mapping**
 `provision_failed` / `skipped_test_account` / 未知状态 / 无映射 →
 一律 403，**不自动 provision**（产品决策，fail closed）。
 
+## 8.5 Supabase Staging 项目现状（2026-09-07 实测）
+
+```
+project          amas-staging
+region           ap-southeast-1
+status           ACTIVE_HEALTHY
+postgres         17.6
+定位             APP STAGING SUPABASE CANDIDATE —— 不要再建第二个
+
+前端 publishable key    SET      （值不入库、不入文档、不入报告）
+legacy anon key         SET
+后端 secret / service   见 §5 变量名
+
+真实认证人口     auth.users = 1 · profiles = 1 · user_roles = 1
+唯一角色         applicant
+STG personas     NOT CREATED（STG-STUDENT / STG-ADMIN / STG-GHOST 均未建立）
+
+migration 历史   0001 … 0010
+DB-3 的 0023–0026（app_foundation / learning / rooms_prayer / community）
+                 NOT APPLIED —— DB-4 保持 PAUSED，本阶段不得为了 Auth 验收去应用它们
+
+security advisor findings   PENDING REVIEW（见 §8.6）
+```
+
+**⚠ 迁移历史与实际对象不一致**：历史只登记到 `0010`，但实测 `student_guard` 与
+`sync_alias_on_role_revoke`（定义在 `0012_student_core.sql`）已存在于库中。
+说明有迁移是**带外执行**的（控制台 SQL Editor 不写 `supabase_migrations`）。
+后果：不能拿迁移历史当作"库里有什么"的依据；任何针对具体对象的操作，
+执行前必须先查 `pg_proc` / `information_schema` 确认对象真实存在。
+
+## 8.6 Security Advisor 现状与待处置
+
+**根因**：`0003_hardening.sql` 的批量收口
+`revoke execute on all functions in schema public from public, anon`
+只作用于执行那一刻已存在的函数。**0004 之后新建的每一个函数**都回到
+PostgreSQL 默认的 `PUBLIC EXECUTE`（PUBLIC 覆盖 anon 与 authenticated），
+除非该迁移自己再 revoke 一次 —— 而 13 个函数没有。
+
+```
+A. TRIGGER ONLY（10）   handle_new_user · tvr_validate_transition ·
+                        application_validate_transition · application_strip_forbidden ·
+                        student_guard · sync_alias_on_role_revoke ·
+                        application_protect_locked · append_only_guard ·
+                        course_catalog_guard · app_rooms_mark_host_orphaned
+                        → PostgreSQL 本身拒绝直接调用，实际可利用性低；
+                          但保留授权无用途，应收口
+
+D. INTERNAL HELPER（3）  application_validate_program · application_validate_form ·
+                        normalize_student_number
+                        → 客户端从不直接调用；调用链经 submit_application
+                          （SECURITY DEFINER）执行，撤销 authenticated 不破坏产品
+
+★ 角色 helper           has_active_role(p_user uuid, p_role text)
+                        SECURITY DEFINER + 任意 UUID + 授予 authenticated + 无归属校验
+                        → **任何已登录用户可探测他人角色**（可枚举管理员的布尔预言机）
+                        信息泄漏，非提权。RLS 策略对它 0 引用 → 可安全 revoke
+
+★ 角色 helper           is_admin_any(p_user uuid)
+                        被 13 处 RLS 策略引用（形式恒为 is_admin_any(auth.uid())）
+                        → **不能 revoke**，否则策略失效；改为在函数内加归属门禁
+```
+
+处置方案见 `docs/operations/patches/0027_function_execute_hardening.sql`，
+状态 **PROPOSED — DO NOT APPLY**，含七步验证计划（before grants / apply /
+after grants / trigger behavior / Portal RPC regression / 越权探测复测 / advisor rerun）。
+批准后移动到 `amas-website/supabase/migrations/` 再执行。
+
+## 8.7 STAGING SECURITY CONFIG TODO
+
+```
+Leaked Password Protection = DISABLED
+```
+
+Supabase Advisor 报告项，属**平台配置**，在 Supabase 控制台开启即可。
+**不要在代码里模拟**这项能力。建立 STG personas 前开启为宜。
+
 ## 9. 已知 blocker（外部前提）
 
 ```
