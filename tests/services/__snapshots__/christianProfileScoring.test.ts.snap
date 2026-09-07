@@ -1,0 +1,52 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`CP · GOLDEN FIXTURE（漂移哨兵） > 固定作答 → 固定的 12 项倾向向量 > orientation-vector-standard 1`] = `
+{
+  "builder": 37,
+  "encourager": 40,
+  "equipper": 20,
+  "evangelist": 20,
+  "explorer": 67,
+  "intercessor": 38,
+  "leader": 37,
+  "mercy": 33,
+  "missionary": 53,
+  "servant": 48,
+  "shepherd": 81,
+  "teacher": 52,
+}
+`;
+
+exports[`CP · GOLDEN FIXTURE（漂移哨兵） > 固定作答 → 固定的 Top 3 > top3-standard 1`] = `
+[
+  {
+    "key": "shepherd",
+    "score": 81,
+  },
+  {
+    "key": "explorer",
+    "score": 67,
+  },
+  {
+    "key": "missionary",
+    "score": 53,
+  },
+]
+`;
+
+exports[`CP · GOLDEN FIXTURE（漂移哨兵） > 精简版固定作答 → 固定的 12 项倾向向量 > orientation-vector-quick 1`] = `
+{
+  "builder": 40,
+  "encourager": 30,
+  "equipper": 10,
+  "evangelist": 10,
+  "explorer": 50,
+  "intercessor": 60,
+  "leader": 37,
+  "mercy": 40,
+  "missionary": 70,
+  "servant": 70,
+  "shepherd": 83,
+  "teacher": 50,
+}
+`;

@@ -1,3 +1,15 @@
+> ## ⚠ 阶段已切换（2026-09-07）
+>
+> 项目从「功能开发阶段」进入
+> **RELEASE READINESS → STAGING → PRODUCTION VERIFICATION**。
+>
+> **暂停新增产品功能。** 下方路线图中未完成的功能项一律推迟，
+> 优先级让位于上线就绪度工作。
+>
+> 当前最高允许状态：`TESTED LOCALLY`。
+> 阻塞清单见 `amas-website/docs/operations/ARCHITECTURE-PREMERGE-REVIEW.md` §13。
+> 正式决策见 [DECISION_LOG.md](DECISION_LOG.md)。
+
 # Development Roadmap
 
 状态标签只用这六个：`DONE` · `IN_PROGRESS` · `NEXT` · `TODO` · `BLOCKED` · `DEPRECATED`

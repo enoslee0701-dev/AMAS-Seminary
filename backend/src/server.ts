@@ -30,6 +30,11 @@ import { registerPtRoutes } from './routes/pt.js';
 import { registerGrowthRoutes } from './routes/growth.js';
 import { requireAuth, requireAdmin, warnIfNoAppSecret, warnIfJwtDerived } from './middleware/auth.js';
 import { generalApiLimiter, tokenLimiter } from './middleware/rateLimit.js';
+import { assertProductionConfigOrExit } from './startupGuard.js';
+
+// RB-06 · 生产启动护栏。放在建 app 之前：配置不合格的生产实例
+// 不应该开出监听端口。开发与测试环境一律放行，流程不受影响。
+assertProductionConfigOrExit();
 
 const app = express();
 app.use(cors({

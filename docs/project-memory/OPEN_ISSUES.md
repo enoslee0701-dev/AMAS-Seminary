@@ -208,3 +208,56 @@ phase:     Phase 4B 之前
 | — | `POST /api/auth/_promote` 隐藏提权端点 | `ae02348` | 已移除，带 404/403 回归测试 |
 | — | main 上混入未验收的 Supabase Auth 代码 | `d3e860d` | surgical partial revert；fail-closed 修复保留 |
 | — | SSH 无密钥导致无法推送 | `2026-09-04` | remote 改为 HTTPS |
+
+
+---
+
+## #RB-22 AUTH 验收测试在 CI 中从未真正执行
+
+```
+status:    OPEN
+severity:  medium
+owner:     unassigned
+phase:     AUTH-M2~M6.5B
+```
+
+`backend/src/test/supabase-auth.test.ts`、`credential-recovery*.test.ts`、
+`password-change-reauth.test.ts`、`redirect-matrix.test.ts` 均在缺 `AMAS_ENV`
+时**整组跳过**（设计如此，避免 CI 因缺环境假失败）。
+
+由于 `staging.env` 从未存在于 CI，**这些 AUTH 断言在 CI 中一次都没跑过**。
+历史报告里的 23/23、8/8、17/17、135/135 是**当时有人在本机带环境跑出来的**，
+不构成持续保护。
+
+**解除条件**：staging 就绪后在 CI 注入 `AMAS_ENV`，或提供专用 CI secret。
+
+---
+
+## #RB-21 Christian Profile 核心算法零测试覆盖 —— 已关闭
+
+```
+status:    CLOSED（2026-09-07）
+severity:  was high
+```
+
+`services/christianProfile/scoring.ts`（474 行）此前无任何测试。
+已新增 `tests/services/christianProfileScoring.test.ts`：20 条断言 + 3 个 golden
+snapshot，并用「加进去 → 断言倾向一字不变」钉死铁律边界（课程/实践/导师证据
+不得污染 12 项倾向）。
+
+---
+
+## #RB-06 生产启动护栏缺失 —— 已关闭
+
+```
+status:    CLOSED（2026-09-07）
+severity:  was high
+```
+
+原先缺关键配置时后端会静默降级启动（JWT 密钥回落为进程内随机值、CORS 指向
+localhost），只打印一行 `console.warn`。
+
+已新增 `backend/src/startupGuard.ts`：`NODE_ENV=production` 下缺
+`JWT_SECRET` / `DB_PATH` / `CORS_ORIGINS`（或含 localhost）即 `process.exit(1)`，
+**绝不自动生成生产密钥、绝不回落 dev 默认值**。13 条测试覆盖三种情形，
+并已纳入 `npm test`。

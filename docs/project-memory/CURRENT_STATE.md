@@ -59,8 +59,8 @@ d8abbd6  P0(其它房间): 拆掉赞美室假播放、举手脚本与四处不�
 ## 测试基线（2026-09-04 实测，非引用）
 
 ```
-frontend tests                138/138   (17 files)   ← 2026-09-07 实跑
-backend tests                 103/103   0 fail          ← 2026-09-07 实跑
+frontend tests                158/158   (18 files)   ← 2026-09-07 实跑（新增 CP 回归 20）
+backend tests                 116/116   0 fail          ← 2026-09-07 实跑（新增启动护栏 13）
 
 room presence E2E              54/54
 room reading position E2E      44/44
