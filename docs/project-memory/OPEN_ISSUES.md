@@ -610,11 +610,27 @@ Portal `profiles.avatar_path` 的语义是 storage path。
 ## #DBR-22 DB-3 在 PG 18.6 验证，Supabase 是 PG 17.6
 
 ```
-status:    OPEN
-severity:  high（DB-4 硬前置）
+status:    CLOSED（2026-09-07，DB-3.5）
+severity:  high（曾为 DB-4 硬前置）
 owner:     unassigned
-phase:     RB-01 / DB-4 前置
+phase:     RB-01 / DB-3.5
 ```
+
+**关闭依据**（DB-3.5，全部在 `PostgreSQL 17.6` 实测）：
+
+```
+server_version = 17.6 / server_version_num = 170006
+migrations     26 / 26 APPLIED
+contract       53 / 53 PASS · FAIL 0 · SKIP 0
+rollback       PASS（逐列与 0022 基线零差异）
+forward replay PASS（53 / 53）
+Portal 回归     PASS（表/policy/enum/触发器/外键 逐名零增删；+5 列为声明内 EXTEND）
+```
+
+**发现的真实版本差异**：见下方 DBR-24 的更正。
+migrations 本身**未因版本做任何修改**。
+
+**原记录**（保留）：
 
 DB-3 的 schema 在本地 **PostgreSQL 18.6** 上执行并通过 52 条断言，
 但 Supabase staging 是 **PG 17.6**。
@@ -663,7 +679,20 @@ DB-3 契约测试实测复现的两个陷阱：
    不是静默降级，是运行时 500。必须写成
    `... on conflict (cols) where client_request_id is not null do nothing`。
 
-2. **`ON DELETE RESTRICT` 抛的是 `restrict_violation`(23001)**，
-   不是 `foreign_key_violation`(23503)。异常处理需区分，否则会漏捕。
+2. **`ON DELETE RESTRICT` 的 SQLSTATE 随 PG 版本不同** ——
+   **【DB-3.5 更正】** DB-3 原文写「抛 `restrict_violation`(23001)」，
+   那是 **PostgreSQL 18** 的行为，**在目标版本上是错的**：
 
-**证据**：DB-3 报告 §11、§15
+   | | PostgreSQL **17.6**（Supabase 目标） | PostgreSQL 18.6 |
+   |---|---|---|
+   | `ON DELETE RESTRICT` 违反 | `23503 foreign_key_violation` | `23001 restrict_violation` |
+   | `ON DELETE NO ACTION` 违反 | `23503` | `23503` |
+
+   `restrict_violation` 是 PG 18 才引入的独立条件。
+   **DAL 必须捕 `23503`，不得依赖 `23001`**；
+   且在 17.6 上**无法**靠 SQLSTATE 区分 RESTRICT 与 NO ACTION，
+   要区分只能看约束名。
+
+   两版的**行为一致**（删除都被挡住），只有错误码不同。
+
+**证据**：DB-3 报告 §11、§15；DB-3.5 报告 §8

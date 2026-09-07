@@ -5,6 +5,35 @@
 
 ---
 
+## D-33｜目标版本验证不可用「理论兼容」替代
+
+```
+日期     2026-09-07
+状态     APPROVED（Supervisor 裁定）
+阶段     RB-01 / DB-3.5
+```
+
+**决策**：schema / DDL 的验证必须在**目标部署版本**上真实执行。
+「所用特性在目标版本都支持」只能作为静态补充，**不能**作为通过依据。
+版本不一致时状态必须写成 `TARGET VERSION VERIFICATION REQUIRED`，**不得**写 `VERIFIED`。
+
+**理由**：DB-3 在 PostgreSQL 18.6 上全绿，其「特性都支持 17.6」的判断本身也没错 ——
+但 DB-3.5 在真实 17.6 上仍抓到一处差异：
+
+| | PostgreSQL 17.6（Supabase 目标） | PostgreSQL 18.6 |
+|---|---|---|
+| `ON DELETE RESTRICT` 违反 | `23503 foreign_key_violation` | `23001 restrict_violation` |
+| `ON DELETE NO ACTION` 违反 | `23503` | `23503` |
+
+它不属于「特性支持与否」，而属于**行为细节**，静态推理看不见。
+
+**如何应用**：任何跨版本 / 跨引擎的结论，先问「在目标版本上跑过没有」；
+没跑过就标 `UNVERIFIED`。本仓 DB-12 的 DAL 异常处理直接受此约束（见 DBR-24）。
+
+**证据**：`amas-website/docs/operations/DB-3.5-POSTGRESQL-17.6-COMPATIBILITY-REPORT.md` §8
+
+---
+
 ## D-32｜主键类型跟随真实 id 生成器
 
 ```
