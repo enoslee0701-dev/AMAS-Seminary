@@ -267,12 +267,13 @@ export async function requireAdmin(
     return;
   }
 
-  // Legacy 路径（AUTH-M7 之后仍保留，直到 legacy token 整体下线）。
-  // ★ 只有 legacy principal 才允许用 SQLite users.role 判权限。
-  //   Supabase 路径下 principal.user.role 只是展示字段，绝不能到这里来。
-  if (principal.user.role !== 'admin') {
-    res.status(403).json({ error: 'Admin role required.' });
-    return;
-  }
-  next();
+  // 走到这里说明出现了既不是 service、authSource 又不是 'supabase' 的 principal。
+  //
+  // 这里**曾经**是 legacy 分支：`if (principal.user.role !== 'admin') 403`。
+  // legacy user auth 删除之后它已不可达，但形状危险 —— 一旦将来有人新增
+  // 任何 authSource，SQLite users.role 会**静默重新变成授权来源**，
+  // 而 R-2 定的是「Supabase user_roles 是授权的唯一 Source of Truth」。
+  // 因此改为显式 fail closed：宁可拒绝一个未知主体，也不给它一条按业务角色
+  // 提权的路。principal.user.role 在任何情况下都只是展示字段。
+  res.status(403).json({ error: 'Admin role required.' });
 }
