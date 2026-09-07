@@ -342,3 +342,52 @@ FK 生命周期 CASCADE 11 张 · SET NULL + tombstone 11 张 · 不迁移 2 张
 App repo 不建第二套竞争的 Supabase migrations。
 
 **Acceptance level**：设计定版，无实施。不适用 PASS/FAIL 测试口径。
+
+---
+
+## 2026-09-07 — RB-01 DB-2：数据预检与迁移就绪审计
+
+**Result**：`DB-2 COMPLETE / READY FOR DB-3 REVIEW`
+**性质**：**READ ONLY**。原库 SHA256 审计前后完全一致
+（`0798526d34a24c75696a305d65eafe2e`），审计跑在临时副本上，readonly 连接。
+
+**数据集**：`backend/data/amas.sqlite`，450KB，**本地开发库**（App 从未部署，无生产库）。
+工具 `backend/scripts/db2-data-preflight.mjs`，可重跑。
+
+### 实测结果
+
+```
+32 张表 · 总计 285 行 · 其中 21 张为空
+users 7 个，角色分布 {"student": 7}  ← 0 个 admin
+重复邮箱 0 · 非 uuid 的 users.id 0 · 越界 role 值 0
+
+孤儿汇总  VALID=25  ORPHAN=138  SYSTEM_SENTINEL=40  NULL=12
+  其中 refresh_jti 104（整表不迁，RB-27）
+      courses.created_by 32（是哨兵不是孤儿）
+      prayer_shares 2   ← **真实需处置的孤儿只有这 2 行**，按 R-10 tombstone
+
+空表包括 growth_state（CP 数据 0 条）· course_progress（0 条）·
+        legacy_user_map（0 条）· posts · prayer_sessions
+```
+
+### 三个最重要的结论
+
+1. **需要 Product Owner 亲自决定的事项：0 项。**
+   0 个 admin 账号 · 0 条 email-only 映射 · 0 条 CP 数据 · 0 行受影响的 retired 课程进度。
+2. **无 schema blocker** —— DB-3 可以开始建立 PostgreSQL migrations。
+3. **唯一的数据迁移硬阻断是 canonical 身份解析（BLOCKED_BY_ENV）**，需真实 Supabase。
+
+### 本轮新发现
+
+**DBR-19**：只查已知哨兵不够。实测又发现 `courses.created_by` 的两个哨兵值
+（`'system'` 35 行 + `'catalog-migration'` 32 行，占该表全部 67 行）。
+通则改为：任何 owner 列加 FK 前必须做全值域 uuid 合法性扫描。
+
+**rooms 哨兵与契约预期完全吻合**：7 行中恰好 5 行 `host_id='system'`
+（bible_reading / fellowship_room / praise_room / prayer_room / preaching_room），
+另 2 行是 SEC-2 测试房间且 host 均为有效用户。不是 5 就标异常 —— 结果正是 5。
+
+**DBR-17 定性修正**：`legacy_user_map` 为空，迁移脚本从未在此库跑过，
+故 email-only silent matching 是**潜伏问题，不是既成事实**。契约规则仍保留。
+
+**Acceptance level**：只读审计，无实施。不适用 PASS/FAIL 测试口径。

@@ -524,3 +524,45 @@ Migration Gate Severity       —— DBR-01~05 为 DB MIGRATION HARD BLOCKERS
 ```
 
 两者**都必须在 Production 前解决**，但语义不同，不要混用。
+
+
+---
+
+## #DBR-18 祷告会创建缺少幂等性
+
+```
+status:    OPEN（D-24 已批准修复，安排到 DAL/schema 修改阶段）
+severity:  migration gate — medium
+phase:     RB-01 DB-9 或 DB-12
+```
+
+`routes/prayerSession.ts:200` 的创建事务无幂等键：客户端重试会产生两条祷告会。
+SQLite 下同样存在，非迁移引入 —— 但迁移是修它的合适时机。
+
+**DB-2 实测**：`prayer_sessions` 当前 0 行，**无重复实例**。风险真实但暂无实例。
+参照 `prayer_shares` 已有的 `client_request_id` + 部分唯一索引方案
+（注意：现有 12 行 prayer_shares 全部没有幂等键，说明该机制尚未被客户端实际使用）。
+
+---
+
+## #DBR-19 哨兵值不能只靠已知清单查找
+
+```
+status:    OPEN（契约通则，DB-3 落实）
+severity:  migration gate — medium
+```
+
+DB-2 只查已知的 `rooms.host_id='system'` 是不够的 —— 实测又发现两个：
+
+```
+courses.created_by = 'system'             35 行
+courses.created_by = 'catalog-migration'  32 行
+（courses 全部 67 行的 created_by 都不是真实用户）
+```
+
+**通则**：任何 owner 列在加 FK 前，必须做**全值域 uuid 合法性扫描**，
+而不是只比对已知的哨兵字符串。已实现于
+`backend/scripts/db2-data-preflight.mjs`（可重跑）。
+
+本例不构成障碍：`courses` 按契约 MERGE 进 `course_catalog`，
+而后者没有 `created_by` 列，该列本就不迁移。

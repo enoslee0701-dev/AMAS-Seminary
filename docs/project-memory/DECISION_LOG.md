@@ -5,6 +5,98 @@
 
 ---
 
+## D-26｜默认迁移策略是受控切换，不是长期双写
+
+```
+日期     2026-09-07     状态  APPROVED
+```
+
+```
+SQLite → 迁移演练 → 全量对账 → 短暂写冻结 → 最终导出
+      → PostgreSQL 导入 → 验证 → 切换后端 → SQLite 保留为只读回滚快照
+```
+
+**不采用**长期 SQLite/Postgres 双写。理由：无双写漂移、无两套 SoT、
+回滚更清楚、实施范围明显更小。App 尚未进入正式 Production，无零停机要求。
+
+仅当未来证明存在 **production zero-downtime requirement** 时，
+才提交独立的 **DUAL-WRITE CHANGE PROPOSAL** 单独审批。
+
+（此条修正 DB-1 §13 原写的「DB-13 双写/影子验证 + 切流」。）
+
+---
+
+## D-25｜默认不创建 app_user_profile_ext
+
+```
+日期     2026-09-07     状态  APPROVED
+```
+
+**不能因为「App 以前有 users 表」就自然产生一张 extension 表。**
+
+必须对 SQLite `users` 每个字段逐项归宿：
+`auth.users` / `profiles` / `user_roles` / 既有 canonical 表 / obsolete / 确属 App 独有。
+
+只有确实满足「App 独有 + 仍有产品价值 + 无法放入现有 canonical model」的字段，
+才允许提出 extension table。**一个都没有 → `app_user_profile_ext = DO NOT CREATE`。**
+
+目标是**消灭第二套 users 模型，而不是换个名字继续保留**。
+
+---
+
+## D-24｜祷告会创建必须在生产迁移前具备幂等性
+
+```
+日期     2026-09-07     状态  APPROVED（DBR-18）
+```
+
+同一次「创建祷告会」请求即使客户端重试，也只能创建一个房间。
+
+Acceptance：同一认证创建者 + 同一 idempotency request → 同一逻辑房间、无重复行；
+新的合法请求 → 新房间。并须验证：事务回滚 · 并发重复请求 · 超时后重试 ·
+commit 前失败 · commit 后响应前失败。
+
+**不为这一项引入复杂分布式系统。** 安排到真正修改 target schema / DAL 的阶段。
+
+---
+
+## D-23｜既有 Portal 角色优先于 legacy App admin
+
+```
+日期     2026-09-07     状态  APPROVED
+```
+
+**情况 A**：canonical user 在 Portal `user_roles` 中已有真实角色 →
+**保留 Portal 现有角色**。旧 SQLite `admin` **不得覆盖或扩大**它。
+
+**情况 B**：legacy `admin` 对应用户在 Portal 无管理角色 →
+状态 `OWNER_ROLE_DECISION_REQUIRED`，**不得自动授予**
+`registrar` / `academic_admin` / `super_admin` / `content_admin` 中的任何一个。
+
+**legacy admin 永不自动提权。**
+
+---
+
+## D-22｜email-only 身份匹配必须人工复核
+
+```
+日期     2026-09-07     状态  APPROVED
+```
+
+```
+email-only match → LOW CONFIDENCE → MANUAL REVIEW REQUIRED
+```
+
+不得直接进入正式 identity migration。
+
+只有存在**独立于 email 的确定性证据**（如 AUTH-M5/M6 的
+`provisioned_by_migration`：账号由迁移脚本据 legacy 记录创建，归属定义上无歧义）
+才能提升为 `VERIFIED`。
+
+**不能因为「email + display name 看起来一样」就自动放行。禁止静默修正。**
+
+---
+
 ## D-21｜App users 并入 canonical Supabase/Portal 身份
 
 ```

@@ -11,7 +11,8 @@
 > DB-7   Christian Profile 迁移 + 三层 Gate（双哈希 / 20 regression / 3 snapshot）
 > DB-8   学习数据   DB-9 房间与祷告   DB-10 社群   DB-11 附属
 > DB-12  DAL 切换（repository 接口层 + async 改造 + 事务契约）
-> DB-13  双写/影子验证 + 切流
+> DB-13  受控切换（D-26）：写冻结 -> 最终导出 -> 导入 -> 验证 -> 切后端
+>        SQLite 保留为只读回滚快照。**不采用长期双写**
 > ```
 >
 > **SQLite 直到 DB-13 验收通过前不删除。**
