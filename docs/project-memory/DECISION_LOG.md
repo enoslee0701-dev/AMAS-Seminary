@@ -5,6 +5,128 @@
 
 ---
 
+## D-32｜主键类型跟随真实 id 生成器
+
+```
+日期     2026-09-07
+状态     APPROVED
+阶段     RB-01 / DB-3
+```
+
+**决策**：目标 PK 类型按每张表**实际的 id 生成器**逐表裁定，不一刀切成 uuid。
+`crypto.randomUUID()` 的表用 `uuid`；`crypto.randomBytes(9).toString('hex')`（18 位 hex）
+与人类可读码的表用 `text`。
+
+**理由**：DB-1 §8 #9 字面写「TEXT uuid 主键 → uuid」，但实测
+`prayer_shares`（12/12）、`rooms`（7/7）、`courses`（67/67）的 id 根本不是 uuid，
+照字面执行会在类型转换处**整批失败**。
+
+**如何应用**：类型契约必须以**代码里的生成器 + 全表实测形态**为准，
+不能以列名或惯例推断。涉及本仓的两处生成器：
+`backend/src/routes/prayer.ts:27`、`backend/src/routes/prayerSession.ts:25`。
+
+**证据**：`amas-website/docs/operations/DB-3-POSTGRESQL-SCHEMA-IMPLEMENTATION-REPORT.md` §11
+
+---
+
+## D-31｜`app_rooms` 三形态房主模型
+
+```
+日期     2026-09-07
+状态     APPROVED
+阶段     RB-01 / DB-3
+```
+
+**决策**：`host_type` × `host_user_id` × `host_orphaned_at` 三形态 ——
+`system`/NULL/NULL、`user`/NOT NULL/NULL、`user`/NULL/NOT NULL（房主已注销）。
+
+**理由**：DB-1 §6 的 `ON DELETE SET NULL` 与 §7 的 `NOT NULL` CHECK **不可能同时成立**。
+DB-3 契约测试实测证明：它会让**任何开过房间的用户永远无法注销**。
+
+**如何应用**：凡「保留内容 + 置空作者」的表，若同时有形态 CHECK，
+**必须先验证注销路径能跑通** —— 约束正确与流程可用是两件事。
+
+**证据**：`amas-website/docs/operations/DB-3-POSTGRESQL-SCHEMA-IMPLEMENTATION-REPORT.md` §6
+
+---
+
+## D-30｜`app_user_profile_ext` = DO NOT CREATE（确认 D-25）
+
+```
+日期     2026-09-07
+状态     APPROVED（以实测证据确认 D-25 的默认立场）
+阶段     RB-01 / DB-3 GATE 0
+```
+
+**决策**：不创建 App 用户扩展表。`bio` 以一列扩展 canonical `profiles`；
+`degree` **不迁移**，App 的学位展示改读 `student_records.program_code`，
+未建档用户显示「未确定」而**不得回填默认值**。
+
+**理由**：`degree` 实测 7/7 全 NULL、由用户注册时自选
+（`components/AuthView.tsx:55` 未选时硬编码回填 `'M.Div'`）、非权威学籍，
+迁移它会制造第二个学位真相源（R-2 展示 ≠ 权威）；
+`bio` 是通用档案属性，能放进 canonical schema，因此按 GATE 0 规则不得为它单开一张表。
+
+**待办（DB-12）**：`components/ProfileView.tsx` 的学位展示改源；
+`backend/src/auth/users.ts` 的 `degree` 写入路径退役。
+
+**证据**：`amas-website/docs/operations/DB-3-POSTGRESQL-SCHEMA-IMPLEMENTATION-REPORT.md` GATE 0
+
+---
+
+## D-29｜DB-3 是 schema only
+
+```
+日期     2026-09-07
+状态     APPROVED
+阶段     RB-01 / DB-3
+```
+
+**决策**：DB-3 只创建结构，不迁移任何一行业务数据。
+数据迁移在 DB-4 ～ DB-11 分阶段进行，每阶段独立验收与回退。
+
+**理由**：结构与数据同批推进会让失败无法归因 ——
+分不清是 schema 错了还是转换错了，也无法单独回退。
+
+**实测**：本轮业务数据写入行数 = 0；App 仓库代码零改动。
+
+---
+
+## D-28｜`courses.created_by` 是来源标记，不是身份
+
+```
+日期     2026-09-07
+状态     APPROVED
+阶段     RB-01 / DB-3
+```
+
+**决策**：承接为 `course_catalog.created_by_provenance text`，**刻意不设外键**。
+若将来出现真人创建的课程，须**另加**一列 `created_by uuid references profiles(id)`，不得复用本列。
+
+**理由**：DB-2 实测 67/67 行全部是哨兵（`system` 35 / `catalog-migration` 32），无一指向真实用户。
+设成 uuid FK 就必须发明一个不存在的「system 用户」，违反 DB-1 §7 三禁令与 R-7。
+
+---
+
+## D-27｜Migration 归属：website 仓库是唯一 source of truth
+
+```
+日期     2026-09-07
+状态     APPROVED
+阶段     RB-01 / DB-3
+```
+
+**决策**：`amas-website/supabase/migrations` 是 AMAS Supabase database 的**唯一** migration source of truth。
+**本仓库（App）不得建立第二套 Supabase migrations**，
+只保留离线迁移工具（读 SQLite、产出 manifest、写 Postgres），不含 DDL。
+
+**理由**：Portal 与 App 迁移后共用同一个数据库；两套竞争的 migration 目录
+必然产生「谁先跑」「版本号撞车」「schema 漂移」三类问题。与 D-9 的治理文档归属一致。
+
+**SQLite 侧**：`M-0` schema 基线快照工具仍在本仓（它只服务于 SQLite 的一次性导出）。
+
+---
+
 ## D-26｜默认迁移策略是受控切换，不是长期双写
 
 ```

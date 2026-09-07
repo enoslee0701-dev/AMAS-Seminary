@@ -566,3 +566,104 @@ courses.created_by = 'catalog-migration'  32 行
 
 本例不构成障碍：`courses` 按契约 MERGE 进 `course_catalog`，
 而后者没有 `created_by` 列，该列本就不迁移。
+
+---
+
+## #DBR-20 `users.email` 大小写不敏感唯一性迁移后无对应保障
+
+```
+status:    OPEN
+severity:  medium
+owner:     unassigned
+phase:     RB-01 / DB-4
+```
+
+SQLite `users.email` 是 `TEXT NOT NULL UNIQUE COLLATE NOCASE`。
+迁移后 `users` 表不迁，邮箱唯一性交由 Supabase Auth 承担，
+但 `public.profiles.email` 本身**没有**大小写不敏感唯一索引。
+
+需确认 Auth 侧规则足以防止「同一邮箱大小写不同的两个账号」。
+若不足，须在 `profiles` 上加 `unique (lower(email))` 或改用 `citext`。
+
+**证据**：DB-3 报告 §11 类型契约 #8
+
+---
+
+## #DBR-21 App `avatar` 混存三种形态，与 `profiles.avatar_path` 语义不符
+
+```
+status:    OPEN
+severity:  medium
+owner:     unassigned
+phase:     RB-01 / DB-12
+```
+
+App `users.avatar` 可能是上传 URL（`ProfileView.tsx:216`）、
+**data URI**（`ProfileView.tsx:222`）或前端生成的首字母头像（`AuthView.tsx:56`）。
+Portal `profiles.avatar_path` 的语义是 storage path。
+
+实测 7/7 全为 NULL，**当前迁移成本为 0**；但 App 侧写入路径必须先归一为 storage path，
+否则一旦有真实数据就会出现「路径列里存着几十 KB 的 base64」。
+
+---
+
+## #DBR-22 DB-3 在 PG 18.6 验证，Supabase 是 PG 17.6
+
+```
+status:    OPEN
+severity:  high（DB-4 硬前置）
+owner:     unassigned
+phase:     RB-01 / DB-4 前置
+```
+
+DB-3 的 schema 在本地 **PostgreSQL 18.6** 上执行并通过 52 条断言，
+但 Supabase staging 是 **PG 17.6**。
+
+所用特性（`generated always as ... stored` PG12+、identity 列 PG10+、
+`deferrable initially deferred` FK、部分唯一索引）在 17.6 均支持，
+但**未在 17.6 上实际执行过**。
+
+**DB-4 开始前必须在 17.6 上重跑** `0023..0026` + `db3_schema_contract.sql`。
+不得以「特性都支持」为由跳过。
+
+---
+
+## #DBR-23 Portal RLS policy 计数口径不一致（36 vs 33）
+
+```
+status:    OPEN
+severity:  low
+owner:     unassigned
+phase:     RB-01 / DB-4
+```
+
+DB-0 记录 Portal 有 36 条 RLS policy；
+由 `0001..0022` 在本地复现得到 **33 条**（`public` schema）。
+
+基线与应用 DB-3 之后一致（33 = 33），**因此不是本轮回归**。
+差异来源需核对 —— 可能 DB-0 的统计口径包含 `storage` 等其他 schema，
+或线上库存在 migration 之外的手工 policy（后者才是真问题）。
+
+---
+
+## #DBR-24 DAL 改造必须处理两个 Postgres 语义差异
+
+```
+status:    OPEN
+severity:  medium
+owner:     unassigned
+phase:     RB-01 / DB-12
+```
+
+DB-3 契约测试实测复现的两个陷阱：
+
+1. **部分唯一索引作 `ON CONFLICT` 目标时必须重复 WHERE 谓词**。
+   `on conflict (room_id, user_id, client_request_id) do nothing` 直接报错
+   `there is no unique or exclusion constraint matching the ON CONFLICT specification` ——
+   不是静默降级，是运行时 500。必须写成
+   `... on conflict (cols) where client_request_id is not null do nothing`。
+
+2. **`ON DELETE RESTRICT` 抛的是 `restrict_violation`(23001)**，
+   不是 `foreign_key_violation`(23503)。异常处理需区分，否则会漏捕。
+
+**证据**：DB-3 报告 §11、§15
