@@ -1,3 +1,24 @@
+> ### RB-01 数据库迁移阶段计划（DB-1 定版，2026-09-07）
+>
+> 每一阶段可独立验收与回退。**禁止 32 张表一次搬完再一起测。**
+>
+> ```
+> DB-2   只读事实采集（schema 基线快照 + 五项扫描），零写入
+> DB-3   0023_app_core.sql：身份扩展 + app_user_profile_ext + migration.* 工具表
+> DB-4   身份迁移：crosswalk 填充 + 人工复核（DBR-17 强制）
+> DB-5   角色迁移：ADMIN_ROLE_MIGRATION_MANIFEST 逐人裁定
+> DB-6   课程合并：course_catalog EXTEND（67 条已 1:1 对齐）
+> DB-7   Christian Profile 迁移 + 三层 Gate（双哈希 / 20 regression / 3 snapshot）
+> DB-8   学习数据   DB-9 房间与祷告   DB-10 社群   DB-11 附属
+> DB-12  DAL 切换（repository 接口层 + async 改造 + 事务契约）
+> DB-13  双写/影子验证 + 切流
+> ```
+>
+> **SQLite 直到 DB-13 验收通过前不删除。**
+> 契约全文见 `amas-website/docs/operations/DB-1-TARGET-SCHEMA-AND-MIGRATION-CONTRACT.md`。
+
+---
+
 > ## ⚠ 阶段已切换（2026-09-07）
 >
 > 项目从「功能开发阶段」进入

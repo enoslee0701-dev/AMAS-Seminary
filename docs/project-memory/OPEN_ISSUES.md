@@ -481,3 +481,46 @@ phase:     RB-01 DB-0 -> DB-1
 **DB-1 前必须由 Supervisor 决定的 4 项**：
 admin 角色目标映射 · CP 迁移方案（保持 blob / 关系化） ·
 course_progress 与 growth_state 的授权类型 · App users 表是否并入 profiles。
+
+
+---
+
+## #DBR-17 既有身份映射使用了被禁止的 email-only silent matching
+
+```
+status:    OPEN（迁移期强制人工复核）
+severity:  migration gate — high
+owner:     用户 / 教务
+phase:     RB-01 DB-4
+```
+
+`backend/scripts/identity-migration-apply.mjs:88-101` 实测：
+
+```js
+const sbByEmail = new Map((sbList.users ?? []).map(u => [norm(u.email), u]));
+mapping_status: existing ? 'mapped' : 'needs_provision',
+mapping_reason: '该邮箱在 Supabase 已有账号，直接 1:1 映射'
+```
+
+`mapped` 分支**仅凭邮箱相同就静默判定为同一个人**，无其他证据、无人工复核 ——
+正是 DB-1 契约 TASK 2 明令禁止的模式。
+
+**处置**（DB-1 契约 §15）：迁入 crosswalk 时
+`mapped` → `email_match_unreviewed` / confidence=low → **强制 NEEDS_MANUAL_REVIEW**；
+`provisioned`（账号由迁移创建，归属无歧义）→ high → 自动放行。
+
+⚠ 注意：`auth/identity.ts` 的运行时白名单是 `{'mapped','provisioned'}`，
+即**今天 `mapped` 的账号已能正常登录**。本条不改变运行时行为（那属 AUTH 域），
+只要求迁移期对这批账号人工复核后才写入 canonical crosswalk。
+
+---
+
+## DBR 严重度语义澄清
+
+```
+Production Incident Severity  —— App 尚未进入正式 Production，
+                                 故 DBR-01~05 不是当前生产事故
+Migration Gate Severity       —— DBR-01~05 为 DB MIGRATION HARD BLOCKERS
+```
+
+两者**都必须在 Production 前解决**，但语义不同，不要混用。

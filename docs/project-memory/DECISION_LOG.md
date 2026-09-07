@@ -5,6 +5,72 @@
 
 ---
 
+## D-21｜App users 并入 canonical Supabase/Portal 身份
+
+```
+日期     2026-09-07     状态  APPROVED
+```
+
+迁移后**不保留第二个可写的 App 身份空间**。App 全部 owner 列直接 FK 到 `profiles.id`。
+
+实测裁定：Portal `profiles.id uuid primary key references auth.users(id) on delete cascade`
+—— **`profiles.id` 本身就是 `auth.users.id`**，不存在 `profiles.user_id` 列。现有 schema 正确，不改。
+
+App 专属字段（`degree` / `bio` 等）放 `app_user_profile_ext`，
+主键即 `profiles.id` 的外键，**不产生第二个 user id**。
+`users.password_hash` / `salt` **不迁移** —— Supabase 已持凭据，复制是纯负债。
+
+---
+
+## D-20｜course_progress 与 growth_state 保持 backend-owned（TYPE A）
+
+```
+日期     2026-09-07     状态  APPROVED
+```
+
+访问路径 `Frontend → Express Backend → PostgreSQL`。
+**不新增 Browser → Supabase 直连表访问**。尤其 `growth_state` 保持 backend-owned。
+
+将来 Portal 确需直读，须另提 **TYPE A → TYPE C CHANGE PROPOSAL**，
+不为「以后可能需要」预先扩大暴露面。
+
+---
+
+## D-19｜Christian Profile 以 preserve blob 迁移
+
+```
+日期     2026-09-07     状态  APPROVED
+```
+
+迁移期**不 relationize / normalize / reconstruct / recompute**，不改内部评分字段名，
+不借迁移之机修改算法。
+
+三层 Gate：
+1. **双哈希** —— `source_raw_hash`（SQLite 原始字节）+ `canonical_semantic_hash`
+   （递归 key 排序、数组保序的规范化 JSON）。判据用后者：**jsonb 会重排 key**，
+   拿数据库导出的原始字符串比对会误判。目标是证明**内容**没变，不是证明序列化格式没变。
+2. 20 项 CP regression 全绿
+3. 3 个 golden snapshot 无未解释变化
+
+---
+
+## D-18｜Legacy App admin 无自动 Portal 角色映射
+
+```
+日期     2026-09-07     状态  APPROVED
+```
+
+**禁止**任何全局映射：`admin → super_admin` / `registrar` / `academic_admin` / `content_admin`。
+旧 App 的 `admin` 信息粒度不足，无法安全推导 Portal 的具体管理职能。
+
+`ADMIN_ROLES = {registrar, academic_admin, super_admin}`：
+映射成 `content_admin` 会让原管理员**静默掉权**；映射成 `super_admin` 是**未经授权的提权**。
+
+管理角色迁移必须经 `ADMIN_ROLE_MIGRATION_MANIFEST` 逐人裁定。
+证据不足者**不授予任何管理角色**，流程停在 `NEEDS_MANUAL_ROLE_REVIEW`。**不得猜测权限。**
+
+---
+
 ## D-17｜AUTH-M7 必须先于 RB-01 数据库迁移完成
 
 ```

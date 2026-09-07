@@ -303,3 +303,42 @@ services/authService  前端 legacy 分支删除，未配置 Supabase 时抛 503
 **Acceptance level**：`AUTH-M7 IMPLEMENTED / LOCALLY VERIFIED`。
 真实 Supabase 环境未验证 —— 6 个 external AUTH 测试仍 BLOCKED_BY_ENV。
 **不得**写成 INTEGRATION / STAGING / PRODUCTION VERIFIED。
+
+---
+
+## 2026-09-07 — RB-01 DB-1：目标 schema 与迁移契约定版
+
+**Result**：`DB-1 COMPLETE / READY FOR DB-2 REVIEW`
+**性质**：设计与契约，**零实施** —— 未改 DAL、未切 driver、未迁数据、未建 production Supabase、未删 SQLite。
+
+四项决策 D-18～D-21 全部落实。32 张 SQLite 表**全部**得到明确结果，无 TBD：
+`MERGE 2 · EXTEND 1 · CREATE NEW 25 · TRANSFORM 3 · DO NOT MIGRATE 3`。
+
+### 本轮量化结论
+
+```
+课程目录   App OFFICIAL_CATALOG 67 条  vs  Portal course_catalog 67 条
+           交集 67，两侧差集均为 0 —— 已完全对齐，禁止新建 app_courses
+身份关联键 profiles.id 本身就是 auth.users.id（PK=FK, ON DELETE CASCADE）
+           不存在 profiles.user_id；现有 schema 正确，不改
+FK 生命周期 CASCADE 11 张 · SET NULL + tombstone 11 张 · 不迁移 2 张
+           （按业务意义逐张裁定，未机械全 CASCADE）
+事务契约   5 处逐个定版；#3 已有乐观并发（revision + 409），
+           #2 是唯一需补幂等键的（当前重试会产生两条祷告会）
+```
+
+### 本轮发现
+
+**DBR-17**：既有 `identity-migration-apply.mjs` 的 `mapped` 分支
+**仅凭邮箱相同就静默判定为同一个人**，正是契约明令禁止的 email-only silent matching。
+迁移期强制转 `NEEDS_MANUAL_REVIEW`。
+
+**系统哨兵解决**：`rooms.host_id='system'` 改为
+`host_type enum + host_user_id nullable + CHECK` —— 5 个内置房间合法存在，
+真人 host 必有有效 canonical identity，非法 orphan host 数据库层写不进去。
+**不建假 auth.users、不塞字符串进 uuid FK、不为过 migration 禁 FK。**
+
+**Migration ownership**：`amas-website/supabase/migrations` 继续作为唯一 SoT，
+App repo 不建第二套竞争的 Supabase migrations。
+
+**Acceptance level**：设计定版，无实施。不适用 PASS/FAIL 测试口径。
