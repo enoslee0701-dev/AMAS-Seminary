@@ -1,6 +1,9 @@
 # Current State
 
-> **最后更新**：2026-09-04 · 依据 commit `ecff6cc` 的真实代码与实测结果，非聊天记忆。
+> **最后更新**：2026-09-07 · 依据 commit `03bb842` 的真实代码与**当轮实跑**结果，非聊天记忆。
+>
+> **阶段已切换**：功能开发 → RELEASE READINESS。暂停新增产品功能。
+> 完整就绪度审计见 `amas-website/docs/operations/RELEASE-READINESS-REPORT.md`。
 
 ---
 
@@ -34,12 +37,15 @@
 | **当前 DONE** | P1-2 读经室共享阅读位置 — `d0d6030` |
 | **当前 NEXT** | P1-3 交通室分享墙 |
 | **当前 BLOCKED** | Phase 4B 实时语音（缺真实设备 + LiveKit 凭据） |
-| **最近 commit** | `ecff6cc` chore: 提供历史瘦身脚本（需人工执行） |
-| **分支** | `main`，与 `origin/main` 同步，工作区干净 |
+| **最近 commit** | `03bb842` ux: App 界面统一改用中文「信仰成长档案」 |
+| **分支** | `main`，工作区干净，但 **本地领先 origin/main 2 个提交（未推送）**，且 `main` 已丢失上游追踪配置 |
 
 近期提交序列：
 
 ```
+03bb842  ux: App 统一中文「信仰成长档案」        ← 当前 HEAD，未推送
+ce66cdf  feat(discover): 接收网页快速探索的 5 项初步状态   ← 未推送
+2ac94fa  chore: 仓库只保留当前项目本身
 ecff6cc  chore: 提供历史瘦身脚本（需人工执行）
 2ac94fa  chore: 仓库只保留当前项目本身，旧资料与杂项移出跟踪
 d0d6030  P1-2(读经室): 共享阅读位置              ← 当前 DONE
@@ -53,8 +59,8 @@ d8abbd6  P0(其它房间): 拆掉赞美室假播放、举手脚本与四处不�
 ## 测试基线（2026-09-04 实测，非引用）
 
 ```
-frontend tests                123/123   (16 files)
-backend tests                 103/103   0 fail
+frontend tests                138/138   (17 files)   ← 2026-09-07 实跑
+backend tests                 103/103   0 fail          ← 2026-09-07 实跑
 
 room presence E2E              54/54
 room reading position E2E      44/44
@@ -72,7 +78,12 @@ FAIL 数：0
 > 交接说明给的是 P1-1 时点的数字（无 reading position 44/44、rooms render 为 41/41）。
 > 上表是 P1-2 之后的当前值。
 
-**验收级别：Code-stage acceptance。** 尚未在真实生产环境（真实 Supabase /
+**验收级别：TESTED LOCALLY。**（2026-09-07 更正口径）
+
+上述数字全部来自本机进程内测试，**未跨真实 HTTP 边界、未连托管数据库**，
+因此**尚未达到 INTEGRATION VERIFIED**，更不是 STAGING / PRODUCTION VERIFIED。
+
+原表述 尚未在真实生产环境（真实 Supabase /
 生产部署 / 真机）完成验证，因此**不得**写成「生产正式验收通过」。
 
 ---
