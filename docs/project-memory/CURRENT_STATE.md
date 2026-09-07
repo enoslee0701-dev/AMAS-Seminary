@@ -35,6 +35,9 @@
 > **权威来源**：`docs/operations/APP-STAGING-RUNBOOK.md` · `OPEN_ISSUES #19`
 > —— 而**不是**较早的 `STAGING-0-READINESS-REPORT.md`。
 >
+> **状态入口**：[`docs/operations/APP-STAGING-STATUS-SNAPSHOT.md`](../operations/APP-STAGING-STATUS-SNAPSHOT.md)
+> —— 一页看完当前状态、外部前提、禁令与测试证据；执行步骤仍以 runbook 为准。
+>
 > **验收级别**：`MAIN INTEGRATED / LOCAL + GITHUB CI VERIFIED`
 > （**不是** `STAGING VERIFIED`，更不是 `PRODUCTION VERIFIED`）
 >

@@ -56,6 +56,9 @@
 > **权威来源**：`docs/operations/APP-STAGING-RUNBOOK.md` · `OPEN_ISSUES #19`
 > —— **不是**较早的 `amas-website/docs/operations/STAGING-0-READINESS-REPORT.md`。
 >
+> **状态入口**：[`docs/operations/APP-STAGING-STATUS-SNAPSHOT.md`](../operations/APP-STAGING-STATUS-SNAPSHOT.md)
+> —— 一页看完当前状态、外部前提、禁令与测试证据；执行步骤仍以 runbook 为准。
+>
 > **仓库侧 staging preparation 已完成，禁止重复开发**：
 > staging environment templates · Supabase identity diagnostics ·
 > `APP-STAGING-RUNBOOK` · migration exit-code fix（#18 CLOSED）·
