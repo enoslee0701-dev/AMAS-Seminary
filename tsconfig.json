@@ -25,5 +25,31 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+
+  // ── 类型检查边界（CI-2，2026-09-07）─────────────────────────────
+  // 此前本文件既无 include 也无 exclude，于是根 `tsc --noEmit` 会把
+  // backend/ 与 scripts/ 一并扫进同一个 program。本地看不出问题（backend
+  // 的 node_modules 就在旁边），但 CI 的 Frontend job 只跑根 `npm ci`，
+  // 于是必然报出 ~48 条 TS2307：express / better-sqlite3 / livekit-server-sdk
+  // / agora-token 全都"找不到模块"。那不是类型错误，是**边界错误**。
+  //
+  // 现在把职责分清楚：
+  //   根 tsconfig        → 前端与共享前端代码
+  //   backend/tsconfig   → 后端（由 backend 自己的依赖与脚本负责）
+  // Frontend job 因此不再需要安装 backend 依赖才能工作。
+  //
+  // scripts/ 也排除：那是 Node 侧的运维与回归执行器，其中
+  // scripts/helpers/regression-auth.mjs 会 import backend 的 TS harness，
+  // 留在根 program 里会把 backend 依赖重新拖回来。它们由 tsx 在运行时执行。
+  "exclude": [
+    "node_modules",
+    "dist",
+    "dist-voice-demo",
+    "backend",
+    "scripts",
+    "android",
+    "ios",
+    "migrated_prompt_history"
+  ]
 }
