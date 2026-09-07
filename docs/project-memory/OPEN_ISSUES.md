@@ -253,6 +253,67 @@ phase:     AUTH-M7 之后
 
 ---
 
+## #16 五套 App 回归曾因 legacy register 删除而全线失效 — `CLOSED`
+
+```
+status:    CLOSED（release/post-legacy-gate，2026-09-07）
+severity:  P1（当时）
+```
+
+AUTH-M7 删除 `POST /api/auth/register` 时，五个回归脚本仍靠它造测试用户，
+于是 **启动即崩、199 项断言一条都没执行**；因为它们不在 `npm test` 里，CI 全绿。
+
+修复：测试身份改由唯一的 `backend/src/test/helpers/supabaseHarness.ts` provision
+（fake Supabase identity → canonical users → legacy_user_map → 真实 token），
+脚本改用 tsx 运行以复用该 TS harness。
+
+防复发：新增 `npm run test:regression`（五套聚合）与
+`npm run verify:local-release`（本地 Release Gate 聚合）。
+关键 API 再被删掉时，Gate 会 RED，而不是静静地一条都不跑。
+
+---
+
+## #17 迁移映射在真实环境尚未建立
+
+```
+status:    OPEN
+severity:  P1 — MIGRATION CUTOVER BLOCKER（针对流程，非当前 production）
+owner:     用户 / 运维
+phase:     真实 Staging cutover
+```
+
+删除 legacy user auth 之后，没有 `mapped/provisioned` 映射的既有用户会被**永久锁死**，
+且 App 侧不自动 provision（既定产品决策，fail closed）。
+
+现状：
+```
+本机开发库 backend/data/amas.sqlite   7 个 canonical 用户 · legacy_user_map 0 行
+production                            NO PRODUCTION USER POPULATION（App 从未部署）
+```
+
+流程本身已在一次性 fixture 上端到端验证通过（见 ACCEPTANCE_HISTORY 的
+MIGRATION PROCESS: LOCAL VERIFIED），**但从未在任何真实环境执行过**。
+真实人口出现前必须先跑通 cutover，否则全体锁死。
+
+---
+
+## #18 迁移 apply 脚本的收尾断言绑定了真实数据集
+
+```
+status:    OPEN
+severity:  P3
+owner:     unassigned
+```
+
+`identity-migration-apply.mjs` 末尾有一批针对当前生产数据的断言
+（例如「prayer_shares 内容一条未丢 rows === 12」）。在任何其它数据库上它们必然不成立，
+于是 `exitCode = 1` —— 迁移本身成功，退出码却是失败。
+
+影响：无法用退出码判断迁移是否成功，自动化只能解析输出。
+建议把「数据集专属断言」与「迁移正确性断言」分开，或让数量期望值从快照推导。
+
+---
+
 ## 已关闭
 
 | # | 问题 | 关闭于 | 说明 |

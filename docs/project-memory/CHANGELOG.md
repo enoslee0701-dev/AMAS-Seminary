@@ -12,6 +12,35 @@
 
 ---
 
+## 2026-09-07（POST-LEGACY RELEASE BLOCKER CLOSURE）
+
+- **确立：删关键 API 必须同时修回归套件，且回归套件必须挂在会红的入口上。**
+  AUTH-M7 删掉 `POST /api/auth/register` 时，五个 App 回归脚本仍靠它造用户，
+  于是启动即崩、199 项断言一条未执行——而它们不在 `npm test` 里，CI 全绿。
+  新增 `npm run test:regression`（五套聚合）与 `npm run verify:local-release`
+  （本地 Release Gate 聚合：前端单测 + 后端 test:local + 前后端 typecheck +
+  build + regression）。**以后同类事故会让 Gate 变红。**
+- **确立：SINGLE TEST AUTH HARNESS。** Supabase 测试身份基础设施只有
+  `backend/src/test/helpers/supabaseHarness.ts` 一份。**禁止**再写第二套
+  fake Supabase server / token signer / JWKS helper。为支撑迁移验收，
+  admin API（`/auth/v1/admin/users` 列举与建号）也并入这同一份，
+  而不是另起炉灶。回归脚本改用 tsx 运行以复用该 TS harness。
+- **确立：回归用户必须按 post-legacy 真实模型 provision。**
+  fake Supabase identity → canonical `users` 行 → `legacy_user_map`
+  → mapped/provisioned → 真实可验签 token → 调 App API。
+  **不得**出现 test-only production bypass、fake requireAuth 捷径、
+  信任请求头 user id、legacy JWT。
+- **确立口径：MIGRATION PROCESS: LOCAL VERIFIED ≠ PRODUCTION USERS MIGRATED。**
+  迁移流程已在一次性 fixture 上端到端跑通（dry-run → apply → 幂等 → 迁移后
+  真的能登录并读写业务层），但不存在权威 production 用户人口，
+  真实 cutover 从未执行。删除 legacy auth 之后，没有映射的既有用户会被
+  **永久锁死**且 App 侧不自动 provision —— 这是既定的 fail-closed 产品决策。
+- **`requireAdmin` 中不可达的 legacy 授权分支删除。**
+  它按 `principal.user.role === 'admin'` 判权。legacy user auth 删除后已不可达，
+  但形状危险：一旦将来新增任何 authSource，SQLite `users.role` 会**静默重新
+  成为授权来源**，与 R-2「Supabase user_roles 是授权唯一 SoT」直接冲突。
+  改为显式 fail closed。
+
 ## 2026-09-07（AUTH-M7 / Strategy B，只在 integration 分支）
 
 - **确立：Supabase 注册 ≠ AMAS 学生身份。** 运行时必须把 Supabase UUID 经

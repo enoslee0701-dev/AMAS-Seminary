@@ -20,6 +20,7 @@ import { readFileSync } from 'node:fs';
 import { mkdirSync, rmSync } from 'node:fs';
 import net from 'node:net';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { startFakeSupabase, provisionUser, supabaseEnv } from './helpers/regression-auth.mjs';
 
 const TMP = '.tmp-sysroom';
 const SYSTEM_ROOMS = ['prayer_room', 'praise_room', 'bible_reading', 'preaching_room', 'fellowship_room'];
@@ -37,21 +38,28 @@ const freePort = () => new Promise((res, rej) => {
 });
 
 let backend = null;
+let sb = null;
 const cleanup = () => {
   try { backend?.kill(); } catch { /* already gone */ }
+  try { sb?.stop(); } catch { /* already closed */ }
   try { rmSync(TMP, { recursive: true, force: true }); } catch { /* best effort */ }
 };
 process.on('exit', cleanup);
 
 // backend/ 内的相对路径（脚本以 backend/ 为 cwd 运行）
 const DB_REL = `../${TMP}/sysroom.sqlite`;
+const DB_FROM_ROOT = `${TMP}/sysroom.sqlite`;
 
 rmSync(TMP, { recursive: true, force: true });
 mkdirSync(TMP, { recursive: true });
 
+// AUTH-M7：register 端点已删除，测试身份由唯一的 Supabase harness provision。
+sb = await startFakeSupabase();
+
 const port = await freePort();
 const base = `http://127.0.0.1:${port}`;
 const serverEnv = {
+  ...supabaseEnv(sb),
   ...process.env,
   PORT: String(port),
   APP_SECRET: 'sysroom-verify',
@@ -91,11 +99,9 @@ const call = async (method, path, body, token) => {
   return { status: r.status, json, text };
 };
 
-const reg = async (name, email) => {
-  const r = await call('POST', '/api/auth/register', { email, password: 'goodpassword1', name });
-  if (r.status !== 200) throw new Error(`register ${email} 失败: ${r.text}`);
-  return r.json;
-};
+// fake Supabase identity → canonical users 行 → legacy_user_map(provisioned)
+// → 真实可验签 token。moderator 授权仍只走服务器端 CLI，不开任何后门。
+const reg = (name, email) => provisionUser(DB_FROM_ROOT, sb, { email, name });
 
 /** 调用真实的 CLI 脚本，不走任何后门。 */
 const moderatorCli = (cmd, roomId, email) => {

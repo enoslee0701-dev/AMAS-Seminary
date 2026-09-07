@@ -12,6 +12,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { mkdirSync, rmSync } from 'node:fs';
 import net from 'node:net';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { startFakeSupabase, provisionUser, supabaseEnv } from './helpers/regression-auth.mjs';
 
 const TMP = '.tmp-presence';
 const ROOMS = ['bible_reading', 'preaching_room', 'praise_room', 'fellowship_room'];
@@ -28,14 +29,19 @@ const freePort = () => new Promise((res, rej) => {
 });
 
 let backend = null;
+let sb = null;
 const cleanup = () => {
   try { backend?.kill(); } catch { /* 已退出 */ }
+  try { sb?.stop(); } catch { /* 已关闭 */ }
   try { rmSync(TMP, { recursive: true, force: true }); } catch { /* 尽力而为 */ }
 };
 process.on('exit', cleanup);
 
 rmSync(TMP, { recursive: true, force: true });
 mkdirSync(TMP, { recursive: true });
+
+// AUTH-M7：register 端点已删除，测试身份改由唯一的 Supabase harness provision。
+sb = await startFakeSupabase();
 
 const port = await freePort();
 const base = `http://127.0.0.1:${port}`;
@@ -44,7 +50,8 @@ const DB_REL = `../${TMP}/presence.sqlite`;
 backend = spawn(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'src/server.ts'], {
   cwd: 'backend', stdio: 'ignore',
   env: { ...process.env, PORT: String(port), APP_SECRET: 'presence-verify',
-         JWT_SECRET: 'presence-verify-jwt', DB_PATH: DB_REL },
+         JWT_SECRET: 'presence-verify-jwt', DB_PATH: DB_REL,
+         ...supabaseEnv(sb) },
 });
 for (let i = 0; i < 140; i++) {
   try { const r = await fetch(`${base}/api/health`); if (r.status < 500) break; } catch { /* 未就绪 */ }
@@ -62,11 +69,10 @@ const call = async (method, path, body, token) => {
   return { status: r.status, json, text };
 };
 
-const reg = async (name, email) => {
-  const r = await call('POST', '/api/auth/register', { email, password: 'goodpassword1', name });
-  if (r.status !== 200) throw new Error(`register ${email}: ${r.text}`);
-  return r.json;
-};
+// fake Supabase identity → canonical users 行 → legacy_user_map(provisioned)
+// → 真实可验签的 Supabase token。返回形状与旧 register 响应兼容。
+const DB_FROM_ROOT = `${TMP}/presence.sqlite`;
+const reg = (name, email) => provisionUser(DB_FROM_ROOT, sb, { email, name });
 
 /** 进房：join → heartbeat。与前端 useRoomPresence 的顺序一致。 */
 const enter = async (u, room) => {

@@ -10,6 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "node tests/e2e/smoke.mjs",
+    "test:regression": "node backend/node_modules/tsx/dist/cli.mjs scripts/verify-room-presence.mjs && node backend/node_modules/tsx/dist/cli.mjs scripts/verify-room-reading-position.mjs && node backend/node_modules/tsx/dist/cli.mjs scripts/verify-rooms-render.mjs && node backend/node_modules/tsx/dist/cli.mjs scripts/verify-phase5.mjs && node backend/node_modules/tsx/dist/cli.mjs scripts/verify-system-room-moderator.mjs",
+    "verify:local-release": "npm run test && npm run --prefix backend test:local && tsc --noEmit && tsc --noEmit -p backend/tsconfig.json && npm run build && npm run test:regression",
     "voice:guard": "node scripts/check-voice-config.mjs",
     "build:voice-demo": "node scripts/build-voice-demo.mjs",
     "deploy:check": "node scripts/check-deploy-dir.mjs dist"

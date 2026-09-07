@@ -10,6 +10,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { startFakeSupabase, provisionUser, supabaseEnv } from './helpers/regression-auth.mjs';
 import net from 'node:net';
 import puppeteer from 'puppeteer-core';
 
@@ -47,6 +48,9 @@ const TMP = '.tmp-rooms';
 rmSync(TMP, { recursive: true, force: true });
 mkdirSync(TMP, { recursive: true });
 
+// AUTH-M7：register 端点已删除，浏览器用的会话由唯一的 Supabase harness provision。
+const sb = await startFakeSupabase();
+
 const apiPort = await freePort();
 const port = await freePort();
 const apiBase = `http://127.0.0.1:${apiPort}`;
@@ -56,7 +60,8 @@ const backend = spawn(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'src/s
   cwd: 'backend', stdio: 'ignore',
   env: { ...process.env, PORT: String(apiPort), APP_SECRET: 'rooms-verify',
          JWT_SECRET: 'rooms-verify-jwt-secret', DB_PATH: `../${TMP}/rooms.sqlite`,
-         CORS_ORIGINS: `http://localhost:${port}` },
+         CORS_ORIGINS: `http://localhost:${port}`,
+         ...supabaseEnv(sb) },
 });
 const server = spawn(process.execPath,
   ['node_modules/vite/bin/vite.js', '--port', String(port), '--strictPort'],
@@ -66,6 +71,7 @@ const server = spawn(process.execPath,
       VITE_VOICE_TRANSPORT: process.env.ROOMS_GUARD_TRANSPORT ?? '' } });
 process.on('exit', () => {
   for (const p of [server, backend]) { try { p.kill(); } catch { /* 已退出 */ } }
+  try { sb.stop(); } catch { /* 已关闭 */ }
   try { rmSync(TMP, { recursive: true, force: true }); } catch { /* 尽力而为 */ }
 });
 
@@ -79,11 +85,11 @@ const waitFor = async (url) => {
 await waitFor(`${apiBase}/api/health`);
 await waitFor(base);
 
-const reg = await fetch(`${apiBase}/api/auth/register`, {
-  method: 'POST', headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({ email: `rooms-${Date.now()}@example.com`, password: 'goodpassword1', name: '测试用户' }),
+// fake Supabase identity → canonical users 行 → legacy_user_map(provisioned)
+// → 真实可验签 token。浏览器里的会话与生产完全同形。
+const auth = await provisionUser(`${TMP}/rooms.sqlite`, sb, {
+  email: `rooms-${Date.now()}@example.com`, name: '测试用户',
 });
-const auth = await reg.json();
 
 const browser = await puppeteer.launch({ executablePath: CHROME, headless: 'new', args: ['--no-sandbox'] });
 const page = await browser.newPage();
@@ -98,7 +104,8 @@ page.on('console', m => { if (m.type() === 'error' && !benign.test(m.text())) er
 await page.goto(base, { waitUntil: 'domcontentloaded' });
 await page.evaluate((a) => {
   localStorage.setItem('amas_access_token', JSON.stringify(a.accessToken));
-  localStorage.setItem('amas_refresh_token', JSON.stringify(a.refreshToken));
+  // AUTH-M7 之后后端不再签发 refresh token —— session 归 Supabase 管。
+  localStorage.removeItem('amas_refresh_token');
   localStorage.setItem('amas_user', JSON.stringify(a.user));
   localStorage.setItem('amas_current_user', JSON.stringify({ ...a.user, role: 'admin', avatar: '' }));
   localStorage.setItem('amas_lang', 'zh-CN');
