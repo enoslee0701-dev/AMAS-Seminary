@@ -42,6 +42,10 @@ NOT STAGING VERIFIED
 | [`docs/project-memory/OPEN_ISSUES.md`](../project-memory/OPEN_ISSUES.md) | `#19` 是外部前提的权威记录 |
 | [`docs/project-memory/AI_HANDOFF_RULES.md`](../project-memory/AI_HANDOFF_RULES.md) | D-38 canonical writer + 写代码前必读的阶段状态 |
 | [`STAGING-1A-EXISTING-SUPABASE-ADOPTION-REPORT.md`](./STAGING-1A-EXISTING-SUPABASE-ADOPTION-REPORT.md) | **STAGING-1A 阶段产出** —— 既有 staging 采纳审计（只读）。状态 `BLOCKED BY CREDENTIAL HANDOFF`；含 0027 评估、凭据交付契约、`db push` 安全判定、fixtures 计划 |
+| [`STAGING-1A-CONTINUATION-REPORT.md`](./STAGING-1A-CONTINUATION-REPORT.md) | **STAGING-1A 续（最新）** —— CI 结论已读到完成态并检查失败 job；0027 按上游更正重估为 **12** 项；三个消费方的凭据交接清单。状态仍 `BLOCKED BY CREDENTIAL HANDOFF` |
+
+> ⚠ **0027 的函数数量以 `STAGING-1A-CONTINUATION-REPORT.md` §9 为准（12 项）**。
+> 前一份报告写的 13 项已被上游 `5c68b46` 更正（剔除 `handle_new_user` 误报）。
 
 > **Owner 已批准 `amas-staging` 为正式 APP STAGING Supabase 目标（D-41）**，
 > 不得创建第二个。凭据口径：`STAGING PROJECT EXISTS` /

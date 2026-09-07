@@ -1014,7 +1014,7 @@ frontend   VITE_SUPABASE_URL           （services/supabaseAuth.ts）
 ## #21 canonical HEAD 的 CI 假红（端口抢占）
 
 ```
-status:    FIXED PENDING CI（2026-09-07，e2b801e）
+status:    FIXED — VERIFIED（2026-09-07，e2b801e）
 severity:  medium（不是代码回归，但 canonical HEAD 红灯会掩盖真实回归）
 owner:     unassigned
 phase:     STAGING-1A 发现
@@ -1032,8 +1032,12 @@ phase:     STAGING-1A 发现
 > 我在 STAGING-1A 首次诊断时只判到「20 秒就绪超时、慢 runner 上偶发」，
 > **机制没查到底**；`e2b801e` 补上了这一层。记此以免后来者停在同一深度。
 
-**待确认**：`e2b801e` 的 CI 在记录时仍 `RUNNING`，结论未知。
-连续两次绿灯后可改为 `CLOSED`。
+**已确认**：`Backend (type-check + test + build)` job 在 `e2b801e` 与 `5af3d4b`
+上**均为 success**（`# tests 166 · # pass 166 · # fail 0`）。端口抢占症状已消除。
+
+> ⚠ **注意不要误读**：`e2b801e` 这次运行的**整体**结论仍是 failure，
+> 但失败的是 `Release gate` 里的另一条间歇断言（见 `#23`），**不是 Backend job**。
+> 两者是独立的两件事。
 
 **原记录**（保留）：
 
@@ -1070,10 +1074,23 @@ ${stderr}`);
 
 ```
 status:    OPEN
-severity:  low-medium（影响面受限，但属真实绕过面）
+severity:  P2 SECURITY HARDENING（Supervisor 定级，2026-09-07）
+gate:      BLOCKS PUBLIC STAGING EXPOSURE
 owner:     unassigned
-phase:     STAGING-1A 发现
+phase:     公开 staging smoke 之前修复
 ```
+
+**Supervisor 裁定**：Layer A 的 IP 限流仍在，影响面受限，因此**不是 P0/P1**；
+但**在修好之前不得暴露任何公开的 backend staging URL**。
+
+**排期约束**：**不要**在凭据交接 / 只读 Supabase 审计期间修它 ——
+那会把两条独立的线混在一起。安排在公开 staging smoke 之前。
+
+> ⚠ **编号说明**：Supervisor 在指令中称本项为 `RB-22`，
+> 但本文件中 **`#RB-22` 已被占用两次**（第 389 行「AUTH 验收测试在 CI 中从未真正执行」、
+> 第 471 行「AUTH 验收测试状态正式降级」），二者与限流无关。
+> 本项保持登记为 **`#22`**（无前缀），未擅自重编号既有条目。
+> 若需统一编号，请 Supervisor 明确裁定。
 
 `backend/src/middleware/rateLimit.ts:101` 的 `byUser()`：
 
@@ -1093,3 +1110,36 @@ const id = p && p.kind === 'user' && p.user ? p.user.id : (req.ip ?? 'anon');
 或显式声明 `ipv6Subnet`。**本轮只报告，未修改代码。**
 
 **证据**：STAGING-1A 报告 §1
+
+
+---
+
+## #23 `verify-rooms-render.mjs` 的 presence 提示断言在 CI 上间歇失败
+
+```
+status:    OPEN
+severity:  medium（使 Release gate 偶发红灯，会掩盖真实回归）
+owner:     unassigned
+phase:     STAGING-1A 续 发现
+```
+
+`e2b801e` 的 CI 整体 failure，失败 job 是 **`Release gate (verify:local-release)`**
+（**不是** Backend —— Backend 已由 `--test-concurrency=1` 修好，见 `#21`）。
+
+具体位置：`scripts/verify-rooms-render.mjs` **50/51**，唯一失败：
+
+```
+FAIL  presence 失败显示轻量提示，不显示假人数 — (无提示)
+```
+
+**本机同一提交跑同一脚本：`51/51 PASS`**，该条输出「已显示轻量提示」。
+下一个提交 `5af3d4b` 的 CI 四个 job **全绿**。
+
+**性质**：浏览器渲染时序敏感 —— presence 请求失败后提示才渲染，
+CI runner 上偶尔在断言时刻尚未出现。**与端口抢占无关，与 Supabase / 凭据无关。**
+
+**待定方向**（本轮只报告，未改代码）：给该断言加显式等待条件，
+而不是放宽断言本身 —— 「presence 失败时必须有轻量提示、且不得显示假人数」
+是这条断言真正要守的产品行为，不能为了让 CI 变绿而削弱它。
+
+**证据**：STAGING-1A CONTINUATION 报告 §2
