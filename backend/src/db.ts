@@ -71,6 +71,30 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 
+  -- AUTH-M7 · Supabase 身份 → canonical AMAS 用户的映射。
+  --
+  -- schema owner 是本文件，**不是** backend/scripts/identity-migration-apply.mjs。
+  -- 该脚本此前自带一份 DDL，导致「没跑过迁移的库根本没有这张表」——
+  -- 运行时一 SELECT 就是 SQLITE_ERROR，每个 Supabase 请求 500。
+  -- 现在 fresh install / dev / test fixture / CI / 既有部署拿到的是同一份 schema；
+  -- 迁移脚本只负责写数据。
+  --
+  -- 表空不是错误状态：空表 = 还没有人被 provision，运行时一律
+  -- 403 IDENTITY_NOT_PROVISIONED（fail closed），不是 500。
+  CREATE TABLE IF NOT EXISTS legacy_user_map (
+    legacy_user_id   TEXT PRIMARY KEY,
+    supabase_user_id TEXT,
+    normalized_email TEXT NOT NULL,
+    mapping_status   TEXT NOT NULL,
+    mapping_reason   TEXT NOT NULL,
+    migration_batch  TEXT NOT NULL,
+    created_at       INTEGER NOT NULL
+  );
+  -- 一个 Supabase 身份只能映射到一个 canonical 用户。部分索引跳过尚未
+  -- provision 的行（supabase_user_id 为 NULL），它们本来就不允许通过认证。
+  CREATE UNIQUE INDEX IF NOT EXISTS uq_legacy_map_supabase
+    ON legacy_user_map(supabase_user_id) WHERE supabase_user_id IS NOT NULL;
+
   CREATE TABLE IF NOT EXISTS refresh_jti (
     user_id TEXT NOT NULL,
     jti TEXT NOT NULL,

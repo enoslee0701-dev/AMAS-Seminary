@@ -23,6 +23,19 @@
 
 ---
 
+## Auth 集成（并行轨道，未合 main）
+
+`integration/auth-strategy-b` 已完成 Strategy B 集成 + AUTH-M7 运行时身份解析，
+**只在该分支上，main 未受影响**。要点：
+
+- 直接 merge `auth/supabase-unification` 会**静默删除** 6 项 Supabase 资产
+  （revert `d3e860d` 落在 merge-base 之后）。必须先 revert 再 merge。
+- Supabase 登录成功 ≠ 拥有 AMAS 身份。已加入 `legacy_user_map` 运行时解析，
+  解析不出一律 403 `IDENTITY_NOT_PROVISIONED`，**不自动 provision**。
+- 详见 [AUTH-P1-GHOST-IDENTITY-FINDING.md](../operations/AUTH-P1-GHOST-IDENTITY-FINDING.md)
+
+---
+
 ## 一句话状态
 
 五个公共语音房间已接上**真实 membership + presence**；读经室已具备**真实共享阅读位置**。

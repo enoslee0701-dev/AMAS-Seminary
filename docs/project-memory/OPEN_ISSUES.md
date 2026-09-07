@@ -197,6 +197,62 @@ phase:     Phase 4B 之前
 
 ---
 
+## #12 Supabase-only ghost identity 可写业务数据（已修，未合 main）
+
+```
+status:    OPEN —— 修复在 integration/auth-strategy-b，main 未合入
+severity:  P1（Supabase 一旦接通生产即升 P0）
+owner:     用户 / GPT（合并窗口）
+phase:     AUTH-M7
+```
+
+`auth/supabase-unification` 的 requireAuth 在 Supabase 分支从不查 SQLite，
+`principal.user.id` 直接取 `payload.sub`。19 张用户相关表里 16 张没有外键，
+于是只存在于 Supabase 的身份可写 growth_state / pt_state / posts /
+course_progress / library_favorites / push_tokens，并能用 **token 里的名字**发帖。
+
+修复见 AUTH-M7（`backend/src/auth/identity.ts`），本地 19/19 PASS。
+完整分析：[AUTH-P1-GHOST-IDENTITY-FINDING.md](../operations/AUTH-P1-GHOST-IDENTITY-FINDING.md)
+
+**未关闭的原因**：修复只在集成分支上；main 合入前该风险随 Auth 集成一起存在。
+
+---
+
+## #13 USER FOREIGN KEY / DATA INTEGRITY DEBT
+
+```
+status:    OPEN
+severity:  P2
+owner:     unassigned
+phase:     独立 hardening
+```
+
+19 张用户相关表里只有 3 张有 `REFERENCES users(id)`
+（`room_members` / `prayer_sessions` / `prayer_share_reports`），其余 16 张没有。
+
+此前靠「用户一定存在」这个隐含前提兜着。AUTH-M7 保证了不存在的 canonical user
+进不了业务层，但**没有补外键** —— 一旦有别的路径写入，数据库层仍然不设防。
+且有外键的那三张，拒绝方式是 SQLITE_ERROR → 500，不是干净的鉴权拒绝。
+
+本轮明确**不做**大规模补 FK。后续单独 hardening 立项。
+
+---
+
+## #14 /api/auth/me 不走 requireAuth
+
+```
+status:    OPEN
+severity:  P3（fail closed，不是安全漏洞）
+owner:     unassigned
+phase:     AUTH-M7 之后
+```
+
+该端点自己 `verifyAccess(token)`，只认 legacy 自签 token。Supabase 用户访问会 401。
+统一边界（requireAuth → identity resolution → 业务路由）上的一个洞。
+建议下一轮并入 requireAuth。
+
+---
+
 ## 已关闭
 
 | # | 问题 | 关闭于 | 说明 |

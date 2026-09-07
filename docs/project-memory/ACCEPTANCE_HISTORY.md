@@ -147,6 +147,50 @@ Claude Code 权限门禁不允许 AI 执行，已提供 `scripts/purge-large-his
 
 ---
 
+## 2026-09-07 — AUTH-M7 Runtime Identity Resolution（Strategy B 集成分支）
+
+**Commit**：`integration/auth-strategy-b`（`cf90eb7` revert → 合并 → AUTH-M7）
+**未合入 main，未 push，未部署。**
+
+**Result**：PASS **FAIL**：0
+
+**Tests**（全部本轮实跑）
+- auth-m7-identity 19/19（本地可重复，零外部前提）
+- backend local 135/135（smoke + startup-guard + auth-m7）
+- frontend 181/181（20 文件）
+- 前端 tsc clean · 后端 tsc clean · build PASS
+- 回归：presence 54/54 · reading 44/44 · rooms render 51/51 ·
+  phase5 24/24 · system moderator 26/26
+- test:external 6 项全部 SKIP（AMAS_ENV 未提供）→ NOT RUN — EXTERNAL PREREQUISITE
+
+**Major verified behavior**
+- principal 双身份：`authId`=Supabase UUID 用于角色现查，
+  `user.id`=canonical SQLite id 用于业务数据；两者不混用
+- D-1 回归：角色只挂在 canonical SQLite id 上时必须 403
+  （证明 fetchActiveRoles 用的不是 user.id）
+- mapping_status 白名单：mapped / provisioned 放行；needs_provision /
+  provision_failed / skipped_test_account / 未知状态 / 无映射 /
+  supabase_user_id 为 NULL / canonical 用户已删 —— 全部 403
+- 资料信任边界：token 里的 `Fake Admin Name` 与 attacker avatar 不进业务数据；
+  发帖落库的是服务器 canonical user 的 name/avatar
+- token 自称 `app_metadata.role = admin` 不产生任何管理员权限
+- ghost 身份对 6 个写端点全部 403，且 posts / growth_state / pt_state /
+  course_progress / library_favorites / push_tokens 六张表零残留
+- ghost 加入房间在 auth 层 403，不再靠 room_members 外键报 500
+- 401（缺 token / 伪造签名 / 过期 / issuer 不符）与 403（无 AMAS 身份）可区分
+
+**Known limitations**
+- 修复只存在于集成分支；main 未合入
+- 16/19 张用户表仍无外键（P2，OPEN_ISSUES #13）
+- `/api/auth/me` 仍不走 requireAuth（P3，OPEN_ISSUES #14）
+- AUTH-M2/M5/M6/M6.5A/M6.5B 的外部验收仍需 staging 凭据，本轮 NOT RUN
+
+**Acceptance level**：LOCAL VERIFIED（本地可重复）。
+**不是** Code-stage acceptance 的上位词，也**不是** Production acceptance ——
+真实 Supabase 项目、真实 JWKS、真实 user_roles 表均未参与。
+
+---
+
 <!--
 下一条追加模板：
 

@@ -3,10 +3,11 @@ import crypto from 'node:crypto';
 import { config } from '../config.js';
 import {
   isSupabaseConfigured, looksLikeSupabaseToken, verifySupabaseAccess,
-  fetchActiveRoles, isAdminRole, resolveDisplayName,
+  fetchActiveRoles, isAdminRole,
 } from '../auth/supabase.js';
 import { verifyAccess, type AccessPayload } from '../auth/jwt.js';
 import { findById, toPublicUser, type PublicUser } from '../auth/users.js';
+import { resolveCanonicalUserFromSupabase } from '../auth/identity.js';
 
 let warnedNoSecret = false;
 
@@ -18,7 +19,27 @@ let warnedNoSecret = false;
  */
 export type AuthPrincipal =
   | { kind: 'service' }
-  | { kind: 'user'; user: PublicUser; payload: AccessPayload };
+  | {
+      kind: 'user';
+      /** 这张 token 是哪条链路签发的。授权分支按它判断，**不要**再去重解析请求头。 */
+      authSource: 'supabase' | 'legacy';
+      /**
+       * 认证身份。Supabase 路径下是 Supabase UUID，legacy 路径下是 SQLite users.id。
+       *
+       * ★ AUTH-M7 / D-1：角色现查（fetchActiveRoles）必须用这个 id，
+       *   **不能**用 principal.user.id。Supabase 的 user_roles 按 Supabase UUID
+       *   索引，传 canonical SQLite id 会查不到任何行 → roles 恒为空 →
+       *   所有管理员静默掉权。方向是 fail closed，但故障完全无声。
+       */
+      authId: string;
+      /**
+       * canonical AMAS 业务身份，永远来自 SQLite users。
+       * 业务路由只认 user.id / user.name / user.avatar；token 里的 profile
+       * （名字、头像、role）不得进入业务数据。
+       */
+      user: PublicUser;
+      payload: AccessPayload;
+    };
 
 // Augment Express's Request to carry the resolved principal.
 declare module 'express-serve-static-core' {
@@ -144,27 +165,45 @@ export async function requireAuth(
   //    按 iss 分流：是 Supabase 的就只走 Supabase 验签，失败即 401，
   //    **绝不回退到 legacy 验签**——迁移期两条链路互不兜底。
   if (isSupabaseConfigured() && looksLikeSupabaseToken(presented)) {
+    let payload;
     try {
-      const payload = await verifySupabaseAccess(presented);
-      const name = await resolveDisplayName(payload);
-      req.principal = {
-        kind: 'user',
-        user: {
-          id: payload.sub,
-          email: payload.email ?? '',
-          name,
-          // 展示用途；真正的授权在 requireAdmin 内现查 Supabase 角色（R-2）
-          role: 'student',
-          createdAt: typeof payload.iat === 'number' ? payload.iat * 1000 : Date.now(),
-        },
-        payload: payload as unknown as AccessPayload,
-      };
-      next();
-      return;
+      payload = await verifySupabaseAccess(presented);
     } catch {
+      // 验签失败 = 认证失败。401。
       res.status(401).json({ error: 'Invalid bearer token.' });
       return;
     }
+
+    // ★ AUTH-M7：验签通过只说明这是一个真实的 Supabase 账号，
+    //   **不说明**这个人是 AMAS 学员。必须解析出 canonical AMAS 身份，
+    //   解析不出就 fail closed —— 不自动 provision（产品决策，已定）。
+    //
+    //   这里刻意与「认证失败」分开：token 有效但无 AMAS 身份是 403，
+    //   不是 401。客户端据此知道「重新登录没用，你需要走申请/录取流程」。
+    const resolved = resolveCanonicalUserFromSupabase(payload.sub);
+    if (!resolved.ok || !resolved.user) {
+      // 原因只进服务端日志：对外区分「没有映射」与「映射被禁用」，
+      // 等于把某个 Supabase 账号是否已登记泄漏给任何持有效 token 的人。
+      console.warn(
+        `[auth] IDENTITY_NOT_PROVISIONED reason=${resolved.reason}` +
+        `${resolved.detail ? ` detail=${resolved.detail}` : ''} authId=${payload.sub}`,
+      );
+      res.status(403).json({
+        error: 'This account is not provisioned for AMAS.',
+        code: 'IDENTITY_NOT_PROVISIONED',
+      });
+      return;
+    }
+
+    req.principal = {
+      kind: 'user',
+      authSource: 'supabase',
+      authId: payload.sub,
+      user: resolved.user,
+      payload: payload as unknown as AccessPayload,
+    };
+    next();
+    return;
   }
 
   // 3) Legacy 自签 token（AUTH-M7 删除；可用 AUTH_ACCEPT_LEGACY=false 提前演练）
@@ -179,7 +218,14 @@ export async function requireAuth(
       res.status(401).json({ error: 'User no longer exists.' });
       return;
     }
-    req.principal = { kind: 'user', user: toPublicUser(user), payload };
+    // legacy 自签 token：认证身份与业务身份本来就是同一个 SQLite id。
+    req.principal = {
+      kind: 'user',
+      authSource: 'legacy',
+      authId: user.id,
+      user: toPublicUser(user),
+      payload,
+    };
     next();
     return;
   } catch {
@@ -220,9 +266,15 @@ export async function requireAdmin(
 
   // AUTH-M4：授权以 Supabase 角色为准，**每次现查**（角色撤销即时生效）。
   // 客户端声明的 role / email / userId 一律不可信；JWT 里的 role 只作展示。
-  if (isSupabaseConfigured() && looksLikeSupabaseToken(
-        (/^Bearer\s+(.+)$/i.exec(req.header('authorization') ?? '') ?? ['', ''])[1].trim())) {
-    const roles = await fetchActiveRoles(principal.user.id);
+  //
+  // ★ AUTH-M7 两处改动：
+  //   1. 分支条件改用 principal.authSource，不再重新解析 Authorization 头。
+  //      重解析既脆弱（与 requireAuth 的判定可能不一致），也没有必要。
+  //   2. 角色现查用 principal.authId（Supabase UUID），**不是** principal.user.id
+  //      （canonical SQLite id）。user_roles 按 Supabase UUID 索引，传错 id
+  //      会静默返回空数组，所有管理员无声掉权。
+  if (principal.authSource === 'supabase') {
+    const roles = await fetchActiveRoles(principal.authId);
     if (!isAdminRole(roles)) {
       res.status(403).json({ error: 'Admin role required.' });
       return;
@@ -231,7 +283,9 @@ export async function requireAdmin(
     return;
   }
 
-  // Legacy 路径（AUTH-M7 删除）
+  // Legacy 路径（AUTH-M7 之后仍保留，直到 legacy token 整体下线）。
+  // ★ 只有 legacy principal 才允许用 SQLite users.role 判权限。
+  //   Supabase 路径下 principal.user.role 只是展示字段，绝不能到这里来。
   if (principal.user.role !== 'admin') {
     res.status(403).json({ error: 'Admin role required.' });
     return;

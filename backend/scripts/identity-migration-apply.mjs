@@ -142,19 +142,31 @@ for (const p of plan) {
 step(2, '建立显式 legacy → Supabase mapping');
 
 if (APPLY) {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS legacy_user_map (
-      legacy_user_id   TEXT PRIMARY KEY,
-      supabase_user_id TEXT,
-      normalized_email TEXT NOT NULL,
-      mapping_status   TEXT NOT NULL,
-      mapping_reason   TEXT NOT NULL,
-      migration_batch  TEXT NOT NULL,
-      created_at       INTEGER NOT NULL
+  // AUTH-M7 · schema 所有权：legacy_user_map 的 DDL 归 backend/src/db.ts。
+  // 本脚本只写数据，不建表 —— 此前脚本自带一份 DDL，等于第二份会漂移的
+  // schema，且导致「没跑过迁移的库根本没有这张表」，运行时 500。
+  // 这里只做防御性断言：表不在就直接停，不要偷偷补建。
+  const hasMap = db.prepare(
+    `SELECT 1 FROM sqlite_master WHERE type='table' AND name='legacy_user_map' LIMIT 1`,
+  ).get();
+  if (!hasMap) {
+    console.error(
+      '  ✗ legacy_user_map 不存在。该表由 backend/src/db.ts 创建 —— ' +
+      '请先用当前 backend 启动一次该数据库（或指向已初始化的 DB_PATH），再重跑本脚本。',
     );
-    CREATE UNIQUE INDEX IF NOT EXISTS uq_legacy_map_supabase
-      ON legacy_user_map(supabase_user_id) WHERE supabase_user_id IS NOT NULL;
-  `);
+    process.exit(1);
+  }
+  const idx = db.prepare(
+    `SELECT 1 FROM sqlite_master WHERE type='index' AND name='uq_legacy_map_supabase' LIMIT 1`,
+  ).get();
+  if (!idx) {
+    console.error(
+      '  ✗ 唯一索引 uq_legacy_map_supabase 缺失 —— 没有它就挡不住' +
+      '「两个 Supabase 身份映射到同一 canonical 用户」。schema 版本不匹配，中止。',
+    );
+    process.exit(1);
+  }
+
   const ins = db.prepare(`
     INSERT INTO legacy_user_map
       (legacy_user_id, supabase_user_id, normalized_email, mapping_status, mapping_reason, migration_batch, created_at)

@@ -271,3 +271,22 @@ target real client IPs rather than the proxy itself.
 - For real role enforcement (host vs listener), embed the role in the
   LiveKit JWT's `metadata` field — `LiveKitTransport.inferRole()` already
   reads from `participant.metadata` JSON.
+
+## 测试分层（AUTH-M7 起）
+
+```
+npm test          = npm run test:local
+npm run test:local     本地可重复，零外部前提。CI 必须全绿。
+                       smoke · startup-guard · auth-m7-identity
+npm run test:external  需要真实 staging 凭据，缺凭据时**不是普通失败**，
+                       而是 NOT RUN — EXTERNAL PREREQUISITE。CI 不得据此判红。
+                       supabase-auth      AMAS_ENV=<staging.env>
+                       identity-migration MIGRATED_DB=<sqlite>
+                       credential-recovery / -expiry / password-change-reauth
+                                          AMAS_ENV + SB_ACCESS_TOKEN
+                       redirect-matrix    AMAS_ENV + SITE_DIR=<AMAS-website>
+```
+
+`npm test` 曾经只跑 smoke 一个文件，于是「六个 AUTH 测试文件存在但从不运行」
+在很长时间里看不出来。现在本地套件包含 AUTH-M7 的身份解析验收，
+外部套件单列 —— **不要**把 test:external 塞回 test:local。

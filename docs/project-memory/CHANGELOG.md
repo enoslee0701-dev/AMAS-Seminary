@@ -12,6 +12,35 @@
 
 ---
 
+## 2026-09-07（AUTH-M7 / Strategy B，只在 integration 分支）
+
+- **确立：Supabase 注册 ≠ AMAS 学生身份。** 运行时必须把 Supabase UUID 经
+  `legacy_user_map` 解析成 canonical SQLite user，解析不出一律 403
+  `IDENTITY_NOT_PROVISIONED`，**不得自动 provision**。
+  理由：AMAS 身份只能来自申请 → 审核/录取的正式业务流程；自动建号等于让
+  任何能在 Supabase 注册的人取得学员身份。
+- **确立：principal 必须同时携带认证身份与业务身份。**
+  `authId`（Supabase UUID）用于 `fetchActiveRoles`，`user.id`（canonical SQLite id）
+  用于业务数据。**否决**「把 user.id 改写成 canonical id」的单 id 方案 ——
+  那会让角色现查查不到任何行，所有管理员静默掉权（D-1）。
+- **确立：401 与 403 语义分离。** 认证失败 401；认证有效但无 AMAS 身份
+  403 + `IDENTITY_NOT_PROVISIONED`。拒绝原因只进服务端日志，不下发客户端
+  （否则等于泄漏某个 Supabase 账号是否已登记）。
+- **确立：db.ts 是 schema owner，迁移脚本只写数据。**
+  `legacy_user_map` 此前只由 `identity-migration-apply.mjs` 建表，导致没跑过迁移的库
+  运行时 500。DDL 收归 `db.ts`，脚本改为防御性断言、缺表即退出，**不偷偷补建**。
+- **确立：merge 前必须做静默删除审计。** `d3e860d`（revert）落在 merge-base
+  `d5f2f8a` 之后，直接 merge `auth/supabase-unification` 会**无冲突地**删掉
+  `backend/src/auth/supabase.ts`、`services/supabaseAuth.ts`、`@supabase/supabase-js`
+  依赖，并把 config / middleware / authService 静默退回 main 版本。
+  冲突数量不反映真实损失。解法：先 `revert d3e860d` 再 merge（Strategy B）。
+- **backend 测试入口分层。** `npm test` 曾经只跑 smoke 一个文件，于是
+  「六个 AUTH 测试文件存在但从不运行」长期看不出来。现在
+  `test:local`（零外部前提，CI 必须全绿）/ `test:external`（缺 staging 凭据时
+  SKIP，**不得**被 CI 判红）。
+- 判别联合在仓库根 tsconfig（未开 strict）下无法收窄 —— `IdentityResolution`
+  沿用 P1-2 `validateLocation` 的既有解法：单一形状 + 可选字段。
+
 ## 2026-09-04（补）
 
 - **补齐四份缺失的记忆文档。** 首版八份偏重语音房间（那是最近几个阶段的工作），

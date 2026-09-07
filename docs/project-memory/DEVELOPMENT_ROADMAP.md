@@ -29,6 +29,7 @@
 | **P1-3** | **交通室分享墙** | **`NEXT`** | — |
 | P2 | 赞美室音频 | `TODO` | — |
 | Phase 4B | 实时语音 | `BLOCKED` | — |
+| **AUTH-M7** | **Runtime Identity Resolution**（Strategy B 集成分支内） | **`DONE — LOCAL VERIFIED`** | `integration/auth-strategy-b`，**未合 main** |
 
 已完成的更早阶段（祷告室）见 [ACCEPTANCE_HISTORY.md](ACCEPTANCE_HISTORY.md)
 与 `docs/PRAYER_*` 系列报告。
@@ -182,3 +183,31 @@ mute → cleanup（麦克风指示灯熄灭）→ Wi-Fi/4G 切换 → 断网恢�
 | Supabase Auth 统一身份 | `IN_PROGRESS`（独立分支） | 本地分支 `auth/supabase-unification`，未合入 main，未推远端。等独立验收后再谈合并 |
 | 内置房间 moderator 授予 | `TODO — 等你拍板` | 机制齐备，五房均 0 moderator。见 [PUBLIC_ROOM_LAUNCH_CHECKLIST.md](../PUBLIC_ROOM_LAUNCH_CHECKLIST.md) |
 | git 历史瘦身 | `TODO — 需人工执行` | `scripts/purge-large-history.sh`，涉及 force-push，AI 权限门禁不允许自动执行 |
+
+---
+
+## AUTH-M7 — Runtime Identity Resolution · `DONE — LOCAL VERIFIED`
+
+**分支** `integration/auth-strategy-b`（从 main 建，**未合入 main**）
+
+**目标** 让「Supabase 登录成功」不再等于「拥有 AMAS 业务身份」。
+
+**范围**
+- `backend/src/auth/identity.ts`：Supabase UUID → `legacy_user_map` → canonical SQLite user
+- principal 携带双身份（`authId` 认证 / `user.id` 业务），`requireAdmin` 改用 `authId`
+- `legacy_user_map` DDL 收归 `backend/src/db.ts`；迁移脚本只写数据
+- 401（认证失败）与 403 `IDENTITY_NOT_PROVISIONED`（无 AMAS 身份）分离
+- backend 测试入口分层：`test:local`（零外部前提）/ `test:external`（需 staging 凭据）
+
+**不做什么**
+- **不自动 provision**（产品决策已定，fail closed）
+- 不补 16 张表缺失的外键（P2 独立 hardening）
+- 不合入 main、不 push、不部署
+
+**依赖** Strategy B 的前置：`revert d3e860d` 恢复 Auth 世系后再 merge。
+
+**验收条件** 双身份分离 · mapping_status 白名单 · 资料信任边界 · ghost 写入全拒 · 401/403 可区分
+
+**实测** `auth-m7-identity` 19/19 · backend local 135/135 · 前端 181/181 ·
+前后端 tsc clean · build PASS · 回归 presence 54 / reading 44 / render 51 / phase5 24 / moderator 26
+
