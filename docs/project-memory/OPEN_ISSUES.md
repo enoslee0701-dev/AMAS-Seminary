@@ -950,11 +950,23 @@ DB-6 **未擅自加表**。现在决定成本最低（0 行数据）。
 ## #RB-29 `.env.example` 缺少全部 `SUPABASE_*` 变量
 
 ```
-status:    OPEN
+status:    CLOSED（2026-09-07，由 APP STAGING 的环境模板补齐提交修复）
 severity:  medium（上手阻塞，非运行期缺陷）
 owner:     unassigned
-phase:     STAGING-0 之后的实施阶段
+phase:     APP STAGING
 ```
+
+**关闭依据**（实测当前文件）：
+
+```
+.env.example          VITE_SUPABASE_URL · VITE_SUPABASE_ANON_KEY
+backend/.env.example  SUPABASE_URL · SUPABASE_SERVICE_ROLE_KEY · NODE_ENV
+```
+
+同批还把 `VITE_APP_SECRET` 标为 `DEPRECATED`（见 #20）——
+`VITE_` 前缀意味着值会进 bundle，填上等于公开发布管理员凭据。
+
+**原记录**（保留）：
 
 两份示例文件都**没有**列出前后端实际依赖的 Supabase 变量：
 

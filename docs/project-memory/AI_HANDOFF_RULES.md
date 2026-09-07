@@ -34,7 +34,8 @@
 >
 > | OWNER | REPO | TASK | BASE | STARTED | ENDED | 结果 |
 > |---|---|---|---|---|---|---|
-> | Claude | 两仓 | **STAGING-0** | App `47bd23d` / web `a12078b` | 2026-09-07 | 2026-09-07 | `STAGING-0 NEEDS OWNER ACTION`，已交回 IDLE |
+> | Claude | App | **APP STAGING**（仓库侧准备） | — | 2026-09-07 | 2026-09-07 | `APP STAGING: BLOCKED BY EXTERNAL PREREQUISITES`，已交回 IDLE |
+> | Claude | 两仓 | STAGING-0（设计，**已被 APP STAGING 取代为当前口径**） | App `47bd23d` / web `a12078b` | 2026-09-07 | 2026-09-07 | `STAGING-0 NEEDS OWNER ACTION`，已交回 IDLE |
 > | Claude | 两仓 | RB-01 **DB-6.1** | App `51bfd11` / web `fb0e444` | 2026-09-07 | 2026-09-07 | `DB-6.1 LOCALLY VERIFIED`，已交回 IDLE |
 > | Claude | 两仓 | RB-01 **DB-6** | App `02903a1` / web `661e7af` | 2026-09-07 | 2026-09-07 | `DB-6 LOCALLY VERIFIED`；push 时遇 main 漂移，已做 lineage reconciliation |
 > | Claude | 两仓 | RB-01 **DB-3.5** | — | 2026-09-07 | 2026-09-07 | `DBR-22 CLOSED` |
@@ -43,10 +44,44 @@
 > —— 状态 `RELEASE CANDIDATE SUPERSEDED`（8/8 能力已在 main，DB-6.1 §9 只读比对）。
 > **保留为 recovery ref，不删除、不合并。**
 >
-> **DB-4 不是可认领任务**：`BLOCKED_BY_EXTERNAL_ENV = STAGING SUPABASE REQUIRED`（D-36）。
+> ---
 >
-> **STAGING-1 也暂不可认领**：需先由 Product Owner 提供 staging Supabase 与凭据
-> （见 STAGING-0 报告 §20）。**D-39**：不必为此安装 Docker ——
+> ### ⬤ 当前阶段状态（写代码前必须先确认这一条）
+>
+> ```
+> APP STAGING:
+> BLOCKED BY EXTERNAL PREREQUISITES
+> ```
+>
+> **权威来源**：`docs/operations/APP-STAGING-RUNBOOK.md` · `OPEN_ISSUES #19`
+> —— **不是**较早的 `amas-website/docs/operations/STAGING-0-READINESS-REPORT.md`。
+>
+> **仓库侧 staging preparation 已完成，禁止重复开发**：
+> staging environment templates · Supabase identity diagnostics ·
+> `APP-STAGING-RUNBOOK` · migration exit-code fix（#18 CLOSED）·
+> local release gates · GitHub CI · external prerequisite inventory。
+>
+> **`DB-4` = `PAUSED`，不得自行恢复**（Supervisor 指示，2026-09-07；
+> 此前记为 `BLOCKED_BY_EXTERNAL_ENV`，现口径为 `PAUSED`）。
+>
+> **等待 Product Owner 确认的第一优先级**：
+> `amas-staging` Supabase project 是否仍然存在。
+>
+> **在 Owner 确认之前，以下一律禁止**：
+>
+> ```
+> 创建新的 Supabase project
+> 部署 Railway
+> 创建真实 Supabase users
+> 运行 DB-4 identity migration
+> 配置 Production
+> 把 localhost / mock 算作 staging
+> ```
+>
+> **当前没有新的代码任务。** 认领前先读本节；若无 Owner 的新指示，
+> 正确做法是 `READ / AUDIT / REVIEW`，而不是开新的实现世系。
+>
+> **D-39 仍然成立**：不必为 staging 安装 Docker ——
 > 迁移通道是 `supabase db push --db-url`，已实测无需 Docker。
 
 ---

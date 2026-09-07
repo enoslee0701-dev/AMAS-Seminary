@@ -18,15 +18,52 @@
 > DB-6  ✅  课程迁移 LOCALLY VERIFIED（D-36 已提前到 DB-4 之前）
 > DB-6.1 ✅ 课程引用完整性与世系收尾 —— DBR-25 / DBR-27 CLOSED
 >          前端 187/187（含新增课程引用闸门）· 后端 159/159 · build OK
-> DB-4  ⛔  BLOCKED_BY_EXTERNAL_ENV = STAGING SUPABASE REQUIRED
+> DB-4  ⏸  **PAUSED** —— 不得自行恢复（Supervisor 指示，2026-09-07）
 > DB-5 / DB-7..DB-13   未开始（多数依赖 DB-4 的身份解析）
-> STAGING-0 ✅ 就绪度设计完成 —— **STAGING-0 NEEDS OWNER ACTION**
->           迁移交付通道已实测：supabase db push --db-url 无需 Docker，
->           接受现有 0001_ 命名，26/26 应用，幂等，写入官方 schema_migrations，
->           产出与 psql 通道 md5 一致且契约 53/53。
->           入场清单：READY 7 · NEEDS_OWNER 5 · BLOCKED 2 · NOT_REQUIRED 4
-> STAGING-1  未开始（连真实 Supabase + 应用 26 个 migration + 验证 89 条契约）
+> STAGING-0 ✅ 就绪度设计（已被 APP STAGING 取代为当前口径，见下）
 > ```
+>
+> ---
+>
+> ### ⬤ 当前阶段状态（以此为准）
+>
+> ```
+> APP STAGING:
+> BLOCKED BY EXTERNAL PREREQUISITES
+> ```
+>
+> **权威来源**：`docs/operations/APP-STAGING-RUNBOOK.md` · `OPEN_ISSUES #19`
+> —— 而**不是**较早的 `STAGING-0-READINESS-REPORT.md`。
+>
+> **验收级别**：`MAIN INTEGRATED / LOCAL + GITHUB CI VERIFIED`
+> （**不是** `STAGING VERIFIED`，更不是 `PRODUCTION VERIFIED`）
+>
+> **仓库侧 staging preparation 已完成，不要重复开发**：
+> staging environment templates · Supabase identity diagnostics ·
+> `APP-STAGING-RUNBOOK` · migration exit-code fix（#18 CLOSED）·
+> local release gates（`npm run verify:local-release`）· GitHub CI（四个 job）·
+> external prerequisite inventory。
+>
+> **缺的全是外部凭据，互不阻塞，拿到哪项解锁哪项**（runbook §9 / #19）：
+>
+> ```
+> Supabase staging URL / anon key / service-role key   MISSING
+> 托管凭据（前端 / 后端）                                MISSING
+> staging 域名                                          MISSING
+> SMTP / 发信域                                         MISSING → 密码找回无法验证
+> LiveKit 凭据                                          MISSING → 语音保持关闭
+> Android 真机 + 域名关联                                MISSING → Deep Link 无法验证
+> ```
+>
+> **第一优先级（等 Product Owner 确认）**：
+> `amas-staging` Supabase project **是否仍然存在**。
+>
+> **在 Owner 确认之前，禁止**：
+> 创建新的 Supabase project · 部署 Railway · 创建真实 Supabase users ·
+> 运行 DB-4 identity migration · 配置 Production ·
+> **把 localhost / mock 算作 staging**。
+>
+> **当前没有新的代码任务。**
 >
 > **验证环境**：本地 PostgreSQL **17.6**（与 Supabase 目标版本一致）+ 18.6 对照。
 > **仍未验证**：真实 Supabase（Auth / PostgREST / RLS 运行时 / SECURITY DEFINER 上下文 /
