@@ -1,4 +1,52 @@
-> ## ⛔ 写代码前必读：ACTIVE TASK OWNER
+> ## ⛔ 写代码前必读（一）：CANONICAL WRITE OWNER —— D-38
+>
+> **同一仓库在任一时刻只能有一个会话拥有 canonical write authority。**
+> 其他会话可以 `READ` / `AUDIT` / `REVIEW` / `ISOLATED EXPERIMENT`，
+> 但**不得直接 push** `origin/main` 或 `origin/master`。
+>
+> | REPOSITORY | CANONICAL_WRITE_OWNER | ACTIVE_TASK | ACTIVE_BRANCH | BASE_COMMIT | STARTED_AT | STATUS |
+> |---|---|---|---|---|---|---|
+> | `AMAS-Seminary` | （无） | — | — | — | — | **IDLE** |
+> | `amas-website` | （无） | — | — | — | — | **IDLE** |
+>
+> **准备写某个 repo 之前必须先读这张表。** 若已有 `ACTIVE` writer：
+>
+> ```
+> STOP CANONICAL WRITE
+> ```
+>
+> 认领时填表，完成或交接后改回 `IDLE`。
+>
+> ### Main Drift Rule
+>
+> 认领时记录 `BASE_COMMIT`（= 当时的 `origin/main`）。**push 之前必须**：
+>
+> ```
+> git fetch origin
+> ```
+>
+> 若 `origin/main` 已不是预期世系，**不得直接 push**（更不得 force）。
+> 先做 **LINEAGE RECONCILIATION**：真实合并 → 逐项证明双方成果都在
+> （本项目有过 `CONFLICT = 0` 却静默删除的事故，**git 不报冲突不构成证据**）
+> → 跑完整回归 → 再 push。
+>
+> ### 最近一次认领与交回
+>
+> | OWNER | REPO | TASK | BASE | STARTED | ENDED | 结果 |
+> |---|---|---|---|---|---|---|
+> | Claude | 两仓 | RB-01 **DB-6.1** | App `51bfd11` / web `fb0e444` | 2026-09-07 | 2026-09-07 | `DB-6.1 LOCALLY VERIFIED`，已交回 IDLE |
+> | Claude | 两仓 | RB-01 **DB-6** | App `02903a1` / web `661e7af` | 2026-09-07 | 2026-09-07 | `DB-6 LOCALLY VERIFIED`；push 时遇 main 漂移，已做 lineage reconciliation |
+> | Claude | 两仓 | RB-01 **DB-3.5** | — | 2026-09-07 | 2026-09-07 | `DBR-22 CLOSED` |
+>
+> **当前被冻结的世系**：`release/post-legacy-gate@e35923b`
+> —— 状态 `RELEASE CANDIDATE SUPERSEDED`（8/8 能力已在 main，DB-6.1 §9 只读比对）。
+> **保留为 recovery ref，不删除、不合并。**
+>
+> **DB-4 不是可认领任务**：`BLOCKED_BY_EXTERNAL_ENV = STAGING SUPABASE REQUIRED`（D-36）。
+
+---
+
+> ## ⛔ 写代码前必读（二）：ACTIVE TASK OWNER
 >
 > **规则 D-16 —— One Active Implementation Lineage Per Task。**
 > 同一个 issue / phase / merge / migration / release operation，

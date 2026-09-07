@@ -6,8 +6,16 @@
 > 理由：课程迁移不依赖 user identity，且 67↔67 canonical 映射已完全确认。
 > **这是顺序调整，不是并行开发** —— 仍遵守 D-16，同一时刻只有一条 active lineage。
 >
-> 当前进度：`DB-0 ✅ · DB-1 ✅ · DB-2 ✅ · DB-3 ✅ · DB-3.5 ✅ · DB-6 ✅ LOCALLY VERIFIED`
-> 下一个可动的：待 Supervisor 裁定 DBR-27；DB-4 等 staging Supabase。
+> 当前进度：`DB-0 ✅ · DB-1 ✅ · DB-2 ✅ · DB-3 ✅ · DB-3.5 ✅ · DB-6 ✅ · DB-6.1 ✅ LOCALLY VERIFIED`
+>
+> **本地课程迁移工作到 DB-6.1 正式结束。**
+> 下一阶段是 **STAGING-0 — SUPABASE STAGING READINESS**：
+> 先形成 staging provisioning / credentials / isolation checklist，
+> 再决定需要 Product Owner 提供或创建什么资源。
+> 它要解决三个卡点：`DB-4 identity migration BLOCKED_BY_EXTERNAL_ENV` ·
+> `AUTH external tests BLOCKED_BY_ENV` · `RLS runtime ENVIRONMENT-UNVERIFIED`。
+>
+> ⚠ 不建议继续绕开环境做更多数据迁移。
 
 > ### RB-01 数据库迁移阶段计划（DB-1 定版，2026-09-07）
 >

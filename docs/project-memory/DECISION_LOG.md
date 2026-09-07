@@ -5,6 +5,64 @@
 
 ---
 
+## D-38｜ONE CANONICAL WRITER PER REPOSITORY
+
+```
+日期     2026-09-07
+状态     APPROVED（Supervisor 裁定）
+阶段     治理规则（D-16 的加强）
+```
+
+**决策**：同一仓库在任一时刻只能有一个会话拥有 canonical write authority。
+其他会话可以 `READ` / `AUDIT` / `REVIEW` / `ISOLATED EXPERIMENT`，
+但**不得直接 push** `origin/main` / `origin/master`。
+
+**为什么 D-16 不够**：D-16 说的是「同一个 task 不能有两条实现世系」。
+2026-09-07 本轮出现的情况是**两个不同 task**（DB-6 与 AUTH 加固 / CI 闸门）
+同时写同一个仓库的 canonical branch —— 严格说不违反 D-16，
+但一样造成了：project-memory 冲突 · merge 风险 · 状态基线漂移 ·
+一方不知道另一方已经 push。
+
+**如何应用**：
+`AI_HANDOFF_RULES.md` 顶部维护 `REPOSITORY / CANONICAL_WRITE_OWNER / ACTIVE_TASK /
+ACTIVE_BRANCH / BASE_COMMIT / STARTED_AT / STATUS` 表。写之前先读；已有 ACTIVE writer 则
+`STOP CANONICAL WRITE`。
+
+**Main Drift Rule**：认领时记录 `BASE_ORIGIN_MAIN`；push 前必须 `git fetch origin`。
+若 `origin/main` 已不是预期世系，不得直接 push —— 先做 **LINEAGE RECONCILIATION**
+（真实合并 + 逐项证明双方成果都在 + 全量回归）。
+
+---
+
+## D-37｜未映射的 retired 课程进度永不进入 active course_progress
+
+```
+日期     2026-09-07
+状态     APPROVED（Supervisor 裁定，修订 DB-1 §4.3）
+阶段     RB-01 / DB-6.1
+```
+
+**决策**：active `course_progress` 只能引用 canonical `course_catalog`。
+
+对于「retired legacy course + 无正式批准的 canonical 替代」的进度行：
+
+**禁止** —— 猜一个最接近的课程 · 创建假 canonical course · 关闭 FK · 静默删除 progress。
+
+迁移状态定义为 `LEGACY_RETIRED` / `MIGRATION_REVIEW_REQUIRED`，
+保存在 **migration manifest 与 quarantine 证据**中，**不写入** active `course_progress`。
+
+**当前数据集**：已证明 `retired course_progress rows = 0`，
+因此**本轮不新增任何 legacy-retired 业务表** —— 不为不存在的数据增加永久 schema。
+
+**将来若真实数据集中出现此类数据**：迁移必须 **fail closed / quarantine**，
+并提交 Product Owner 决策。
+
+**这条同时关闭了 DBR-27**（DB-1 §4.3 与 DB-3 schema 的不一致）：
+按本决策，DB-3 现有的严格 FK 是**正确**的，不需要改 schema；
+需要改的是 DB-1 §4.3 的措辞。
+
+---
+
 ## D-36｜DB-6 先于 DB-4 —— 顺序调整，不是并行开发
 
 ```

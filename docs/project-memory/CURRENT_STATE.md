@@ -16,8 +16,11 @@
 > DB-3  ✅  PostgreSQL schema 实现（0023..0026）
 > DB-3.5 ✅ PG 17.6 目标版本兼容闸门 —— DBR-22 CLOSED
 > DB-6  ✅  课程迁移 LOCALLY VERIFIED（D-36 已提前到 DB-4 之前）
+> DB-6.1 ✅ 课程引用完整性与世系收尾 —— DBR-25 / DBR-27 CLOSED
+>          前端 187/187（含新增课程引用闸门）· 后端 159/159 · build OK
 > DB-4  ⛔  BLOCKED_BY_EXTERNAL_ENV = STAGING SUPABASE REQUIRED
 > DB-5 / DB-7..DB-13   未开始（多数依赖 DB-4 的身份解析）
+> STAGING-0  下一阶段（Supabase staging 就绪度）—— 尚未开始
 > ```
 >
 > **验证环境**：本地 PostgreSQL **17.6**（与 Supabase 目标版本一致）+ 18.6 对照。
@@ -28,7 +31,12 @@
 > 6 个测试装置 = `TEST FIXTURE / DO NOT MIGRATE TO PRODUCTION`；
 > 1 个 `estherzh0528@gmail.com` = `POTENTIAL_REAL_USER / IDENTITY_VERIFICATION_REQUIRED`。
 >
-> 详见 `amas-website/docs/operations/` 下的 DB-0 ～ DB-6 各报告。
+> **治理**：D-38 起，同一仓库任一时刻只能有一个 canonical write owner
+> （见 `AI_HANDOFF_RULES.md` 顶部的所有权表）。
+> `release/post-legacy-gate@e35923b` 状态为 `RELEASE CANDIDATE SUPERSEDED`
+> （8/8 能力已在 main），保留为 recovery ref，不删除、不合并。
+>
+> 详见 `amas-website/docs/operations/` 下的 DB-0 ～ DB-6.1 各报告。
 
 ---
 

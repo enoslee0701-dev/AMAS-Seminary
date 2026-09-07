@@ -241,7 +241,15 @@ const SCENARIOS: Scenario[] = [
   {
     id: 'care', label: '正在关怀陪伴软弱/受伤的肢体', theme: '牧养关怀与医治事工',
     learn: ['倾听与协谈基础', '内在医治原则', '以福音施行安慰'],
-    courseIds: ['c_counseling', 'c_healing'], boost: 'ministry',
+    // 这里原本还有 'c_healing'。它是 RETIRED_COURSE_IDS 之一 —— 那门旧的合并课程
+    // 已按主题拆分，App 与 Portal 两侧目录都不再有它，因此它是一个指向不存在课程的
+    // **可导航引用**（下方 courseIds 会渲染成 onCourseClick 按钮）。
+    // 移除它不改变用户看到的内容：courseById 找不到时本来就被 filter(Boolean) 丢掉。
+    // 拆分后的 c_healing_word / c_healing_inner 都在正式目录里，但**哪一门该进这条推荐
+    // 属产品判断**，不是迁移或重构能替产品定的（DB-6 裁定 4 个 retired id 一律
+    // NONE FORMALLY KNOWN，禁止按名称相近回填）。待 Product Owner 决定。
+    // 主题本身没有丢：theme 与 learn 中的「医治」文案是纯文本，予以保留。
+    courseIds: ['c_counseling'], boost: 'ministry',
   },
   {
     id: 'newb', label: '正在带初信者/慕道朋友', theme: '初信栽培与门徒之路',

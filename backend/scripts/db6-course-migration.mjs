@@ -202,11 +202,11 @@ for (const id of allIds) {
   let status, mappingMethod, action, note = '';
 
   if (isRetired) {
-    // TASK 2：retired id 默认保留为历史引用，绝不猜测替代课程。
-    status = 'RETIRED_REFERENCE';
+    // D-37 / TASK 2：retired id 默认保留为历史引用，绝不猜测替代课程。
+    status = 'RETIRED';
     mappingMethod = 'retired_id_registry';
     action = 'PRESERVE_AS_RETIRED_REFERENCE';
-    note = '两侧正式目录均已移除；不设 canonical 替代（无正式裁定）';
+    note = '两侧正式目录均已移除；无正式裁定的 canonical 替代';
     if (c) { status = 'CONFLICT'; note = 'retired id 竟出现在 canonical catalog 中'; action = 'BLOCKED'; }
     if (s) { status = 'CONFLICT'; note = 'retired id 竟出现在 SQLite courses 中'; action = 'BLOCKED'; }
   } else if (o && s && c) {
@@ -301,8 +301,41 @@ const summary = {
     .map((m) => ({ code: m.legacy_course_id, legacy: m.legacy_total_lessons, canonical: m.canonical_total_lessons })),
 };
 
+// ---------------------------------------------------------------------------
+// RETIRED_COURSE_MANIFEST（DB-6.1 TASK 3 / D-37）
+//
+// 把 4 个已退役 ID 正式固定为迁移契约的一部分，字段是 Supervisor 指定的那组。
+// `canonical_replacement` 恒为 null —— 拆分是一对多，不存在单一替代；
+// 任何「名字最像」的填法都是猜测（D-37 明令禁止）。
+// 也不编造标题：仓库全历史从未记录过这 4 个 ID 的课程名。
+// ---------------------------------------------------------------------------
+const retiredManifest = official.retired.map((id) => ({
+  legacy_course_id: id,
+  status: 'RETIRED',
+  canonical_replacement: null,
+  mapping_basis:
+    'services/catalog.ts:117 RETIRED_COURSE_IDS 声明 + 同处注释「旧的合并课程 → 已按书卷/主题拆分，迁移后删除」；'
+    + '拆分为一对多，无单一 canonical 替代，且仓库全历史未记录过其课程标题',
+  historical_progress_count: progressByCourse.get(id) ?? 0,
+  historical_files_count: filesByCourse.get(id) ?? 0,
+  migration_action: 'PRESERVE_AS_RETIRED_REFERENCE',
+  // D-37：这类行永远不进 active course_progress。
+  // 若将来真实数据集中出现引用它们的进度行，迁移必须 fail closed / quarantine。
+  active_course_progress_policy: 'NEVER_WRITE_TO_ACTIVE_COURSE_PROGRESS',
+  on_encounter_in_future_dataset: 'FAIL_CLOSED_AND_QUARANTINE_FOR_PRODUCT_OWNER',
+  quarantine_state: 'LEGACY_RETIRED / MIGRATION_REVIEW_REQUIRED',
+}));
+
+fs.writeFileSync(path.join(OUT_DIR, 'retired-course-manifest.json'),
+  JSON.stringify({
+    generated_at: summary.generated_at,
+    decision: 'D-37',
+    note: '当前 historical_progress_count 全为 0，因此本轮不新增任何 legacy-retired 业务表。',
+    retired: retiredManifest,
+  }, null, 2), 'utf8');
+
 fs.writeFileSync(path.join(OUT_DIR, 'course-mapping-manifest.json'),
-  JSON.stringify({ summary, manifest }, null, 2), 'utf8');
+  JSON.stringify({ summary, manifest, retired_manifest: retiredManifest }, null, 2), 'utf8');
 
 // 人可读的 manifest 表
 const md = [

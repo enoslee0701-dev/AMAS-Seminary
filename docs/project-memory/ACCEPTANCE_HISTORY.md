@@ -537,3 +537,38 @@ DBR-27（retired 进度在 DB-3 schema 中不可表示，待 Supervisor 裁定�
 
 **未做**：未开始 DB-4，未创建任何 Supabase 用户，未解析任何身份，未写 `legacy_user_map`。
 
+---
+
+## 2026-09-07 — RB-01 DB-6.1 课程引用完整性与世系收尾
+
+```
+Acceptance level   Code-stage acceptance
+App base commit    51bfd11
+website base       fb0e444
+```
+
+**结论：`DB-6.1 LOCALLY VERIFIED`**
+
+| 项 | 结果 |
+|---|---|
+| active production 中指向不存在课程的引用 | **0**（修复前 1：`CustomTheologyView.tsx:244` `c_healing`） |
+| 课程引用完整性闸门 | 新增 6 条断言；**已用注入坏引用验证它确实会红** |
+| 前端测试 | 187/187（20 → 21 个文件） |
+| 后端 `test:local` | 159/159 |
+| 前端 / 后端 typecheck | exit 0 / exit 0 |
+| build | ✅ 13.11s |
+| DB-6 契约（PG 17.6 / 18.6） | 36/36 · 36/36 |
+| DB-3 契约（PG 17.6 / 18.6） | 53/53 · 53/53 |
+| SKIP / BLOCKED_BY_ENV | 0 / 0 |
+
+**决策**：D-37（未映射 retired 进度永不进 active `course_progress`，修订 DB-1 §4.3）·
+D-38（ONE CANONICAL WRITER PER REPOSITORY）。
+
+**关闭**：DBR-25（`c_healing` 悬空引用）· DBR-27（D-37 裁定 schema 不改，改 DB-1 措辞）。
+
+**冻结候选**：`release/post-legacy-gate@e35923b` 经 8/8 能力只读比对，
+标记 `RELEASE CANDIDATE SUPERSEDED`，保留为 recovery ref，**未删除、未合并**。
+
+**未做**：未开始 DB-4，未开始 STAGING-0，未新增任何 legacy-retired 业务表，
+未对 `thumbnail` 空串做任何归一化。
+

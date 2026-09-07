@@ -771,11 +771,34 @@ DB-3 契约测试实测复现的两个陷阱：
 ## #DBR-25 retired 课程 `c_healing` 仍被现役代码引用
 
 ```
-status:    OPEN
+status:    CLOSED（2026-09-07，DB-6.1）
 severity:  medium
 owner:     unassigned
-phase:     RB-01 / DB-12（App 代码）
+phase:     RB-01 / DB-6.1
 ```
+
+**关闭依据**：
+
+```
+active production reference to nonexistent canonical course ID = 0
+```
+
+根因：`courseIds` 会被渲染成 `onCourseClick(c.id)` 按钮，是**可导航目标**；
+`courseById()` 找不到时被 `.filter(Boolean)` 丢掉，所以从不报错、从不崩溃，
+只是静默少一张卡片 —— 人眼审查发现不了。
+
+处置：从 `SCENARIOS['care'].courseIds` 移除失效的 canonical 引用。
+`theme: '牧养关怀与医治事工'` 与 `learn: [...'内在医治原则'...]` 是**纯文本**，予以保留 ——
+主题没有丢，丢的只是一个指向不存在课程的 ID。
+
+**未做**（刻意）：没有把它映射到 `c_healing_word` / `c_healing_inner`
+（禁止按名称相近回填，D-37），也没有新增第 68 门课程。
+这条推荐是否该补一门拆分后的课程，**属产品判断**，留给 Product Owner。
+
+**防复发**：`tests/services/courseReferenceIntegrity.test.ts` —— 通用闸门，
+不是一次性特判；已用注入坏引用的方式验证它确实会红。
+
+**原记录**（保留）：
 
 `components/CustomTheologyView.tsx:244`：
 
@@ -803,7 +826,18 @@ courseIds: ['c_counseling', 'c_healing'], boost: 'ministry',
 status:    OPEN
 severity:  low
 owner:     unassigned
-phase:     RB-01 / DB-12（App 写入路径）
+phase:     RB-01 / DB-12（DAL / presentation semantics）
+```
+
+**DB-6.1 裁定**：迁移阶段继续**逐字保留**，本轮 `NO DATA NORMALIZATION`，
+不得借 migration 偷偷改历史数据。
+
+后续（DB-12）须统一定义三种取值在**读取/展示层**分别意味着什么：
+
+```
+NULL          —— 从未设置过封面
+''            —— 历史上写入过空串（等价于「无封面」，但来源不同）
+valid path    —— 有封面
 ```
 
 SQLite `courses.thumbnail` 有 32 条是**空字符串**（不是 NULL），
@@ -822,11 +856,24 @@ DB-6 **逐字保留**空串迁入 `course_catalog.thumbnail_path` ——
 ## #DBR-27 retired 课程的学习进度在 DB-3 schema 中无法表示
 
 ```
-status:    PENDING_DECISION
+status:    CLOSED（2026-09-07，D-37 裁定）
 severity:  medium
-owner:     Supervisor 裁定
-phase:     RB-01 / DB-8 前置
+owner:     Supervisor（已裁定）
+phase:     RB-01 / DB-6.1
 ```
+
+**裁定结果（D-37）**：DB-3 现有的严格 FK 是**正确**的，**schema 不改**。
+active `course_progress` 只能引用 canonical `course_catalog`；
+未映射的 retired 进度以 `LEGACY_RETIRED` / `MIGRATION_REVIEW_REQUIRED`
+存放在 migration manifest 与 quarantine 证据中，**不写入业务表**。
+
+需要修订的是 **DB-1 §4.3 的措辞**（原文要求「迁入并标记」），不是 DB-3 的实现。
+
+当前 `retired course_progress rows = 0`，因此**不新增任何 legacy-retired 业务表** ——
+不为不存在的数据增加永久 schema。将来若出现此类数据，迁移必须
+**fail closed / quarantine** 并提交 Product Owner。
+
+**原记录**（保留）：
 
 **契约与 schema 不一致**：
 
