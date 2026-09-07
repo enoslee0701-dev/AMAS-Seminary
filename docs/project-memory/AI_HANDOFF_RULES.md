@@ -1,3 +1,24 @@
+> ## ⛔ 写代码前必读：ACTIVE TASK OWNER
+>
+> **规则 D-16 —— One Active Implementation Lineage Per Task。**
+> 同一个 issue / phase / merge / migration / release operation，
+> 只能有**一个** Claude 会话拥有写权限。其他会话只能 `READ / REVIEW / AUDIT`。
+>
+> 新会话开始写代码前**必须**先查下表。发现已有 active owner 时，
+> **不得开启第二条实现世系** —— 改为向 owner 汇报，或申请交接。
+>
+> | ACTIVE_TASK_OWNER | ACTIVE_BRANCH | ACTIVE_PHASE | STARTED_AT | STATUS |
+> |---|---|---|---|---|
+> | （无） | — | — | — | IDLE |
+>
+> 认领任务时在本表登记；完成或交接后改回 IDLE。
+>
+> **来源**：2026-09-07 两条会话同时做 AUTH reconciliation，各自产出一条完整
+> merge 世系。两者最终实现高度趋同 —— 重复投入，且需额外一轮裁定才能收敛。
+> 这是治理错误，不是代码错误。
+
+---
+
 # AI Handoff Rules
 
 任何 AI（Claude / ChatGPT / Codex / 其他）或新开发者接手本项目后，

@@ -5,6 +5,82 @@
 
 ---
 
+## D-16｜One Active Implementation Lineage Per Task
+
+```
+日期     2026-09-07
+状态     APPROVED
+```
+
+同一个 issue / phase / merge / migration / release operation，
+**只能有一个 Claude 会话拥有写权限**。其他会话只能 `READ / REVIEW / AUDIT`，
+不得同时开启第二条实现世系。
+
+**来源**：2026-09-07 两条会话同时执行 AUTH reconciliation，各自产出一条完整
+merge 世系（`main` 上的 `4c139ec` 与 `integration/auth-strategy-b` 的 `78985e5`）。
+两条世系的 4 个核心 AUTH 文件最终逐字节相同 —— 说明**这不是代码错误，是治理错误**：
+重复投入、并发风险、且需要额外一轮裁定才能收敛。
+
+**执行方式**：写代码前必须先查 `AI_HANDOFF_RULES.md` 的 ACTIVE TASK OWNER 表。
+发现已有 active owner 时，不得开启第二条实现世系。
+
+---
+
+## D-15｜AUTH-M7 的定义
+
+```
+日期     2026-09-07
+状态     APPROVED
+```
+
+**AUTH-M7 = legacy USER authentication 被 _删除_，而不只是默认关闭。**
+
+⚠ **命名冲突警告**：`integration/auth-strategy-b` 的 `78985e5` 提交标题写的是
+「AUTH-M7: 运行时身份解析」，但它实际完成的是 **Runtime Identity Resolution**
+（Supabase 登录成功 ≠ 拥有 AMAS 身份，解析不出一律 403 `IDENTITY_NOT_PROVISIONED`，
+fail closed 不自动 provision）—— 那是一项真实且重要的修复，但**不是** D-15 定义的 M7。
+
+2026-09-07 静态审计实测，legacy 消费者仍然活跃：
+
+```
+routes/auth.ts:80/113/149   issueTokens()  仍在签发自签 token
+middleware/auth.ts:215      verifyAccess() 仍在校验自签 token
+config.ts                   acceptLegacy   仍被读取
+```
+
+**因此按 D-15 定义，AUTH-M7 尚未完成。** legacy config 不得删除；
+当前以「production 缺省关闭」作为过渡防护（R1-3）。
+
+---
+
+## D-14｜AUTH reconciliation 权威世系
+
+```
+日期     2026-09-07
+状态     APPROVED
+```
+
+**canonical lineage = `integration/auth-strategy-b` @ `78985e5`。**
+
+理由：已完成运行时身份解析；通过 revert `d3e860d` 恢复正确的三方合并语义，
+从而避免了另一条世系实际遭遇的 silent deletion；四个核心 AUTH 文件证明两条
+世系最终实现高度趋同，没有理由维持第二条正式世系。
+
+**另一条世系（`4c139ec`）**：保全为 `recovery/lineage-a-4c139ec`，
+作为 recovery evidence，**不再演进**。
+**`rehearsal/auth-merge-2026-09-07`**：`FROZEN / NON-CANONICAL`，
+其 worktree 内有另一会话的 88 项未提交工作，**禁止 reset / clean / delete / prune / checkout 覆盖**。
+
+移植裁决（逐项语义审查，非整块 cherry-pick）：
+
+| 差异 | 裁决 |
+|---|---|
+| `config.ts` legacy 生产默认关闭 | **移植** —— legacy 仍活跃，此为 D-15 完成前的必要过渡防护 |
+| `routes/auth.ts` 注释合并 | **拒绝** —— 剥离注释后两侧可执行代码完全相同 |
+| `smoke.test.ts` 删孤儿 seedAdmin | **无需** —— canonical 分支上本就不存在该孤儿 |
+
+---
+
 ## D-11｜SQLite 不作为 AMAS App 最终 Production 架构
 
 ```

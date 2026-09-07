@@ -317,3 +317,81 @@ localhost），只打印一行 `console.warn`。
 `JWT_SECRET` / `DB_PATH` / `CORS_ORIGINS`（或含 localhost）即 `process.exit(1)`，
 **绝不自动生成生产密钥、绝不回落 dev 默认值**。13 条测试覆盖三种情形，
 并已纳入 `npm test`。
+
+
+---
+
+## #RB-24 Merge completeness / test coverage blind spot（静默删除）
+
+```
+status:    MITIGATED（护栏已上线，根因属 git 语义，无法根除）
+severity:  high
+owner:     unassigned
+phase:     AUTH reconciliation
+```
+
+**发生了什么**：`d3e860d` 从 main 删除了 `backend/src/auth/supabase.ts` 等
+Supabase 实现文件。`auth/supabase-unification` 分支之后未再修改它们，
+git 于是判定「一侧删除、一侧未改 → 删除生效」，**合并时不报冲突**。
+
+结果：`supabase-auth.test.ts`（266 行）被带回，**被测实现却没有回来**，
+而 **typecheck 与全部测试仍然全绿** —— 该测试 spawn 子进程跑服务器，
+不直接 import 那个模块，因此缺失完全不可见。
+
+> 这是一类**测试存在、实现消失、CI 全绿**的盲区。
+> 不逐文件核对的话，会以「全绿」姿态交付一个空的 reconciliation。
+
+**缓解**：新增 `backend/src/test/auth-adapter-presence.test.ts`（7 项，已进 `test:local`）。
+证明：adapter 可真实 import · 中间件确实调用它 · runtime 依赖已声明 ·
+每个 AUTH 测试都有对应实现文件。刻意最小，不做 AST 分析、不 mock、不连网络。
+
+**残留风险**：护栏只覆盖 AUTH adapter。其他领域若发生同型 revert 世系合并，
+仍可能静默丢文件。合并 revert 世系时应先 `Revert the revert` 恢复三方语义（D-14）。
+
+---
+
+## #RB-22 AUTH 验收测试状态正式降级
+
+```
+status:    OPEN
+severity:  medium
+owner:     用户（需 staging 或 CI secret）
+```
+
+2026-09-07 逐个实跑，全部 **0 PASS / 1 SKIPPED**：
+
+```
+credential-recovery · credential-recovery-expiry · identity-migration
+password-change-reauth · redirect-matrix · supabase-auth
+```
+
+因此历史报告中的 `23/23` `8/8` `17/17` `135/135` 在当前环境下
+**NOT REPRODUCIBLE**。自即日起不得再把这些数字当作当前验收证据。
+
+相关模块状态统一降级为：
+
+```
+IMPLEMENTED / ENVIRONMENT-UNVERIFIED
+```
+
+**这不等于代码有错**，而是：当前没有可复现证据证明真实 Supabase AUTH
+integration 已通过。
+
+`backend/package.json` 已把它们隔离到 `test:external`，与 `test:local` 分开计数。
+
+---
+
+## #RB-25 requireAppSecret 零路由使用（dead architecture candidate）
+
+```
+status:    OPEN（仅标记，本轮不删除）
+severity:  low
+```
+
+`requireAppSecret` 中间件定义在 `middleware/auth.ts`，但**零路由挂载**。
+`APP_SECRET` 的真实调用方是另外两条：
+
+- `requireAuth` 第 1 级 service principal（特权端点）
+- `checkWsAuthToken` ← `routes/gemini.ts:48`（Gemini WebSocket 代理，真实使用）
+
+按 Supervisor 指令，本轮只标记不删除，避免扩大 scope。

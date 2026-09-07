@@ -211,3 +211,42 @@ Claude Code 权限门禁不允许 AI 执行，已提供 `scripts/purge-large-his
 
 **Acceptance level**：Code-stage acceptance / Production acceptance
 -->
+
+
+---
+
+## 2026-09-07 — AUTH Canonicalization（D-14 裁定后的唯一权威世系）
+
+**Canonical branch**：`integration/auth-strategy-b` → consolidation → `main`
+**Commit**：`8b820d6`（基于 `78985e5`）
+
+**Result**：PASS（本地） **FAIL**：0
+
+### 测试分项计数（SKIP 不并入 PASS）
+
+```
+前端                PASS 181   FAIL 0   SKIP 0     (20 files)
+后端 test:local     PASS 142   FAIL 0   SKIP 0
+后端 test:external  PASS   0   FAIL 0   SKIP 6     ← BLOCKED_BY_ENV
+typecheck           前端 clean · 后端 clean
+build               exit 0
+Christian Profile   20/20，3 个 golden snapshot 未变（算法无漂移）
+startup guard       13/13
+auth adapter guard  7/7（新增）
+```
+
+### 重要更正
+
+- 历史 AUTH 验收数字（23/23 · 8/8 · 17/17 · 135/135）在当前环境
+  **NOT REPRODUCIBLE**，相关状态降级为 `IMPLEMENTED / ENVIRONMENT-UNVERIFIED`。
+  原条目不删除，此处标注更正。
+- `78985e5` 标题所称 AUTH-M7 实为 **Runtime Identity Resolution**；
+  按 D-15 定义的 AUTH-M7（删除 legacy user authentication）**尚未完成**。
+
+### 本轮发现
+
+一次 **merge completeness / test coverage blind spot**：测试文件回来了、
+被测实现没回来，而 CI 全绿。详见 OPEN_ISSUES #RB-24。已加回归护栏。
+
+**Acceptance level**：`CANONICALIZED / LOCALLY VERIFIED`。
+未在真实环境验证，不得写成 INTEGRATION / STAGING / PRODUCTION VERIFIED。
