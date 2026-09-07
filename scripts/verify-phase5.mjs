@@ -14,6 +14,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import net from 'node:net';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { startFakeSupabase, provisionUser, supabaseEnv } from './helpers/regression-auth.mjs';
 import puppeteer from 'puppeteer-core';
 
 const CHROME = process.env.CHROME_PATH
@@ -36,9 +37,10 @@ const freePort = () => new Promise((res, rej) => {
   s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); });
 });
 
-let backend = null, vite = null, browser = null;
+let backend = null, vite = null, browser = null, sb = null;
 const cleanup = () => {
   for (const p of [backend, vite]) { try { p?.kill(); } catch { /* already gone */ } }
+  try { sb?.stop(); } catch { /* already closed */ }
   try { rmSync(TMP, { recursive: true, force: true }); } catch { /* best effort */ }
 };
 process.on('exit', cleanup);
@@ -75,25 +77,28 @@ const apiPort = await freePort();
 const webPort = await freePort();
 const apiBase = `http://127.0.0.1:${apiPort}`;
 const webBase = `http://localhost:${webPort}/`;
+// AUTH-M7：register 端点已删除，测试身份由唯一的 Supabase harness provision。
+sb = await startFakeSupabase();
+
 backend = spawn(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'src/server.ts'], {
   cwd: 'backend',
   stdio: 'ignore',
   env: { ...process.env, PORT: String(apiPort), APP_SECRET: 'phase5-verify',
          DB_PATH: `../${TMP}/phase5.db`, JWT_SECRET: 'phase5-jwt-secret-value',
          // 白名单必须精确到本次随机端口，否则浏览器侧全部 CORS 失败
-         CORS_ORIGINS: `http://localhost:${webPort}` },
+         CORS_ORIGINS: `http://localhost:${webPort}`,
+         ...supabaseEnv(sb) },
 });
 await waitFor(`${apiBase}/api/health`, 'backend');
 console.log(`backend up on ${apiPort}`);
 
 // ------------------------------------------------- 2. 造一场真实的完整祷告会
 const call = api(apiBase);
-const reg = async (name) => {
-  const r = await call('POST', '/api/auth/register',
-    { email: `${name}-${Date.now()}@example.com`, password: 'goodpassword1', name });
-  if (r.status !== 200) throw new Error(`register ${name} 失败: ${r.text}`);
-  return r.json;
-};
+// fake Supabase identity → canonical users 行 → legacy_user_map(provisioned)
+// → 真实可验签 token。返回形状与旧 register 响应兼容。
+const reg = (name) => provisionUser(`${TMP}/phase5.db`, sb, {
+  email: `${name}-${Date.now()}@example.com`, name,
+});
 const host = await reg('林牧师');
 const guest = await reg('陈弟兄');
 
@@ -174,14 +179,23 @@ await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
  */
 const errors = [];
 const benign = [];
-const bucket = (msg) => (/gemini\/live|WebSocket connection/i.test(msg) ? benign : errors).push(msg);
+// 与 Phase 5 无关的既有噪声：
+//   1. gemini/live 的 WebSocket 握手（GEMINI_API_KEY 未配置时必然失败）
+//   2. **外部主机**的 DNS 解析失败（net::ERR_NAME_NOT_RESOLVED）。
+//      127.0.0.1 / localhost 不可能触发这个错误码，所以它只会来自
+//      第三方图片等外部资源 —— 那是环境是否联网的问题，不是本页的 JS 运行时错误，
+//      本断言要守的是「我们自己的代码不报错」。不加这一条，同一棵树在有网/无网
+//      两次运行会给出 24/24 与 23/24 两个结果。
+const bucket = (msg) =>
+  (/gemini\/live|WebSocket connection|net::ERR_NAME_NOT_RESOLVED/i.test(msg) ? benign : errors).push(msg);
 page.on('pageerror', e => bucket(String(e)));
 page.on('console', m => { if (m.type() === 'error') bucket(m.text()); });
 
 await page.goto(webBase, { waitUntil: 'domcontentloaded' });
 await page.evaluate((h) => {
   localStorage.setItem('amas_access_token', JSON.stringify(h.accessToken));
-  localStorage.setItem('amas_refresh_token', JSON.stringify(h.refreshToken));
+  // AUTH-M7 之后后端不再签发 refresh token —— session 归 Supabase 管。
+  localStorage.removeItem('amas_refresh_token');
   localStorage.setItem('amas_user', JSON.stringify(h.user));
   localStorage.setItem('amas_current_user', JSON.stringify({ ...h.user, role: 'admin', avatar: '' }));
   localStorage.setItem('amas_lang', 'zh-CN');

@@ -12,6 +12,57 @@
 
 ---
 
+## 2026-09-07（POST-LEGACY CANONICAL INTEGRATION）
+
+- **确立：rebase 之后必须做语义保全审计，`CONFLICT = 0` 不构成证据。**
+  本项目已两次证明 git 不报冲突却静默丢语义（`d3e860d` 世系陷阱、
+  AUTH 资产被无冲突删除）。本轮 rebase 后逐项核对 17 项能力（main 侧 8 +
+  release 侧 9）是否同时存在，而不是只看 rebase 退出码。
+- **确立：ACTIVE TASK OWNER 必须真的登记。** 此前 `AI_HANDOFF_RULES` 的表长期
+  停在「（无）/ IDLE」，而 DB-3 早已被另一条会话做完 —— 「实际 ACTIVE、文档 IDLE」
+  正是 D-16 要防的状态。本轮登记 POST-LEGACY RELEASE RECONCILIATION 为当前 owner，
+  并写明与 DB-3 世系正交；交还写权时改回 IDLE。
+- **CI 正式承担 release gate。** 新增 `regression` job 执行
+  `npm run verify:local-release`（backend test:local + 双 typecheck + 前端单测 +
+  build + 五套 App 回归）。**禁止** `|| true` / `continue-on-error` / 吞 exit code。
+  external（真实 Supabase / SMTP / LiveKit / 真机）不进本地绿色判据 ——
+  runner 不持有那些前提，混进来只会制造另一种假信号。
+- **口径固定：MIGRATION PROCESS: LOCAL VERIFIED ≠ PRODUCTION USERS MIGRATED。**
+  迁移流程已端到端跑通（dry-run → apply → 幂等 → 迁移后真的能登录），
+  但不存在权威 production 用户人口，真实 cutover 从未执行。
+- **迁移退出码债（#18）分级明确**：`LOCAL release gate unaffected` /
+  `STAGING automation blocked`。通用 migration 执行器的退出码只能由
+  migration correctness 决定，dataset-specific 断言必须拆到独立的验收层。
+
+## 2026-09-07（POST-LEGACY RELEASE BLOCKER CLOSURE）
+
+- **确立：删关键 API 必须同时修回归套件，且回归套件必须挂在会红的入口上。**
+  AUTH-M7 删掉 `POST /api/auth/register` 时，五个 App 回归脚本仍靠它造用户，
+  于是启动即崩、199 项断言一条未执行——而它们不在 `npm test` 里，CI 全绿。
+  新增 `npm run test:regression`（五套聚合）与 `npm run verify:local-release`
+  （本地 Release Gate 聚合：前端单测 + 后端 test:local + 前后端 typecheck +
+  build + regression）。**以后同类事故会让 Gate 变红。**
+- **确立：SINGLE TEST AUTH HARNESS。** Supabase 测试身份基础设施只有
+  `backend/src/test/helpers/supabaseHarness.ts` 一份。**禁止**再写第二套
+  fake Supabase server / token signer / JWKS helper。为支撑迁移验收，
+  admin API（`/auth/v1/admin/users` 列举与建号）也并入这同一份，
+  而不是另起炉灶。回归脚本改用 tsx 运行以复用该 TS harness。
+- **确立：回归用户必须按 post-legacy 真实模型 provision。**
+  fake Supabase identity → canonical `users` 行 → `legacy_user_map`
+  → mapped/provisioned → 真实可验签 token → 调 App API。
+  **不得**出现 test-only production bypass、fake requireAuth 捷径、
+  信任请求头 user id、legacy JWT。
+- **确立口径：MIGRATION PROCESS: LOCAL VERIFIED ≠ PRODUCTION USERS MIGRATED。**
+  迁移流程已在一次性 fixture 上端到端跑通（dry-run → apply → 幂等 → 迁移后
+  真的能登录并读写业务层），但不存在权威 production 用户人口，
+  真实 cutover 从未执行。删除 legacy auth 之后，没有映射的既有用户会被
+  **永久锁死**且 App 侧不自动 provision —— 这是既定的 fail-closed 产品决策。
+- **`requireAdmin` 中不可达的 legacy 授权分支删除。**
+  它按 `principal.user.role === 'admin'` 判权。legacy user auth 删除后已不可达，
+  但形状危险：一旦将来新增任何 authSource，SQLite `users.role` 会**静默重新
+  成为授权来源**，与 R-2「Supabase user_roles 是授权唯一 SoT」直接冲突。
+  改为显式 fail closed。
+
 ## 2026-09-07（AUTH-M7 / Strategy B，只在 integration 分支）
 
 - **确立：Supabase 注册 ≠ AMAS 学生身份。** 运行时必须把 Supabase UUID 经

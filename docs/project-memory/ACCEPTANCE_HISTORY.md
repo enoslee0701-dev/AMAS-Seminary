@@ -191,6 +191,115 @@ Claude Code 权限门禁不允许 AI 执行，已提供 `scripts/purge-large-his
 
 ---
 
+## 2026-09-07 — POST-LEGACY RELEASE BLOCKER CLOSURE（release/post-legacy-gate）
+
+**Base**：`main@7ac2250`（canonical）  **未合入 main、未 push origin、未部署。**
+
+**Result**：PASS（本地） **FAIL**：0
+
+### 测试分项（SKIP 不并入 PASS）
+
+```
+前端单测            PASS 181   FAIL 0   SKIP 0   (20 files)
+后端 test:local     PASS 159   FAIL 0   SKIP 0
+  smoke 99 · startup-guard 13 · auth-m7-identity 19 ·
+  auth-adapter-presence 7 · auth-post-legacy-audit 10 ·
+  auth-migration-cutover 11
+前端 typecheck      clean
+后端 typecheck      clean
+build               PASS
+test:regression     PASS 199   FAIL 0
+  presence 54/54 · reading 44/44 · rooms render 51/51 ·
+  phase5 24/24 · system moderator 26/26
+后端 test:external  PASS 0     FAIL 0   SKIP 6   ← BLOCKED_BY_ENV
+```
+
+**Major verified behavior**
+- 五套 App 回归全部恢复（此前因 `POST /api/auth/register` 删除而启动即崩，
+  199 项断言一条未执行）。测试身份改由唯一 harness provision，
+  走的是 post-legacy 的真实模型：fake Supabase identity → canonical users →
+  legacy_user_map(provisioned) → 真实可验签 token → App API。
+  **无 test-only bypass、无 fake requireAuth 捷径、无 legacy JWT。**
+- 新增统一入口 `npm run test:regression` 与 `npm run verify:local-release`；
+  关键 API 再被删除时 Gate 会 RED（实测：phase5 失败时整条链退出码 1）。
+- MIGRATION PROCESS 端到端跑通（一次性 fixture，**未触碰真实数据库**）：
+  dry-run 只读 → apply 三态各归其位（provisioned / mapped / skipped_test_account）
+  → 迁移后 A、B 真的能登录并读写业务层 → 被排除的测试账号与 provision_failed
+  一律 403 → 重跑幂等（不重复建号、不新增映射、业务 id 与外键不变）。
+- `requireAdmin` 中不可达的 legacy 授权分支已删除，改为显式 fail closed。
+
+**Known limitations**
+- **MIGRATION PROCESS: LOCAL VERIFIED**，**不是** PRODUCTION USERS MIGRATED。
+  目前不存在权威 production 用户人口（App 从未部署）。
+- 本机开发库仍是 7 用户 / 0 映射（OPEN_ISSUES #17）。
+- 迁移 apply 的收尾断言绑定真实数据集，退出码不可用作成功判据（#18）。
+- Deep Link 仍为 IMPLEMENTED / NOT WIRED。
+- 外部 Supabase / SMTP / LiveKit / Android 验收全部 NOT RUN。
+
+**过程中的两处修正（均为测试写法问题，非产品缺陷）**
+1. 迁移验收首版用 `spawnSync` 跑迁移脚本，阻塞了本进程的事件循环，
+   导致同进程内的假 Supabase 无法应答，脚本误判「Supabase 不可达」。改为异步 spawn。
+2. `verify-phase5` 的 benign 过滤器只放过 gemini/WebSocket 噪声，
+   外部主机 DNS 解析失败（`net::ERR_NAME_NOT_RESOLVED`）被计成 JS 运行时错误，
+   同一棵树在有网/无网会给出 24/24 与 23/24 两个结果。已按断言意图收敛地放宽
+   （127.0.0.1/localhost 不可能产生该错误码，因此只可能来自外部资源）。
+
+**Acceptance level**：`LOCAL VERIFIED`。
+**不得**写成 INTEGRATION / STAGING / PRODUCTION VERIFIED。
+
+---
+
+## 2026-09-07 — POST-LEGACY CANONICAL INTEGRATION（integration/post-legacy-canonical）
+
+**Canonical base**：`main@3852384`  **未合入 main、未 push origin、未部署。**
+`release/post-legacy-gate@e35923b` 保持冻结不动，本轮从它新建分支后 rebase。
+
+**Result**：PASS（本地） **FAIL**：0
+
+### 测试分项（SKIP 不并入 PASS，均为本 integration HEAD 实测）
+
+```
+后端 test:local     PASS 159   FAIL 0   SKIP 0
+  smoke 99 · startup-guard 13 · auth-m7-identity 19 ·
+  auth-adapter-presence 7 · auth-post-legacy-audit 10 · auth-migration-cutover 11
+后端 typecheck      clean
+前端单测            PASS 181   FAIL 0   SKIP 0   (20 files)
+前端 typecheck      clean
+build               PASS
+test:regression     PASS 199   FAIL 0
+  presence 54/54 · reading 44/44 · rooms render 51/51 ·
+  phase5 24/24 · system moderator 26/26
+后端 test:external  PASS 0     FAIL 0   SKIP 6   ← BLOCKED_BY_ENV
+```
+
+**Major verified behavior**
+- rebase 到 `3852384` 无冲突；随后逐项语义审计 **17/17 保全**：
+  main 侧 8 项（DB-2 预检脚本 · D-22~D-32 · DBR-18~24 · AUTH-M7 ·
+  legacy 删除 · /api/auth/me GET+PATCH · adapter guard · base harness）
+  与 release 侧 9 项（五套回归修复 · test:regression · verify:local-release ·
+  migration cutover · 幂等证明 · 迁移后登录证明 · post-legacy auth audit ·
+  requireAdmin 死代码删除 · harness admin API）全部同时存在。
+  **不只看 CONFLICT=0** —— 逐文件核对内容。
+- 五套 App 回归确认不再依赖已删除的 `POST /api/auth/register`（命中 0），
+  走的是 Supabase harness → canonical SQLite user → legacy_user_map →
+  Supabase token → 生产 requireAuth 路径。
+- CI 新增 `regression` job 执行 `npm run verify:local-release`，
+  无 `|| true`、无 `continue-on-error`、不吞 exit code。
+
+**Known limitations**
+- **MIGRATION PROCESS: LOCAL VERIFIED**，**不是** PRODUCTION USERS MIGRATED。
+  不存在权威 production 用户人口；`legacy_user_map` 在本机开发库仍 0 行。
+- OPEN_ISSUES #18（迁移 apply 的 dataset-specific 断言污染退出码）保持
+  **STAGING CUTOVER BLOCKER**：LOCAL release gate 不受影响
+  （迁移验收断言的是行为而非退出码），但 staging 自动化被阻断。本轮未扩大 scope 修它。
+- Deep Link 仍 IMPLEMENTED / NOT WIRED。
+- 外部 8 类验收全部 NOT RUN。
+
+**Acceptance level**：`LOCAL VERIFIED`。
+**不得**写成 INTEGRATION / STAGING / PRODUCTION VERIFIED。
+
+---
+
 <!--
 下一条追加模板：
 

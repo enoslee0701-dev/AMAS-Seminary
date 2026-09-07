@@ -48,16 +48,35 @@
 
 ---
 
-## Auth 集成（并行轨道，未合 main）
+## Auth 状态（已在 canonical 主线，不再是并行轨道）
 
-`integration/auth-strategy-b` 已完成 Strategy B 集成 + AUTH-M7 运行时身份解析，
-**只在该分支上，main 未受影响**。要点：
+> 本节 2026-09-07 重写。旧版称「Auth 只在 `integration/auth-strategy-b`，main 未受影响」——
+> 那在 `78985e5` 合入主线时就已经不成立，属文档失真，现予纠正。
+
+| 项 | 事实 |
+|---|---|
+| AUTH-M7 运行时身份解析 | ✅ 已在主线（`78985e5`） |
+| legacy user authentication | ✅ **已删除**（`d564c4c`），不是"默认关闭" |
+| `GET` / `PATCH /api/auth/me` | ✅ 均已接入 `requireAuth` 统一边界 |
+| 用户认证唯一来源 | Supabase Auth |
+| 授权唯一 Source of Truth | Supabase `user_roles`，按 `principal.authId` 每次现查 |
+| 服务认证 | `APP_SECRET` service principal 保留，与 user auth 分离 |
+| 验收级别 | **LOCAL VERIFIED**，外部验收全部 `NOT RUN` |
+
+要点：
 
 - 直接 merge `auth/supabase-unification` 会**静默删除** 6 项 Supabase 资产
-  （revert `d3e860d` 落在 merge-base 之后）。必须先 revert 再 merge。
-- Supabase 登录成功 ≠ 拥有 AMAS 身份。已加入 `legacy_user_map` 运行时解析，
-  解析不出一律 403 `IDENTITY_NOT_PROVISIONED`，**不自动 provision**。
+  （revert `d3e860d` 落在 merge-base 之后）。回归护栏：`auth-adapter-presence.test.ts`。
+- Supabase 登录成功 ≠ 拥有 AMAS 身份。`legacy_user_map` 运行时解析，
+  解析不出一律 403 `IDENTITY_NOT_PROVISIONED`，**不自动 provision**（fail closed，产品决策）。
+- **迁移尚未在任何真实环境执行**：`legacy_user_map` 在本机开发库仍为 0 行。
+  真实人口出现前必须先完成 cutover，否则既有用户会被永久锁死（OPEN_ISSUES #17）。
 - 详见 [AUTH-P1-GHOST-IDENTITY-FINDING.md](../operations/AUTH-P1-GHOST-IDENTITY-FINDING.md)
+
+**已废弃的分支**（只读历史，不得再合入）：`integration/auth-strategy-b`、
+`consolidation/auth-canonical`、`release/auth-final-gate`、
+`quarantine/main-parallel-merge-4c139ec`、`recovery/lineage-a-4c139ec`、
+`auth/supabase-unification`。
 
 ---
 

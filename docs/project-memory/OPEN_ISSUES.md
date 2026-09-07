@@ -238,18 +238,87 @@ phase:     独立 hardening
 
 ---
 
-## #14 /api/auth/me 不走 requireAuth
+## #14 /api/auth/me 不走 requireAuth — `CLOSED`
+
+```
+status:    CLOSED（d564c4c，2026-09-07）
+severity:  P3（fail closed，不是安全漏洞）
+```
+
+该端点原先自己 `verifyAccess(token)`，只认 legacy 自签 token，Supabase 用户会 401 ——
+统一边界上的一个洞。`d564c4c` 已把 **GET 与 PATCH 双双**接入 `requireAuth`，
+直接返回 `principal.user`，不再自建第二套身份解析。
+
+验证：`smoke`（GET/PATCH 正常路径）+ `auth-post-legacy-audit`
+（越权面：请求体的 id / role / email / authId 一律不可写；ghost → 403；
+token 里的 name/avatar/role 不得冒充 canonical 资料）。
+
+> **编号说明（审计留痕）**：`#15`（PATCH /api/auth/me 未统一）曾登记在
+> `release/auth-final-gate` 分支上。该分支已判定 DEPRECATED / DO NOT MERGE
+> （它建立在 legacy auth 仍存在的架构上），其记录未进入 canonical main，
+> 因此本文件的数字序列从 #14 直接跳到 #16。**这是有意的断层，不是遗漏。**
+> #15 描述的问题本身已由 `d564c4c` 一并解决（PATCH 同样接入 requireAuth）。
+
+---
+
+## #16 五套 App 回归曾因 legacy register 删除而全线失效 — `CLOSED`
+
+```
+status:    CLOSED（release/post-legacy-gate，2026-09-07）
+severity:  P1（当时）
+```
+
+AUTH-M7 删除 `POST /api/auth/register` 时，五个回归脚本仍靠它造测试用户，
+于是 **启动即崩、199 项断言一条都没执行**；因为它们不在 `npm test` 里，CI 全绿。
+
+修复：测试身份改由唯一的 `backend/src/test/helpers/supabaseHarness.ts` provision
+（fake Supabase identity → canonical users → legacy_user_map → 真实 token），
+脚本改用 tsx 运行以复用该 TS harness。
+
+防复发：新增 `npm run test:regression`（五套聚合）与
+`npm run verify:local-release`（本地 Release Gate 聚合）。
+关键 API 再被删掉时，Gate 会 RED，而不是静静地一条都不跑。
+
+---
+
+## #17 迁移映射在真实环境尚未建立
 
 ```
 status:    OPEN
-severity:  P3（fail closed，不是安全漏洞）
-owner:     unassigned
-phase:     AUTH-M7 之后
+severity:  P1 — MIGRATION CUTOVER BLOCKER（针对流程，非当前 production）
+owner:     用户 / 运维
+phase:     真实 Staging cutover
 ```
 
-该端点自己 `verifyAccess(token)`，只认 legacy 自签 token。Supabase 用户访问会 401。
-统一边界（requireAuth → identity resolution → 业务路由）上的一个洞。
-建议下一轮并入 requireAuth。
+删除 legacy user auth 之后，没有 `mapped/provisioned` 映射的既有用户会被**永久锁死**，
+且 App 侧不自动 provision（既定产品决策，fail closed）。
+
+现状：
+```
+本机开发库 backend/data/amas.sqlite   7 个 canonical 用户 · legacy_user_map 0 行
+production                            NO PRODUCTION USER POPULATION（App 从未部署）
+```
+
+流程本身已在一次性 fixture 上端到端验证通过（见 ACCEPTANCE_HISTORY 的
+MIGRATION PROCESS: LOCAL VERIFIED），**但从未在任何真实环境执行过**。
+真实人口出现前必须先跑通 cutover，否则全体锁死。
+
+---
+
+## #18 迁移 apply 脚本的收尾断言绑定了真实数据集
+
+```
+status:    OPEN
+severity:  P3
+owner:     unassigned
+```
+
+`identity-migration-apply.mjs` 末尾有一批针对当前生产数据的断言
+（例如「prayer_shares 内容一条未丢 rows === 12」）。在任何其它数据库上它们必然不成立，
+于是 `exitCode = 1` —— 迁移本身成功，退出码却是失败。
+
+影响：无法用退出码判断迁移是否成功，自动化只能解析输出。
+建议把「数据集专属断言」与「迁移正确性断言」分开，或让数量期望值从快照推导。
 
 ---
 

@@ -9,7 +9,15 @@
 >
 > | ACTIVE_TASK_OWNER | ACTIVE_BRANCH | ACTIVE_PHASE | STARTED_AT | STATUS |
 > |---|---|---|---|---|
-> | （无） | — | — | — | IDLE |
+> | **POST-LEGACY RELEASE RECONCILIATION** | `integration/post-legacy-canonical` | POST-LEGACY CANONICAL RELEASE GATE | 2026-09-07 | **ACTIVE** |
+>
+> 说明：DB-3（PostgreSQL schema）由**另一条会话**完成，成果在 `amas-website`
+> （`supabase/migrations/0023–0026` + DB-3 实施报告），状态 LOCALLY VERIFIED /
+> READY FOR DB-4。DB-4 已由 Supervisor **暂停**，写权临时移交本任务。
+> 两条世系正交：本任务不碰任何 DB/schema 文件，DB-3 不碰任何 auth/regression/gate 文件。
+>
+> ⚠️ 本表此前长期停在 `（无）/ IDLE`，而实际上 DB-3 已被做完 —— 「实际 ACTIVE、
+> 文档 IDLE」正是 D-16 要防的那种状态。认领即登记，交还写权时改回 IDLE。
 >
 > **最近一次认领与交回**：
 >

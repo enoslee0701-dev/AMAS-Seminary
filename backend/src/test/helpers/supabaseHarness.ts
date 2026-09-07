@@ -26,6 +26,13 @@ export interface FakeSupabase {
   mintToken(sub: string, extra?: Record<string, unknown>): Promise<string>;
   /** 设置某个 Supabase UUID 的活动角色（模拟 user_roles 表） */
   setRoles(supabaseUserId: string, roles: string[]): void;
+  /**
+   * 预置一个"Supabase 里已存在"的账号，供 admin API 列举。
+   * 迁移脚本据此把状态判成 mapped（而不是 needs_provision）。
+   */
+  seedAdminUser(email: string, id?: string): { id: string; email: string };
+  /** 当前 admin API 里的账号快照（断言迁移是否重复建号用） */
+  listAdminUsers(): { id: string; email: string }[];
   /** 关停 */
   stop(): Promise<void>;
 }
@@ -58,6 +65,16 @@ export async function startFakeSupabase(): Promise<FakeSupabase> {
 
   const rolesByUserId: Record<string, string[]> = {};
 
+  /**
+   * Admin API 的账号表。
+   *
+   * 为什么放进这唯一的 harness 而不是另起一个：identity-migration 脚本要打
+   * `/auth/v1/admin/users`（列举 + 建号）。项目规则是**只能有一套** fake
+   * Supabase —— 再写第二个 server / signer / JWKS 是明令禁止的。
+   * 所以把 admin 面也并进来，迁移验收与认证验收共用同一套身份事实。
+   */
+  const adminUsers = new Map<string, { id: string; email: string; user_metadata?: unknown }>();
+
   const server = http.createServer((req, res) => {
     const u = new URL(req.url ?? '/', 'http://127.0.0.1');
     if (u.pathname === '/auth/v1/.well-known/jwks.json') {
@@ -65,6 +82,41 @@ export async function startFakeSupabase(): Promise<FakeSupabase> {
       res.end(JSON.stringify({ keys: [publicJwk] }));
       return;
     }
+    // ---- Admin API：迁移脚本用它列举与建号 ----
+    if (u.pathname === '/auth/v1/admin/users') {
+      if (req.method === 'GET') {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ users: [...adminUsers.values()] }));
+        return;
+      }
+      if (req.method === 'POST') {
+        let raw = '';
+        req.on('data', c => { raw += c; });
+        req.on('end', () => {
+          let body: { email?: string; user_metadata?: unknown } = {};
+          try { body = JSON.parse(raw || '{}'); } catch { /* 非 JSON */ }
+          const email = (body.email ?? '').trim().toLowerCase();
+          if (!email) {
+            res.writeHead(400, { 'content-type': 'application/json' });
+            res.end(JSON.stringify({ error: 'email required' }));
+            return;
+          }
+          // 幂等：同一邮箱重复建号返回既有账号，复刻 Supabase 的唯一性约束
+          const existing = adminUsers.get(email);
+          if (existing) {
+            res.writeHead(200, { 'content-type': 'application/json' });
+            res.end(JSON.stringify(existing));
+            return;
+          }
+          const created = { id: crypto.randomUUID(), email, user_metadata: body.user_metadata };
+          adminUsers.set(email, created);
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(JSON.stringify(created));
+        });
+        return;
+      }
+    }
+
     if (u.pathname === '/rest/v1/user_roles') {
       // 复刻 PostgREST 的 user_id=eq.<id> 过滤
       const filter = u.searchParams.get('user_id') ?? '';
@@ -95,6 +147,15 @@ export async function startFakeSupabase(): Promise<FakeSupabase> {
     },
     setRoles(supabaseUserId, roles) {
       rolesByUserId[supabaseUserId] = roles;
+    },
+    seedAdminUser(email, id) {
+      const e = email.trim().toLowerCase();
+      const rec = { id: id ?? crypto.randomUUID(), email: e };
+      adminUsers.set(e, rec);
+      return rec;
+    },
+    listAdminUsers() {
+      return [...adminUsers.values()].map(u => ({ id: u.id, email: u.email }));
     },
     stop() {
       return new Promise<void>(r => server.close(() => r()));

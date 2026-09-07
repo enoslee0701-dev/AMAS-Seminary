@@ -6,6 +6,7 @@
  * 运行：node scripts/verify-room-reading-position.mjs
  */
 import { spawn, spawnSync } from 'node:child_process';
+import { startFakeSupabase, provisionUser, supabaseEnv } from './helpers/regression-auth.mjs';
 import { mkdirSync, rmSync } from 'node:fs';
 import net from 'node:net';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -13,6 +14,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 const TMP = '.tmp-reading';
 const ROOM = 'bible_reading';
 const DB_REL = `../${TMP}/reading.sqlite`;
+const DB_FROM_ROOT = `${TMP}/reading.sqlite`;
 
 const checks = [];
 const check = (n, ok, d = '') => {
@@ -26,19 +28,24 @@ const freePort = () => new Promise((res, rej) => {
 });
 
 let backend = null;
+let sb = null;
 let port = 0;
 let base = '';
 const cleanup = () => {
   try { backend?.kill(); } catch { /* 已退出 */ }
+  try { sb?.stop(); } catch { /* 已关闭 */ }
   try { rmSync(TMP, { recursive: true, force: true }); } catch { /* 尽力而为 */ }
 };
 process.on('exit', cleanup);
 
 async function startBackend() {
+  // AUTH-M7：测试身份由唯一的 Supabase harness 提供（register 端点已删除）
+  if (!sb) sb = await startFakeSupabase();
   backend = spawn(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'src/server.ts'], {
     cwd: 'backend', stdio: 'ignore',
     env: { ...process.env, PORT: String(port), APP_SECRET: 'reading-verify',
-           JWT_SECRET: 'reading-verify-jwt', DB_PATH: DB_REL },
+           JWT_SECRET: 'reading-verify-jwt', DB_PATH: DB_REL,
+           ...supabaseEnv(sb) },
   });
   for (let i = 0; i < 140; i++) {
     try { const r = await fetch(`${base}/api/health`); if (r.status < 500) return; } catch { /* 未就绪 */ }
@@ -58,11 +65,8 @@ const call = async (method, path, body, token) => {
   return { status: r.status, json, text };
 };
 
-const reg = async (name, email) => {
-  const r = await call('POST', '/api/auth/register', { email, password: 'goodpassword1', name });
-  if (r.status !== 200) throw new Error(`register ${email}: ${r.text}`);
-  return r.json;
-};
+// AUTH-M7：register 端点已删除，改由唯一的 Supabase harness provision。
+const reg = (name, email) => provisionUser(DB_FROM_ROOT, sb, { email, name });
 const join = (u, room) => call('POST', `/api/rooms/${room}/join`, {}, u.accessToken);
 const get = (u, room = ROOM) => call('GET', `/api/rooms/${room}/reading-position`, undefined, u.accessToken);
 const put = (u, body, room = ROOM) =>
