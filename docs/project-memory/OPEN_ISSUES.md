@@ -1014,7 +1014,7 @@ frontend   VITE_SUPABASE_URL           （services/supabaseAuth.ts）
 ## #21 canonical HEAD 的 CI 假红（端口抢占）
 
 ```
-status:    FIXED — VERIFIED（2026-09-07，e2b801e）
+status:    CLOSED（2026-09-08，连续三次 CI 全绿）
 severity:  medium（不是代码回归，但 canonical HEAD 红灯会掩盖真实回归）
 owner:     unassigned
 phase:     STAGING-1A 发现
@@ -1038,6 +1038,9 @@ phase:     STAGING-1A 发现
 > ⚠ **注意不要误读**：`e2b801e` 这次运行的**整体**结论仍是 failure，
 > 但失败的是 `Release gate` 里的另一条间歇断言（见 `#23`），**不是 Backend job**。
 > 两者是独立的两件事。
+
+**关闭依据（2026-09-08）**：`5af3d4b` / `5c68b46` / `f855103`
+**连续三次四个 job 全绿**，Backend job 稳定在 166/166。
 
 **原记录**（保留）：
 
@@ -1086,11 +1089,10 @@ phase:     公开 staging smoke 之前修复
 **排期约束**：**不要**在凭据交接 / 只读 Supabase 审计期间修它 ——
 那会把两条独立的线混在一起。安排在公开 staging smoke 之前。
 
-> ⚠ **编号说明**：Supervisor 在指令中称本项为 `RB-22`，
-> 但本文件中 **`#RB-22` 已被占用两次**（第 389 行「AUTH 验收测试在 CI 中从未真正执行」、
-> 第 471 行「AUTH 验收测试状态正式降级」），二者与限流无关。
-> 本项保持登记为 **`#22`**（无前缀），未擅自重编号既有条目。
-> 若需统一编号，请 Supervisor 明确裁定。
+> ⚠ **编号已裁定（Supervisor，2026-09-08）**：本项的 canonical ID 是
+> **`OPEN_ISSUES #22 — IPv6 rate-limit hardening`**。**以后不要再称它为 `RB-22`。**
+> 本文件中既有的历史 `#RB-22`（第 389 行、第 471 行，均为 AUTH 验收测试相关）
+> **保持原样，不重编号、不改历史引用**。
 
 `backend/src/middleware/rateLimit.ts:101` 的 `byUser()`：
 
@@ -1138,8 +1140,29 @@ FAIL  presence 失败显示轻量提示，不显示假人数 — (无提示)
 **性质**：浏览器渲染时序敏感 —— presence 请求失败后提示才渲染，
 CI runner 上偶尔在断言时刻尚未出现。**与端口抢占无关，与 Supabase / 凭据无关。**
 
-**待定方向**（本轮只报告，未改代码）：给该断言加显式等待条件，
-而不是放宽断言本身 —— 「presence 失败时必须有轻量提示、且不得显示假人数」
-是这条断言真正要守的产品行为，不能为了让 CI 变绿而削弱它。
+**Supervisor 裁定（2026-09-08）**：
+
+```
+#23 ≠ STAGING-1A credential audit blocker
+```
+
+`f855103` 的 CI 已全绿，因此它不阻塞当前的凭据交接与只读审计，**后续单独 hardening**。
+**证据保留，不删除。**
+
+**修复原则（不可协商）**：
+
+```
+explicit wait for required UI state
+```
+
+**不得**通过放宽产品断言来解决。下面这条行为标准本身不许降低：
+
+```
+presence failure must show a lightweight error
+and must not show fake user count
+```
+
+（`5af3d4b` / `5c68b46` / `f855103` 三次均未复现 ——
+但间歇项不能因为几次没出现就当作不存在，条目保持 OPEN。）
 
 **证据**：STAGING-1A CONTINUATION 报告 §2

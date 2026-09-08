@@ -245,6 +245,41 @@ redirect-matrix.test.ts
 
 ---
 
+## 8.5 凭据配置位置（唯一总闸 · 2026-09-08）
+
+```
+STAGING-1A STILL BLOCKED BY CREDENTIAL HANDOFF
+```
+
+**只读审计所需的最小集合**，请直接写入本机文件，**不要粘贴进任何对话**：
+
+| 变量名（源码实名） | 写入位置 | 当前状态 |
+|---|---|---|
+| `SUPABASE_URL` | `AMAS Seminar App/backend/.env` | `NOT CONFIGURED` |
+| `SUPABASE_SERVICE_ROLE_KEY` | 同上 | `NOT CONFIGURED` |
+
+**可选**（仅当需要 CLI 查项目身份 / Auth 平台配置，或需要数据库直连查 ledger/schema 时）：
+
+| 变量名 | 写入位置 | 当前状态 |
+|---|---|---|
+| `SUPABASE_ACCESS_TOKEN` | 本机环境变量，或执行 `supabase login` | `NOT CONFIGURED` |
+| `DATABASE_URL`（或获批的连接串） | `backend/.env`，或仅在终端会话内临时导出 | `NOT CONFIGURED` |
+
+**安全前提已实测确认**：
+
+```
+backend/.gitignore:3  →  .env 已被忽略
+git ls-files backend/.env  →  未被跟踪
+```
+
+写入后我只会报告 `CONFIGURED` / `NOT CONFIGURED`，
+**不读取、不回显、不写进报告、不提交**。
+
+> `SUPABASE_SERVICE_ROLE_KEY` 是服务端 secret，**永远不得**出现在
+> `VITE_*` 变量或任何前端产物中。
+
+---
+
 ## 9. Next Owner Action
 
 ```

@@ -87,7 +87,12 @@ SMTP credentials
 | `6a7d68f` | **FAIL** | `Backend (type-check + test + build)` |
 | `e2b801e`（并发修复本身） | **FAIL** | `Release gate (verify:local-release)` —— **不是 Backend** |
 | `5af3d4b` | **PASS** | —— 四个 job 全绿 |
-| `5c68b46`（当前 HEAD） | `RUNNING` | 结论未知，**不猜** |
+| `5c68b46` | **PASS** | —— 四个 job 全绿 |
+| `f855103` | **PASS** | —— 四个 job 全绿 |
+
+> **【2026-09-08 更新】** 本报告初稿写作时 `5c68b46` 尚在运行。
+> 现已读到完成态：`5af3d4b` / `5c68b46` / `f855103` **连续三次 success**。
+> 本节不再有 `RUNNING` 表述。
 
 ### 结论一：端口抢占的修复 **有效**
 
@@ -116,14 +121,27 @@ CI runner 上偶尔在断言时刻尚未出现。它**与端口抢占无关**，
 
 新登记为 **`#23`**。
 
-### 因此本轮不写 `CI VERIFIED`
+### `CI VERIFIED`（2026-09-08 更新）
 
-- 端口抢占项：**VERIFIED FIXED**（Backend job 连续两次 green）；
-- 但 lineage 上**存在第二条间歇失败**，且当前 HEAD 的运行**尚未完成**。
+初稿时因当前 HEAD 运行未完成而未下此结论。现在完成态已具备：
 
-按您给的规则，只有在完成态为 success 时才写 `CI VERIFIED` ——
-`5af3d4b` 确实是 success，但它不是当前 HEAD。
-**准确表述**：`最近一次完成的运行（5af3d4b）= PASS；当前 HEAD 运行中；存在一条独立间歇项 #23`。
+```
+5af3d4b  PASS      5c68b46  PASS      f855103  PASS   ← canonical HEAD
+```
+
+- 端口抢占项（`#21`）：**VERIFIED FIXED** —— Backend job 连续三次 green；
+- `#23`（`verify-rooms-render` presence 提示断言）在这三次中**均未复现**，
+  但**证据保留、条目不关闭** —— 间歇项不能因为几次没出现就当作不存在。
+
+因此当前 acceptance 为：
+
+```
+MAIN INTEGRATED
+LOCAL VERIFIED
+GITHUB CI VERIFIED
+NOT STAGING VERIFIED
+NOT PRODUCTION VERIFIED
+```
 
 ---
 
@@ -331,20 +349,18 @@ logical pg_dump 是否可行？（supabase db dump --db-url … / pg_dump）
 | 1 | **staging 凭据未交付** | Owner action | §3–§8 / §10–§12 全部无法执行 —— **唯一总闸** |
 | 2 | `#23` `verify-rooms-render` 间歇失败 | 工程 | 使 Release gate 偶发红灯，掩盖真实回归 |
 | 3 | `#22` IPv6 限流归一（Supervisor 定级 **P2 SECURITY HARDENING**） | 安全加固 | **公开 staging 暴露前必须 CLOSED** |
-| 4 | `5c68b46` 的 CI 尚未完成 | 观察项 | 下一活跃会话开始时读取 |
+| 4 | ~~`5c68b46` 的 CI 尚未完成~~ | ~~观察项~~ | **已解除**：`5c68b46` 与 `f855103` 均为 success |
 
-### ⚠ 编号冲突（如实报告，未擅自重编号）
+### 编号裁定（已由 Supervisor 定案，2026-09-08）
 
-Supervisor 将 IPv6 限流项称为 **`RB-22`**，但仓库中 **`#RB-22` 已被占用两次**：
+canonical ID 为：
 
 ```
-OPEN_ISSUES.md:389   ## #RB-22 AUTH 验收测试在 CI 中从未真正执行
-OPEN_ISSUES.md:471   ## #RB-22 AUTH 验收测试状态正式降级
+OPEN_ISSUES #22 — IPv6 rate-limit hardening
 ```
 
-我在上一轮已将 IPv6 项登记为 **`#22`**（无前缀），本轮**保持该编号不变**，
-并在条目内加注 Supervisor 的定级与「勿与既有 `#RB-22` 混淆」的交叉说明。
-**是否统一编号请 Supervisor 裁定** —— 我不擅自改动既有条目的编号。
+**以后不再称它为 `RB-22`。** 仓库中既有的历史 `#RB-22`
+（第 389 行、第 471 行，均为 AUTH 验收测试相关）**保持原样，不重编号、不改历史引用**。
 
 ---
 
@@ -355,7 +371,7 @@ OPEN_ISSUES.md:471   ## #RB-22 AUTH 验收测试状态正式降级
 | # | 条件 | 状态 |
 |---|---|---|
 | 1 | credentials delivered securely | ⛔ **未交付** |
-| 2 | `e2b801e` CI result known | ✅ **已知 —— FAIL**（Release gate，非 Backend；端口抢占项已修好，另有 `#23`） |
+| 2 | `e2b801e` CI result known | ✅ **已知 —— FAIL**（Release gate，非 Backend；端口抢占项已修好，另有 `#23`）。此后 `5af3d4b` / `5c68b46` / `f855103` **连续三次 PASS** |
 | 3 | project identity confirmed | ⛔ 待凭据 |
 | 4 | population understood | ⛔ 待凭据 |
 | 5 | migration ledger read | ⛔ 待凭据 |
