@@ -33,6 +33,13 @@ export interface FakeSupabase {
   seedAdminUser(email: string, id?: string): { id: string; email: string };
   /** 当前 admin API 里的账号快照（断言迁移是否重复建号用） */
   listAdminUsers(): { id: string; email: string }[];
+  /**
+   * DB-12：预置某张业务表的行（模拟 staging 里已迁入的数据）。
+   * 覆盖式写入——传空数组即清空该表。
+   */
+  seedTable(table: string, rows: Record<string, unknown>[]): void;
+  /** DB-12：读回某张业务表的当前内容（断言写入是否真的落到 Postgres 路径）。 */
+  tableRows(table: string): Record<string, unknown>[];
   /** 关停 */
   stop(): Promise<void>;
 }
@@ -74,6 +81,9 @@ export async function startFakeSupabase(): Promise<FakeSupabase> {
    * 所以把 admin 面也并进来，迁移验收与认证验收共用同一套身份事实。
    */
   const adminUsers = new Map<string, { id: string; email: string; user_metadata?: unknown }>();
+
+  /** DB-12：业务表的内存存储，键为表名（仅 app_* 表）。 */
+  const tables: Record<string, Record<string, unknown>[]> = {};
 
   const server = http.createServer((req, res) => {
     const u = new URL(req.url ?? '/', 'http://127.0.0.1');
@@ -126,6 +136,72 @@ export async function startFakeSupabase(): Promise<FakeSupabase> {
       res.end(JSON.stringify(roles));
       return;
     }
+
+    // ── DB-12：业务表的通用 PostgREST 模拟 ─────────────────────────────
+    // 只支持后端真正用到的子集：eq. 过滤、order、limit、insert、delete。
+    // 刻意不做成完整 PostgREST——多出来的能力只会让测试通过而线上失败。
+    const m = /^\/rest\/v1\/(app_[a-z_]+)$/.exec(u.pathname);
+    if (m) {
+      const table = m[1];
+      const rows = tables[table] ?? (tables[table] = []);
+      const matches = (row: Record<string, unknown>): boolean => {
+        for (const [k, v] of u.searchParams) {
+          if (k === 'select' || k === 'order' || k === 'limit') continue;
+          if (!v.startsWith('eq.')) continue;
+          if (String(row[k] ?? '') !== decodeURIComponent(v.slice(3))) return false;
+        }
+        return true;
+      };
+
+      if (req.method === 'GET') {
+        let out = rows.filter(matches);
+        const order = u.searchParams.get('order');
+        if (order) {
+          const [col, dir] = order.split('.');
+          out = [...out].sort((a, b) => {
+            const x = a[col] as never, y = b[col] as never;
+            const c = x < y ? -1 : x > y ? 1 : 0;
+            return dir === 'desc' ? -c : c;
+          });
+        }
+        const limit = Number(u.searchParams.get('limit') ?? '0');
+        if (limit > 0) out = out.slice(0, limit);
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(out));
+        return;
+      }
+
+      if (req.method === 'POST' || req.method === 'DELETE') {
+        let body = '';
+        req.on('data', c => { body += c; });
+        req.on('end', () => {
+          if (req.method === 'DELETE') {
+            // 与真实实现一致：必须带过滤条件，拒绝清空整表。
+            const filtered = [...u.searchParams].some(([k, v]) =>
+              !['select', 'order', 'limit'].includes(k) && v.startsWith('eq.'));
+            if (!filtered) { res.writeHead(400).end('{"message":"delete requires filter"}'); return; }
+            tables[table] = rows.filter(r => !matches(r));
+            res.writeHead(204).end();
+            return;
+          }
+          let incoming: Record<string, unknown>[];
+          try {
+            const parsed: unknown = JSON.parse(body || '{}');
+            incoming = Array.isArray(parsed) ? parsed as Record<string, unknown>[]
+                                             : [parsed as Record<string, unknown>];
+          } catch { res.writeHead(400).end('{"message":"bad json"}'); return; }
+          const prefer = String(req.headers['prefer'] ?? '');
+          for (const row of incoming) {
+            const i = prefer.includes('merge-duplicates')
+              ? rows.findIndex(r => r.id === row.id) : -1;
+            if (i >= 0) rows[i] = { ...rows[i], ...row }; else rows.push(row);
+          }
+          res.writeHead(201, { 'content-type': 'application/json' });
+          res.end(prefer.includes('return=representation') ? JSON.stringify(incoming) : '[]');
+        });
+        return;
+      }
+    }
     res.writeHead(404).end('{}');
   });
 
@@ -156,6 +232,12 @@ export async function startFakeSupabase(): Promise<FakeSupabase> {
     },
     listAdminUsers() {
       return [...adminUsers.values()].map(u => ({ id: u.id, email: u.email }));
+    },
+    seedTable(table, rows) {
+      tables[table] = rows.map(r => ({ ...r }));
+    },
+    tableRows(table) {
+      return (tables[table] ?? []).map(r => ({ ...r }));
     },
     stop() {
       return new Promise<void>(r => server.close(() => r()));

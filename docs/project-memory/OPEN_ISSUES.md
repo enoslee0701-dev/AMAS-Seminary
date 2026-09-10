@@ -329,7 +329,20 @@ D(...)  dataset acceptance    —— 用 --expect-prayer-shares=<n> 传入，
 
 ---
 
-## #19 App Staging 缺外部前提
+## #19 App Staging 缺外部前提 — `CLOSED`（2026-09-10）
+
+```
+status:    CLOSED
+severity:  —
+owner:     —
+phase:     APP STAGING
+```
+
+**关闭依据（live 只读实测，2026-09-10）**：凭据已交付并可用；staging 数据库已就绪
+（ledger 0001–0026、74 行业务数据已迁入、身份 1/1/1）。DB-12 已在此基础上开工。
+原文保留在下方作为历史记录，**不再作为当前事实引用**。
+
+<details><summary>历史原文</summary>
 
 ```
 status:    BLOCKED
@@ -353,6 +366,8 @@ Android 真机 + 域名关联                                MISSING → Deep Li
 流程与验收矩阵见 [APP-STAGING-RUNBOOK.md](../operations/APP-STAGING-RUNBOOK.md)。
 
 ---
+
+</details>
 
 ## #20 VITE_APP_SECRET 是废弃且危险的配置项
 
@@ -1166,3 +1181,46 @@ and must not show fake user count
 但间歇项不能因为几次没出现就当作不存在，条目保持 OPEN。）
 
 **证据**：STAGING-1A CONTINUATION 报告 §2
+
+
+---
+
+## #24 DB-12：app_* 的身份口径与 App 的 D-1 双身份模型冲突
+
+```
+status:    OPEN
+severity:  P1（阻断 rooms / 成员制 / presence 等 user-scoped 域的 DAL 切换）
+owner:     待 Supervisor 裁定
+phase:     DB-12
+```
+
+**事实（live 只读实测）**：`app_*` 中**每一个** uuid 身份列都外键到 `profiles.id`
+（即 `auth.users.id`，Supabase UUID）。共 33 条此类外键，含：
+
+```
+app_rooms.host_user_id        -> profiles.id
+app_room_members.user_id      -> profiles.id
+app_room_presence.user_id     -> profiles.id
+app_course_files.uploader_id  -> profiles.id
+app_posts.user_id / app_prayer_shares.user_id / … 等 28 条
+```
+
+**冲突**：App 后端当前按 D-1 用 `principal.user.id`（canonical SQLite id，**非 uuid**）
+作为业务数据主体，而 Postgres 侧要求 `profiles.id`。两者不是同一个值域。
+
+**具体表现**：`POST /api/rooms` 目前接受**客户端传入**的 `hostId`（测试里是
+`'host-1'` 这类自由字符串）。写进 `app_rooms.host_user_id` 会因类型与外键双重失败。
+`room_members.user_id` 同理。
+
+**已切换的域为何不受影响**：`app_course_files.uploader_id` 已改写 `principal.authId`
+（Supabase UUID）；`app_cooperation_submissions` 不含身份列。
+
+**为什么本轮没有擅自解决**：把 rooms 域改成按 Supabase UUID 键控，等于修改 D-1
+身份模型在业务数据上的落点，波及 `requireRoomExists` 的 36 处调用点与
+membership/presence 两张表。这是架构决定，不是 fast-track 能顺手带过的。
+另外 staging 只有 1 个 profile，任何 user-scoped 写入都只能属于那一个身份 ——
+按 §5，正确行为是返回"不可用/无权限"，而**不是**造一个学生身份让测试变绿。
+
+**待裁定**：rooms / 成员制 / presence 的业务主体，用 `profiles.id`（Supabase UUID）
+还是保留 canonical SQLite id 并在边界处解析？前者需要改 App 身份模型，
+后者需要 DB-3 的外键让步 —— 两条路都不该由实现者单方面选。

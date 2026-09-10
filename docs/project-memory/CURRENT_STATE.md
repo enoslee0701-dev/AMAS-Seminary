@@ -1,26 +1,28 @@
 # Current State
 
-> **最后更新**：2026-09-07 · 依据 commit `03bb842` 的真实代码与**当轮实跑**结果，非聊天记忆。
+> **最后更新**：2026-09-10 · 依据 commit `0af8cc6` 的真实代码、**live staging 只读实测**与当轮实跑结果，非聊天记忆。
 >
 > **阶段已切换**：功能开发 → RELEASE READINESS。暂停新增产品功能。
 > 完整就绪度审计见 `amas-website/docs/operations/RELEASE-READINESS-REPORT.md`。
 
 ---
 
-> ### RB-01 数据库迁移进度（2026-09-07 更新）
+> ### RB-01 数据库迁移进度（2026-09-10 更新 · live 实测）
 >
 > ```
 > DB-0  ✅  数据库事实与目标设计
 > DB-1  ✅  目标 schema 与迁移契约
 > DB-2  ✅  只读数据预检（零写入）
-> DB-3  ✅  PostgreSQL schema 实现（0023..0026）
+> DB-3  ✅  PostgreSQL schema 实现（0023..0026）—— **已应用到 live staging**
 > DB-3.5 ✅ PG 17.6 目标版本兼容闸门 —— DBR-22 CLOSED
-> DB-6  ✅  课程迁移 LOCALLY VERIFIED（D-36 已提前到 DB-4 之前）
-> DB-6.1 ✅ 课程引用完整性与世系收尾 —— DBR-25 / DBR-27 CLOSED
->          前端 187/187（含新增课程引用闸门）· 后端 159/159 · build OK
-> DB-4  ⏸  **PAUSED** —— 不得自行恢复（Supervisor 指示，2026-09-07）
-> DB-5 / DB-7..DB-13   未开始（多数依赖 DB-4 的身份解析）
-> STAGING-0 ✅ 就绪度设计（已被 APP STAGING 取代为当前口径，见下）
+> DB-4  ✅  CLOSED（此前的 PAUSED 已解除）
+> DB-5  ✅  NO-OP / CLOSED
+> DB-6  ✅  课程迁移 CLOSED
+> DB-6.1 ✅ 课程引用完整性与世系收尾
+> DB-7  ✅  NO-OP / CLOSED      DB-8  ✅  NO-OP / CLOSED
+> DB-9  ✅  CLOSED              DB-10 ✅  NO-OP / CLOSED
+> DB-11 ✅  CLOSED
+> DB-12 🔵 **ACTIVE** —— App 运行时 DAL 切到 Supabase/PostgreSQL staging
 > ```
 >
 > ---
@@ -28,45 +30,31 @@
 > ### ⬤ 当前阶段状态（以此为准）
 >
 > ```
-> APP STAGING:
-> BLOCKED BY EXTERNAL PREREQUISITES
+> STAGING DATABASE READY
+> DB-12 APP STAGING DAL CUTOVER = ACTIVE
 > ```
 >
-> **权威来源**：`docs/operations/APP-STAGING-RUNBOOK.md` · `OPEN_ISSUES #19`
-> —— 而**不是**较早的 `STAGING-0-READINESS-REPORT.md`。
->
-> **状态入口**：[`docs/operations/APP-STAGING-STATUS-SNAPSHOT.md`](../operations/APP-STAGING-STATUS-SNAPSHOT.md)
-> —— 一页看完当前状态、外部前提、禁令与测试证据；执行步骤仍以 runbook 为准。
->
-> **验收级别**：`MAIN INTEGRATED / LOCAL + GITHUB CI VERIFIED`
-> （**不是** `STAGING VERIFIED`，更不是 `PRODUCTION VERIFIED`）
->
-> **仓库侧 staging preparation 已完成，不要重复开发**：
-> staging environment templates · Supabase identity diagnostics ·
-> `APP-STAGING-RUNBOOK` · migration exit-code fix（#18 CLOSED）·
-> local release gates（`npm run verify:local-release`）· GitHub CI（四个 job）·
-> external prerequisite inventory。
->
-> **缺的全是外部凭据，互不阻塞，拿到哪项解锁哪项**（runbook §9 / #19）：
+> **live staging 事实（2026-09-10 只读实测，非引用）**：
 >
 > ```
-> Supabase staging URL / anon key / service-role key   MISSING
-> 托管凭据（前端 / 后端）                                MISSING
-> staging 域名                                          MISSING
-> SMTP / 发信域                                         MISSING → 密码找回无法验证
-> LiveKit 凭据                                          MISSING → 语音保持关闭
-> Android 真机 + 域名关联                                MISSING → Deep Link 无法验证
+> ledger            0001–0026 精确 · 0027 ABSENT
+> public tables     54 · RLS 启用 54 · 无 RLS 0 · policies 33 · functions 60
+> migration schema  4 张表，anon/authenticated/service_role 的 USAGE 均为 false
+> 业务数据           app_rooms 5（全部 host_type=system，无假房主）
+>                   app_course_files 68 · app_cooperation_submissions 1
+>                   其余 25 张 app_* 表为 0 —— 这是**预期的空状态，不得塞假数据**
+> 身份               auth.users 1 · profiles 1 · user_roles 1（applicant）
+> 目录               course_catalog 67 · program_catalog 9（开放 bth/gdip/mdiv/dmin）
+> row_manifest      107（迁入 74 行 / 跳过 204 行 / 人工复核 0）
 > ```
 >
-> **第一优先级（等 Product Owner 确认）**：
-> `amas-staging` Supabase project **是否仍然存在**。
+> **此前"缺外部凭据、DB-4 暂停、staging 未填充"的记载已全部过期，勿再引用。**
 >
-> **在 Owner 确认之前，禁止**：
-> 创建新的 Supabase project · 部署 Railway · 创建真实 Supabase users ·
-> 运行 DB-4 identity migration · 配置 Production ·
-> **把 localhost / mock 算作 staging**。
+> **仍然禁止**：0027 应用到 live（PROPOSED / DO NOT APPLY）· 创建 STG personas ·
+> public staging 暴露 · 往空的 app_* 表塞假数据 · 复活 SQLite users/密码哈希 ·
+> 把 legacy user id 当作活动身份。
 >
-> **当前没有新的代码任务。**
+> **当前活动任务：DB-12（见下）。**
 >
 > **验证环境**：本地 PostgreSQL **17.6**（与 Supabase 目标版本一致）+ 18.6 对照。
 > **仍未验证**：真实 Supabase（Auth / PostgREST / RLS 运行时 / SECURITY DEFINER 上下文 /

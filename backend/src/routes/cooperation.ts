@@ -2,17 +2,22 @@ import type { Express, Request, Response } from 'express';
 import crypto from 'node:crypto';
 import rateLimit from 'express-rate-limit';
 import { requireAdmin } from '../middleware/auth.js';
-import { db } from '../db.js';
+import {
+  insertRow, selectRows, stagingConfigured, toEpochMs, fromEpochMs,
+} from '../staging/pgData.js';
 
 /**
- * Cooperation (institutional partnership) submissions.
+ * Cooperation（机构合作）投稿。
  *
- * Public form submission — anyone can POST. Listing requires admin since
- * submissions may contain contact info that shouldn't be world-readable.
+ * 公开表单可匿名 POST；列举需要管理员——投稿含联系方式，不能对外可读。
  *
- * Persisted to SQLite (`cooperation_submissions` table) as part of
- * Wave-2 — the previous in-memory `Map<string, CooperationRecord>` lost
- * data on every server restart.
+ * ── DB-12 切换 ────────────────────────────────────────────────────────
+ * 数据面已从 SQLite `cooperation_submissions` 切到 Postgres
+ * `public.app_cooperation_submissions`（staging 已迁入 1 行历史数据）。
+ * 本文件**不再引用 SQLite**——这是「迁移域 SQLite 写路径 = 0」的一部分。
+ *
+ * 对外线格式保持不变（`receivedAt` 仍是 epoch 毫秒），前端无需改动；
+ * 库里存的是 timestamptz，边界处做转换。
  */
 interface CooperationRow {
   id: string;
@@ -21,30 +26,16 @@ interface CooperationRow {
   organization: string | null;
   message: string | null;
   type: string | null;
-  received_at: number;
+  received_at: string;   // timestamptz（ISO 字符串）
 }
 
-const stmtInsertSubmission = db.prepare<[
-  string, string, string, string, string, string, number,
-]>(`
-  INSERT INTO cooperation_submissions
-    (id, name, email, organization, message, type, received_at)
-  VALUES (?, ?, ?, ?, ?, ?, ?)
-`);
-
-const stmtListSubmissions = db.prepare<[], CooperationRow>(
-  'SELECT * FROM cooperation_submissions ORDER BY received_at DESC',
-);
-
-const stmtClearSubmissions = db.prepare('DELETE FROM cooperation_submissions');
+const TABLE = 'app_cooperation_submissions';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
- * Strict per-IP limit for the public POST endpoint to slow spam. 10/min
- * matches the auth limiter posture — most legit users submit at most once.
- * In test mode the cap is widened so the suite can exercise multiple
- * scenarios from the same loopback IP.
+ * 公开 POST 端点的每 IP 限流，减缓垃圾投稿。10/min 与 auth 限流同姿态——
+ * 正常用户至多提交一次。测试模式放宽，好让同一 loopback IP 跑多个场景。
  */
 const cooperationPostLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -62,17 +53,24 @@ function rowToWire(r: CooperationRow): unknown {
     organization: r.organization ?? '',
     message: r.message ?? '',
     type: r.type ?? '',
-    receivedAt: r.received_at,
+    receivedAt: toEpochMs(r.received_at),
   };
+}
+
+/** staging 未配置时明确报错，绝不静默回落到 SQLite。 */
+function guardConfigured(res: Response): boolean {
+  if (stagingConfigured()) return true;
+  res.status(503).json({ error: 'Staging database not configured.' });
+  return false;
 }
 
 export function registerCooperationRoutes(app: Express): void {
   /**
-   * POST /api/cooperation — public.
+   * POST /api/cooperation — 公开。
    * Body: { name, email, organization, message, type }
    * Returns: { id, receivedAt }
    */
-  app.post('/api/cooperation', cooperationPostLimiter, (req: Request, res: Response) => {
+  app.post('/api/cooperation', cooperationPostLimiter, async (req: Request, res: Response) => {
     const { name, email, organization, message, type } = (req.body ?? {}) as {
       name?: unknown; email?: unknown; organization?: unknown;
       message?: unknown; type?: unknown;
@@ -92,30 +90,41 @@ export function registerCooperationRoutes(app: Express): void {
     if (typeof type !== 'string' || !type.trim()) {
       return res.status(400).json({ error: 'type is required.' });
     }
+    // 校验全部通过之后才检查后端可用性——参数错误应当返回 400 而不是 503。
+    if (!guardConfigured(res)) return;
+
     const id = crypto.randomUUID();
     const receivedAt = Date.now();
-    stmtInsertSubmission.run(
-      id,
-      name.trim().slice(0, 200),
-      email.trim().toLowerCase().slice(0, 320),
-      organization.trim().slice(0, 200),
-      typeof message === 'string' ? message.slice(0, 4000) : '',
-      type.trim().slice(0, 64),
-      receivedAt,
-    );
+    try {
+      await insertRow<CooperationRow>(TABLE, {
+        id,
+        name: name.trim().slice(0, 200),
+        email: email.trim().toLowerCase().slice(0, 320),
+        organization: organization.trim().slice(0, 200),
+        message: typeof message === 'string' ? message.slice(0, 4000) : '',
+        type: type.trim().slice(0, 64),
+        received_at: fromEpochMs(receivedAt),
+      });
+    } catch (e) {
+      console.error('[cooperation] insert failed:', (e as Error).message);
+      return res.status(502).json({ error: 'Failed to store submission.' });
+    }
     res.status(200).json({ id, receivedAt });
   });
 
   /**
-   * GET /api/cooperation — admin only. Returns all submissions, newest first.
+   * GET /api/cooperation — 仅管理员。全部投稿，最新在前。
    */
-  app.get('/api/cooperation', requireAdmin, (_req: Request, res: Response) => {
-    const list = stmtListSubmissions.all().map(rowToWire);
-    res.status(200).json(list);
+  app.get('/api/cooperation', requireAdmin, async (_req: Request, res: Response) => {
+    if (!guardConfigured(res)) return;
+    try {
+      const rows = await selectRows<CooperationRow>(
+        TABLE, 'select=*&order=received_at.desc',
+      );
+      res.status(200).json(rows.map(rowToWire));
+    } catch (e) {
+      console.error('[cooperation] list failed:', (e as Error).message);
+      res.status(502).json({ error: 'Failed to read submissions.' });
+    }
   });
-}
-
-/** Test-only: wipe the cooperation submissions table. */
-export function _resetCooperation(): void {
-  stmtClearSubmissions.run();
 }
