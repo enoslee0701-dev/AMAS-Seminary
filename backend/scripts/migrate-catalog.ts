@@ -10,6 +10,9 @@ import { OFFICIAL_CATALOG, RETIRED_COURSE_IDS } from '../../services/catalog';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dbPath = process.env.DB_PATH || path.resolve(here, '../data/amas.sqlite');
+// DB-13A：本脚本会**写**这个库，缺省落到 canonical 数据文件。
+console.log(`[migrate-catalog] SQLite: ${dbPath}`
+  + `  ← ${process.env.DB_PATH ? '来自 DB_PATH' : '缺省 canonical 文件（未设置 DB_PATH）'}`);
 const db = new Database(dbPath);
 db.pragma('journal_mode = WAL');
 db.pragma('busy_timeout = 5000');

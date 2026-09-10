@@ -20,24 +20,34 @@ import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { dropObsoleteRoomForeignKeys } from './migrations/db12RoomFkCompat.js';
+import {
+  dropObsoleteRoomForeignKeys, pendingRoomFkTables,
+} from './migrations/db12RoomFkCompat.js';
+import {
+  resolveDbPath, describeDbPath, assertCanonicalSchemaChangeAllowed,
+  type DbPathResolution,
+} from './dbPath.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /**
- * Resolve the SQLite file path. `:memory:` is a special sentinel
- * supported natively by better-sqlite3 — DO NOT mkdir for it.
+ * DB-13A：路径解析与 canonical 写入守卫都在 dbPath.ts（纯函数，可单测）。
+ *
+ * 两条硬规则由那个模块强制：
+ *   · 测试上下文缺 DB_PATH → 抛错。绝不让测试静默写 canonical 数据文件。
+ *   · 落到 canonical 缺省文件时，改 schema 需要显式 opt-in。
+ *
+ * `:memory:` 是 better-sqlite3 的原生哨兵值 —— **不要**为它 mkdir。
  */
-function resolveDbPath(): string {
-  const envPath = (process.env.DB_PATH ?? '').trim();
-  if (envPath) return envPath;
-  // src/db.ts → src → backend. Default to backend/data/amas.sqlite.
-  const backendRoot = path.resolve(__dirname, '..');
-  return path.join(backendRoot, 'data', 'amas.sqlite');
-}
+// src/db.ts → src → backend
+const BACKEND_ROOT = path.resolve(__dirname, '..');
+const DB_RESOLUTION: DbPathResolution = resolveDbPath(process.env, BACKEND_ROOT);
+const DB_PATH = DB_RESOLUTION.path;
 
-const DB_PATH = resolveDbPath();
+// 「这次用了哪个库」必须永远可见 —— DB-12 那次隐式改写之所以没人察觉，
+// 部分原因就是启动日志里根本没有这一行。
+console.log(describeDbPath(DB_RESOLUTION));
 
 if (DB_PATH !== ':memory:') {
   const dir = path.dirname(DB_PATH);
@@ -554,6 +564,14 @@ function hasColumn(table: string, column: string): boolean {
  * 半迁移状态跑 —— 详见 migrations/db12RoomFkCompat.ts。
  */
 {
+  // DB-13A：动手之前先问「这个文件允许被改 schema 吗」。
+  // 落到 canonical 缺省文件且没有显式授权 → 抛错，宁可启动失败。
+  // 迁移本身的逻辑一个字节都没改（见 migrations/db12RoomFkCompat.ts），
+  // 这里只决定它是否被允许作用在这个文件上。
+  const pending = pendingRoomFkTables(db);
+  if (pending.length) {
+    assertCanonicalSchemaChangeAllowed(DB_RESOLUTION, pending, process.env);
+  }
   const rebuilt = dropObsoleteRoomForeignKeys(db);
   if (rebuilt.length) {
     console.log(

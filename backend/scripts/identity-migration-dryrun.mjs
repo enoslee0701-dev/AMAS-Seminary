@@ -26,6 +26,9 @@ const BACKEND_ROOT = path.resolve(__dirname, '..');
 const REPO_ROOT = path.resolve(BACKEND_ROOT, '..');
 
 const DB_PATH = process.env.DB_PATH || path.join(BACKEND_ROOT, 'data/amas.sqlite');
+// DB-13A：只读打开（见下方 readonly: true），但读的是哪个文件必须可见。
+console.log(`[identity-migration-dryrun] SQLite（只读）: ${DB_PATH}`
+  + `  ← ${process.env.DB_PATH ? '来自 DB_PATH' : '缺省 canonical 文件（未设置 DB_PATH）'}`);
 const OUT = (process.argv.find(a => a.startsWith('--out=')) || '').slice(6)
   || path.join(REPO_ROOT, 'docs/operations/AUTH-identity-migration-dry-run-report.md');
 

@@ -1276,3 +1276,55 @@ phase:     DB-12 closeout
 副本上验证。它会在**下一次后端启动时自动完成**迁移。刻意不提前手工改动生产数据文件。
 
 **回归**：`backend/src/test/db12-sqlite-compat.test.ts`（18 项，已并入 `test:local`）。
+
+---
+
+## #26 CANONICAL SQLITE WRITE CONTAINMENT
+
+```
+status:    OPEN（静默写入向量已封堵，存储布局本身未重新设计）
+severity:  P2 RELEASE HARDENING
+owner:     unassigned
+phase:     DB-13A
+blocking:  PUBLIC STAGING · PRODUCTION
+不阻塞:     内部 staging 验收
+```
+
+**事实**：DB-12 收尾期间，一个以**默认 DB_PATH** 起来的后端进程
+（`npm run dev` = `tsx watch src/server.ts`）在无人察觉的情况下对
+canonical 数据文件 `backend/data/amas.sqlite` 执行了表重建级 schema 迁移。
+结果是正确的（32 表 / 285 行一行不差、`integrity_check = ok`、
+`foreign_key_check` 0 违规），但「隐式改写 canonical 数据文件」这个**模式**
+不能继续存在 —— 这已是本机进程在无人预期时碰到 canonical 资产的第二次。
+
+**不做的事**：不恢复旧字节（当前库是有效的，改动本身是兼容代码的预期行为）；
+不改写 DB-2/DB-3 的历史 SHA（`0798526d…` 是**溯源记录**，不是当前校验和；
+且 0023 是已应用的 canonical migration，不得编辑）。
+
+**为什么之前没有任何东西报警（关键实测）**：`tsx --test` 下 `NODE_ENV` 是
+**undefined**，只有 node 测试运行器注入的 `NODE_TEST_CONTEXT="child-v8"`。
+因此任何只判断 `NODE_ENV === 'test'` 的守卫**一个测试都拦不到**。
+
+**已封堵（DB-13A，`backend/src/dbPath.ts`）**：
+
+```
+测试上下文缺 DB_PATH        → 抛错拒绝启动（fail closed）
+                             识别用 NODE_TEST_CONTEXT ∪ NODE_ENV=test
+落到 canonical 缺省文件
+  且要改 schema             → 需显式 AMAS_ALLOW_CANONICAL_SCHEMA_CHANGE=1
+                             错误信息里列出会重建哪几张表，不让人盲签
+启动日志                    → 总是打印解析出的路径与来源（env / 缺省）
+运维脚本                    → identity-migration-apply / -dryrun /
+                             migrate-catalog 现在都会打印它操作的是哪个文件
+production                  → 早已由 RB-06 强制：缺 DB_PATH 直接 exit 1
+```
+
+**残留（本条因此仍 OPEN）**：dev 仍可以对 canonical 库做**行级**写入 ——
+那是 dev 数据库的本职，堵掉会破坏开发流程。更根本的问题是
+canonical 数据文件位于仓库目录内的一个**缺省**路径上；重新设计存储布局
+不属于本轮范围（Supervisor：不要在本阶段重构存储）。
+
+**回归**：`backend/src/test/db13a-canonical-db-guard.test.ts`（16 项，已并入
+`test:local`），含一个真进程用例证明缺 DB_PATH 时拒绝启动，
+以及一条断言证明 canonical 文件在整套测试全程未被改动
+（CI 上该文件不存在 —— 则断言它**也没有被创建出来**）。

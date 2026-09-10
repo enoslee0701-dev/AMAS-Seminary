@@ -183,8 +183,19 @@ function rebuildWithoutRoomFk(db: Database, table: string): void {
  * 若存在指向 `rooms` 的失效外键则拆除之。返回被重建的表名（空数组 = NO-OP）。
  * 抛错即表示已完整回滚，调用方应视为启动失败。
  */
+/**
+ * 还带着指向 `rooms` 失效外键、因而需要重建的表（空数组 = 无需迁移）。
+ *
+ * 单独导出是为了让调用方能在**动手之前**知道「会改哪几张表」——
+ * DB-13A 的 canonical 写入守卫需要这个信息来决定是否放行（见 dbPath.ts）。
+ * 判定表达式与 `dropObsoleteRoomForeignKeys` 内部完全相同，行为未变。
+ */
+export function pendingRoomFkTables(db: Database): string[] {
+  return TARGETS.filter(t => tableExists(db, t) && roomFks(db, t).length > 0);
+}
+
 export function dropObsoleteRoomForeignKeys(db: Database): string[] {
-  const pending = TARGETS.filter(t => tableExists(db, t) && roomFks(db, t).length > 0);
+  const pending = pendingRoomFkTables(db);
   if (!pending.length) return [];
 
   // PRAGMA foreign_keys 在事务内会被 SQLite 忽略，必须在 BEGIN 之前设置。

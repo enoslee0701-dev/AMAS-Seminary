@@ -22,7 +22,8 @@
 > DB-7  ✅  NO-OP / CLOSED      DB-8  ✅  NO-OP / CLOSED
 > DB-9  ✅  CLOSED              DB-10 ✅  NO-OP / CLOSED
 > DB-11 ✅  CLOSED
-> DB-12 ✅ **CLOSED** —— App 运行时 DAL 已切到 Supabase/PostgreSQL staging
+> DB-12 ✅ **CLOSED**（Supervisor 已正式验收，canonical head `9e374f5`）
+> DB-13A 🔵 **ACTIVE** —— canonical SQLite 写入守卫 + 剩余 DAL 清点
 > ```
 >
 > ---
@@ -31,10 +32,45 @@
 >
 > ```
 > STAGING DATABASE READY
-> DB-3 ~ DB-11  = CLOSED
-> DB-12 APP STAGING DAL CUTOVER = CLOSED
-> NEXT PHASE    = NOT STARTED（等待 Supervisor 验收后才开工）
+> DB-3 ~ DB-12  = CLOSED（DB-12 已正式验收）
+> DB-13A CANONICAL SQLITE GUARD + REMAINING DAL AUDIT = ACTIVE
+> 验收世系      0af8cc6 → de34fe5 → 88a908b → b67eabc → 9e374f5
 > ```
+>
+> ### DB-13A 已落地：canonical SQLite 写入守卫
+>
+> `backend/src/dbPath.ts`（纯函数，与 `startupGuard.ts` 同一套写法）：
+>
+> ```
+> 测试上下文缺 DB_PATH   → 抛错拒绝启动
+> canonical 缺省 + 改 schema → 需 AMAS_ALLOW_CANONICAL_SCHEMA_CHANGE=1
+> 启动日志               → 总是打印解析出的 DB 路径与来源
+> ```
+>
+> **关键实测**：`tsx --test` 下 `NODE_ENV` 是 undefined，只有
+> `NODE_TEST_CONTEXT`。只看 `NODE_ENV==='test'` 的守卫一个测试都拦不到。
+> 详见 OPEN_ISSUES #26（P2 RELEASE HARDENING，阻塞 PUBLIC STAGING / PRODUCTION）。
+>
+> ### DB-13A 清点结论（当轮实测）
+>
+> ```
+> import db.ts 的运行时消费者   15（11 有写入 / 4 只读）
+> 被写入的 SQLite 表           18
+> 可直接切（仅需身份适配）      COMMUNITY · LEARNING · PUSH · PRAYER-SESSIONS 子集
+> 必须先做 DB-4                prayer_shares(12) · prayer_intercessions(1)
+>                             room_prayer_topics(2) · users(7)
+> 应暂留 SQLite                room_realtime_events · refresh_jti
+>                             rooms/room_members/room_presence（§12 回滚参考）
+> ```
+>
+> **posts / friends / recordings / images 根本不在 SQLite —— 它们存在进程内
+> `new Map<>()` 里，重启即全丢。** 因此 `db.ts` 里 posts / post_likes /
+> post_comments / friend_requests / friendships / image_uploads / recordings
+> 七张表是无消费者的死 schema，`refresh_jti`（111 行）也无写入方（#RB-27）。
+> 这些域「切到 Postgres」不是数据迁移，而是**第一次获得持久化**。
+>
+> 完整逐表对照与下一批切换顺序见
+> [DB-13A-SQLITE-DAL-INVENTORY.md](../operations/DB-13A-SQLITE-DAL-INVENTORY.md)。
 >
 > **DB-12 收尾事实**：
 >
@@ -95,7 +131,8 @@
 > public staging 暴露 · 往空的 app_* 表塞假数据 · 复活 SQLite users/密码哈希 ·
 > 把 legacy user id 当作活动身份。
 >
-> **当前无活动任务。** DB-12 已 CLOSED，下一阶段须等 Supervisor 验收本轮 closeout 后才开工。
+> **当前活动任务：DB-13A**（守卫已实现 + 清点已完成）。剩余业务域 DAL 本轮只 AUDIT / PLAN，
+> 未开始大规模切换 —— 等 Supervisor 批准 DB-13B 切换包。
 >
 > **验证环境**：本地 PostgreSQL **17.6**（与 Supabase 目标版本一致）+ 18.6 对照。
 > **仍未验证**：真实 Supabase（Auth / PostgREST / RLS 运行时 / SECURITY DEFINER 上下文 /

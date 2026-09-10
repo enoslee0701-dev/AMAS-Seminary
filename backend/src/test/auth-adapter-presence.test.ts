@@ -34,6 +34,21 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BACKEND_SRC = path.resolve(__dirname, '..');
 const REPO_ROOT = path.resolve(BACKEND_SRC, '../..');
 
+/**
+ * ★ 必须在任何 `import('../middleware/...')` 之前设置。
+ *
+ * 下面那条「中间件可被 import」的断言会拉起整条依赖链
+ * middleware/auth.ts → auth/users.ts → db.ts，而 db.ts 在模块加载期就打开库。
+ * 本文件此前没有设 DB_PATH —— 于是每跑一次 test:local，它都会落到
+ * canonical 数据文件 backend/data/amas.sqlite 上建表、跑 schema 迁移。
+ * DB-12 收尾时 canonical 库被隐式改写，就是这条路径造成的（DB-13A / #26）。
+ *
+ * 这里只需要证明「import 得起来」，`:memory:` 足够，且不留任何文件痕迹。
+ * dbPath.ts 的守卫现在会在测试上下文缺 DB_PATH 时直接抛错，
+ * 所以这一行不是可选的礼貌，而是本文件能跑起来的前提。
+ */
+process.env.DB_PATH = ':memory:';
+
 // ── 1. 生产 auth adapter 必须真实存在且可 import ──────────────────
 
 test('生产 Supabase auth adapter 存在且可被 import', async () => {

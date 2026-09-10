@@ -49,10 +49,14 @@
 > ### ⬤ 当前阶段状态（写代码前必须先确认这一条）
 >
 > ```
-> DB-3 ~ DB-11  = CLOSED
-> DB-12         = CLOSED（App 运行时 DAL 已切到 Supabase/PostgreSQL staging）
-> NEXT PHASE    = NOT STARTED —— 等 Supervisor 验收 DB-12 closeout 后才开工
+> DB-3 ~ DB-12  = CLOSED（DB-12 已正式验收，canonical head 9e374f5）
+> DB-13A        = ACTIVE —— canonical SQLite 写入守卫 + 剩余 DAL 清点
 > ```
+>
+> **DB-13A 起的硬规则**：任何后端进程 / 测试 / 脚本都必须显式给出 `DB_PATH`。
+> 测试上下文缺 `DB_PATH` 会**拒绝启动**；对 canonical 缺省库改 schema
+> 需要 `AMAS_ALLOW_CANONICAL_SCHEMA_CHANGE=1`。见 `backend/src/dbPath.ts` 与
+> OPEN_ISSUES #26。**不要**为了让某个脚本跑起来而绕开它。
 >
 > **不得**在验收前开工：剩余域 DAL 迁移 · STAGING-1B · 0027 · public staging 硬化 · production。
 >

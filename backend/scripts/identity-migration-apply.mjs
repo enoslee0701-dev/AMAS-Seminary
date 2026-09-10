@@ -25,6 +25,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BACKEND_ROOT = path.resolve(__dirname, '..');
 const APPLY = process.argv.includes('--apply');
 const DB_PATH = process.env.DB_PATH || path.join(BACKEND_ROOT, 'data/amas.sqlite');
+// DB-13A：本脚本会**写**这个库。缺省落到 canonical 数据文件，
+// 所以把解析结果明确打出来 —— 不让「改了哪个文件」只存在于阅读者的推测里。
+console.log(`[identity-migration-apply] SQLite: ${DB_PATH}`
+  + `  ← ${process.env.DB_PATH ? '来自 DB_PATH' : '缺省 canonical 文件（未设置 DB_PATH）'}`);
 const BATCH = process.env.MIGRATION_BATCH || `auth-m5-${new Date().toISOString().slice(0, 10)}`;
 
 const envPath = process.env.AMAS_ENV;
