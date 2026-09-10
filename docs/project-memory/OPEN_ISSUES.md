@@ -1232,3 +1232,47 @@ membership/presence 两张表。这是架构决定，不是 fast-track 能顺手
 **待裁定**：rooms / 成员制 / presence 的业务主体，用 `profiles.id`（Supabase UUID）
 还是保留 canonical SQLite id 并在边界处解析？前者需要改 App 身份模型，
 后者需要 DB-3 的外键让步 —— 两条路都不该由实现者单方面选。
+
+---
+
+## #25 旧 SQLite 库仍带指向 `rooms` 的失效外键 — `CLOSED`（2026-09-10）
+
+```
+status:    CLOSED
+severity:  P1（升级安装的运行时故障，新装不受影响）
+owner:     —
+phase:     DB-12 closeout
+```
+
+**缺陷**：DB-12 把房间迁到 Postgres 后，`backend/src/db.ts` 已从建表语句里去掉
+`prayer_sessions.room_id → rooms(room_id)` 与 `room_reading_state.room_id → rooms(room_id)`。
+但 `CREATE TABLE IF NOT EXISTS` **不会改动已经存在的表** —— 因此**已经存在的**
+`amas.sqlite` 仍带着这两条外键，而 SQLite 的 `rooms` 里没有 Postgres 新建的房间。
+
+**实测确认（`PRAGMA foreign_key_list`，只读，在副本上做）**：
+`backend/data/amas.sqlite`（450560 字节 / 32 业务表）两条外键均 **PRESENT**。
+
+**故障路径（已复现）**：Postgres 建房 → 开祷告会 →
+`SqliteError: FOREIGN KEY constraint failed`（`routes/prayerSession.ts:201`）。
+负对照证明：临时禁掉迁移，行为测试立刻红；恢复后转绿 —— 测试不是空转。
+
+**修复**：`backend/src/migrations/db12RoomFkCompat.ts`，启动时按 SQLite 官方 12 步
+流程重建这两张表，**只**去掉指向 `rooms` 的外键。新表 DDL 取自该表自己在
+`sqlite_master` 里的真实文本（不硬编码），因此列序 / CHECK / DEFAULT / 其余外键
+逐字保留；重建前后逐项比对列指纹与外键指纹，不一致即抛错回滚。
+
+```
+幂等         新库与已升级库 = NO-OP
+事务化       失败整体回滚，不留半迁移状态
+数据         逐行 JSON 比对一致，一条不丢也一处不改
+收尾         PRAGMA foreign_key_check = 0 违规；foreign_keys 恢复为 ON
+```
+
+**刻意未处理**：`room_members.room_id → rooms(room_id)` 同样存在，但该表运行时
+已无写入（成员制在 `app_room_members`），按 DB-12 §12 保留作回滚参考，**不动**。
+若将来要回滚房间域到 SQLite，这条外键仍然有用。
+
+**未处理但已知**：`backend/data/amas.sqlite` 本体尚未迁移 —— 本轮只在字节相同的
+副本上验证。它会在**下一次后端启动时自动完成**迁移。刻意不提前手工改动生产数据文件。
+
+**回归**：`backend/src/test/db12-sqlite-compat.test.ts`（18 项，已并入 `test:local`）。

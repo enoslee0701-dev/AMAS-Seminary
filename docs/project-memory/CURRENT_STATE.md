@@ -1,6 +1,6 @@
 # Current State
 
-> **最后更新**：2026-09-10 · 依据 commit `0af8cc6` 的真实代码、**live staging 只读实测**与当轮实跑结果，非聊天记忆。
+> **最后更新**：2026-09-10 · 依据 commit `88a908b` + 本轮 DB-12 closeout 提交的真实代码、**live staging 只读实测**与当轮实跑结果，非聊天记忆。
 >
 > **阶段已切换**：功能开发 → RELEASE READINESS。暂停新增产品功能。
 > 完整就绪度审计见 `amas-website/docs/operations/RELEASE-READINESS-REPORT.md`。
@@ -22,7 +22,7 @@
 > DB-7  ✅  NO-OP / CLOSED      DB-8  ✅  NO-OP / CLOSED
 > DB-9  ✅  CLOSED              DB-10 ✅  NO-OP / CLOSED
 > DB-11 ✅  CLOSED
-> DB-12 🔵 **ACTIVE** —— App 运行时 DAL 切到 Supabase/PostgreSQL staging
+> DB-12 ✅ **CLOSED** —— App 运行时 DAL 已切到 Supabase/PostgreSQL staging
 > ```
 >
 > ---
@@ -31,8 +31,47 @@
 >
 > ```
 > STAGING DATABASE READY
-> DB-12 APP STAGING DAL CUTOVER = ACTIVE
+> DB-3 ~ DB-11  = CLOSED
+> DB-12 APP STAGING DAL CUTOVER = CLOSED
+> NEXT PHASE    = NOT STARTED（等待 Supervisor 验收后才开工）
 > ```
+>
+> **DB-12 收尾事实**：
+>
+> ```
+> origin/main 已包含      de34fe5 · 88a908b · 本轮 closeout 提交
+>                         （fix(db): 旧 SQLite 库升级兼容 —— git log 中紧随 88a908b）
+> GitHub CI (88a908b)     SUCCESS
+> ROOMS / COURSE FILES / COOPERATION   运行时 = Postgres/Supabase（不是 SQLite）
+> SQLite 活跃写入          rooms=0 room_members=0 room_presence=0
+>                         course_files=0 cooperation_submissions=0
+> 身份口径                 #24 = RESOLVED / D-42
+>                         profiles.id = auth.users.id = Supabase UUID
+> 真实 staging 只读 smoke  10/10 PASS（backend/scripts/db12-staging-smoke.mjs）
+> 旧 SQLite 升级兼容        已修复（见下「旧库升级兼容」）
+> ROOM USER WRITE live smoke
+>                         EXTERNAL-OWNER BLOCKED —— 目前不存在任何合法 provision
+>                         的 staging 学生身份，且**不得**为了让测试通过而造一个。
+>                         这条不构成 DB-12 重开。
+> 0027                    ABSENT / DO NOT APPLY
+> PUBLIC STAGING          NOT AUTHORIZED
+> ```
+>
+> ### 旧库升级兼容（DB-12 closeout）
+>
+> `CREATE TABLE IF NOT EXISTS` 不会改动已存在的表，所以**升级安装**里
+> `prayer_sessions.room_id → rooms(room_id)` 与
+> `room_reading_state.room_id → rooms(room_id)` 这两条外键仍在册，
+> 而房间已由 Postgres 拥有 —— 实测（`PRAGMA foreign_key_list`）确认
+> `backend/data/amas.sqlite` 两条都 PRESENT。
+>
+> 修复方式：`backend/src/migrations/db12RoomFkCompat.ts` 在启动时按 SQLite 官方
+> 12 步流程重建这两张表，**只**去掉指向 `rooms` 的外键。新表 DDL 取自该表自己在
+> `sqlite_master` 的真实文本，因此列序 / CHECK / DEFAULT / 其余外键逐字保留。
+> 幂等（新库与已升级库均 NO-OP）、事务化、失败即整体回滚。
+>
+> `room_members.room_id → rooms(room_id)` **刻意不动** —— 该表运行时已无写入，
+> 按 DB-12 §12 保留作回滚参考。
 >
 > **live staging 事实（2026-09-10 只读实测，非引用）**：
 >
@@ -54,7 +93,7 @@
 > public staging 暴露 · 往空的 app_* 表塞假数据 · 复活 SQLite users/密码哈希 ·
 > 把 legacy user id 当作活动身份。
 >
-> **当前活动任务：DB-12（见下）。**
+> **当前无活动任务。** DB-12 已 CLOSED，下一阶段须等 Supervisor 验收本轮 closeout 后才开工。
 >
 > **验证环境**：本地 PostgreSQL **17.6**（与 Supabase 目标版本一致）+ 18.6 对照。
 > **仍未验证**：真实 Supabase（Auth / PostgREST / RLS 运行时 / SECURITY DEFINER 上下文 /
@@ -135,13 +174,16 @@
 
 | 项 | 值 |
 |---|---|
-| **当前 DONE** | P1-2 读经室共享阅读位置 — `d0d6030` |
-| **当前 NEXT** | P1-3 交通室分享墙 |
+| **当前 DONE** | RB-01 DB-12 App staging DAL 切换 — `de34fe5` / `88a908b` / 本轮 closeout |
+| **当前 NEXT** | 无 —— 等 Supervisor 验收 DB-12 closeout |
 | **当前 BLOCKED** | Phase 4B 实时语音（缺真实设备 + LiveKit 凭据） |
-| **最近 commit** | `03bb842` ux: App 界面统一改用中文「信仰成长档案」 |
-| **分支** | `main`，工作区干净，但 **本地领先 origin/main 2 个提交（未推送）**，且 `main` 已丢失上游追踪配置 |
+| **最近 commit** | 本轮 closeout：`fix(db): 旧 SQLite 库升级兼容 + DB-12 收尾` |
+| **分支** | `main`，**已推送，`origin/main` == 本地 HEAD，0 个未推送提交** |
 
-近期提交序列：
+> 产品阶段进度（P1-2 已完成 / P1-3 为 NEXT）见下方「已实现能力」与「当前未实现」，
+> 但那两节属**产品功能线**；当前活动的是 RB-01 数据库迁移线，二者不是同一条轨道。
+
+<details><summary>历史提交序列（P1-2 时点，仅供追溯）</summary>
 
 ```
 03bb842  ux: App 统一中文「信仰成长档案」        ← 当前 HEAD，未推送
@@ -155,9 +197,36 @@ d0d6030  P1-2(读经室): 共享阅读位置              ← 当前 DONE
 d8abbd6  P0(其它房间): 拆掉赞美室假播放、举手脚本与四处不兑现的说明文案
 ```
 
+</details>
+
 ---
 
-## 测试基线（2026-09-04 实测，非引用）
+## 测试基线（2026-09-10 实测 · DB-12 closeout 当轮，非引用）
+
+```
+frontend tests                PASS 187  FAIL 0   (21 files)
+backend  test:local           PASS 199  FAIL 0   ← 含 DB-12 兼容迁移 18 项
+backend  test:external        SKIP（BLOCKED_BY_ENV，缺 AMAS_ENV）
+
+room presence E2E              54/54
+room reading position E2E      44/44
+rooms render guard             51/51
+prayer Phase 5 E2E             24/24
+system room moderator E2E      26/26
+
+frontend tsc / backend tsc     clean
+build                          PASS
+verify:local-release           PASS（聚合门禁 exit 0）
+
+真实 staging 只读 smoke         10/10 PASS
+FAIL 数：0
+```
+
+**验收级别：TESTED LOCALLY + 真实 staging 只读 smoke。**
+仍**不是** STAGING VERIFIED / PRODUCTION VERIFIED —— 真实写入路径的端到端验收
+仍缺一个合法 provision 的 staging 学生身份（EXTERNAL-OWNER BLOCKED）。
+
+<details><summary>历史基线（2026-09-04 / AUTH-M7 时点）</summary>
 
 ```
 frontend tests                PASS 181  FAIL 0  SKIP 0   (20 files)  ← 2026-09-07 AUTH-M7
@@ -186,8 +255,7 @@ FAIL 数：0
 上述数字全部来自本机进程内测试，**未跨真实 HTTP 边界、未连托管数据库**，
 因此**尚未达到 INTEGRATION VERIFIED**，更不是 STAGING / PRODUCTION VERIFIED。
 
-原表述 尚未在真实生产环境（真实 Supabase /
-生产部署 / 真机）完成验证，因此**不得**写成「生产正式验收通过」。
+</details>
 
 ---
 
@@ -225,9 +293,14 @@ presence 响应不含任何阅读字段
 **Authoritative source**
 
 ```
-room_presence                        数据表
+public.app_room_presence             数据表（**Postgres/Supabase**，DB-12 起）
+backend/src/staging/roomStore.ts     Postgres 数据层
 backend/src/rooms/presence.ts        Presence 唯一业务实现
 ```
+
+> DB-12 之前这张表在 SQLite（`room_presence`）。那张 SQLite 表的 DDL 按 §12
+> 保留作回滚参考，**运行时不再写入**（活跃写入 = 0）。
+> 身份列写的是 **Supabase UUID**（D-42），不是 canonical SQLite id。
 
 祷告室与其它四房**共用这一份**，不存在第二套实现。
 
@@ -288,11 +361,16 @@ prayer_room · praise_room · bible_reading · preaching_room · fellowship_room
 前端 `components/CommunityView.tsx` 与后端 `PUBLIC_ROOMS`（`backend/src/db.ts`）
 **1:1，无 alias**。前端不维护第二套别名。
 
-五个内置房间 `host_id = 'system'`，**永远没有真人房主**；运营权只以
-`room_members.role = 'moderator'` 存在，由 `backend/scripts/room-moderator.ts` 授予。
+五个内置房间 `host_type = 'system'`（`public.app_rooms`），**永远没有真人房主**；
+运营权只以 `public.app_room_members.role = 'moderator'` 存在，
+由 `backend/scripts/room-moderator.ts` 授予。
 详见 [PUBLIC_ROOM_LAUNCH_CHECKLIST.md](../PUBLIC_ROOM_LAUNCH_CHECKLIST.md)。
 
-**当前五个房间均为 0 moderator** —— 机制齐备，但还没给任何人授权。
+> DB-12 起房间与成员制在 **Postgres/Supabase**，身份是 Supabase UUID（D-42）。
+> 该脚本以 email 为入口，内部经 `legacy_user_map` 换成已 provision 的 UUID；
+> 换不出就**拒绝操作**，绝不用 legacy id 代写。
+
+**live staging 当前五个房间均为 0 moderator** —— 机制齐备，但还没给任何人授权。
 
 ---
 
@@ -313,13 +391,23 @@ P2  赞美室音频                                         ← 依赖版权授�
 ## 验证脚本（改动后必跑）
 
 ```bash
-npm test                              # 前端 123
-cd backend && npm test                # 后端 103
-node scripts/verify-room-presence.mjs           # 54
-node scripts/verify-room-reading-position.mjs   # 44
-node scripts/verify-rooms-render.mjs            # 51（真浏览器）
-node scripts/verify-phase5.mjs                  # 24（真浏览器）
-node scripts/verify-system-room-moderator.mjs   # 26
+npm run verify:local-release          # ← 一条命令跑完下面全部（&& 串联，任一红即停）
 ```
+
+它等价于：
+
+```bash
+npm test                              # 前端 187
+cd backend && npm run test:local      # 后端 199
+node scripts/verify-room-presence.mjs           # 54/54
+node scripts/verify-room-reading-position.mjs   # 44/44
+node scripts/verify-rooms-render.mjs            # 51/51（真浏览器）
+node scripts/verify-phase5.mjs                  # 24/24（真浏览器）
+node scripts/verify-system-room-moderator.mjs   # 26/26
+```
+
+五个回归脚本都跑在**假 Supabase**上（`scripts/helpers/regression-auth.mjs`），
+启动后会 `seedSystemRooms()` 把 5 个内置房间播种到 `app_rooms` —— DB-12 之后
+房间不在 SQLite，不播种这些脚本会全部 404。
 
 `verify-rooms-render.mjs` 与 `verify-phase5.mjs` 需要 Chrome。

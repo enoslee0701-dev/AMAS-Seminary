@@ -20,6 +20,7 @@ import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { dropObsoleteRoomForeignKeys } from './migrations/db12RoomFkCompat.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -535,6 +536,30 @@ function hasColumn(table: string, column: string): boolean {
            ON prayer_shares(room_id, user_id, client_request_id)
            WHERE client_request_id IS NOT NULL`);
   if (added.length) console.log(`[amas-backend] SEC-3 migration: +${added.join(', ')}`);
+}
+
+/**
+ * DB-12 兼容迁移：拆掉升级安装上指向 SQLite `rooms` 的失效外键。
+ *
+ * 上面的建表语句已经不再声明这两条外键，但 `CREATE TABLE IF NOT EXISTS`
+ * 不会改动既有表。所以**已经存在**的 amas.sqlite 仍然带着
+ * `prayer_sessions.room_id → rooms(room_id)` 与
+ * `room_reading_state.room_id → rooms(room_id)`，
+ * 而房间已由 Postgres 拥有 —— 那两条外键永远无法满足。
+ *
+ * 放在 SEC-3 增列之后：重建表时要照抄该表**当下**的真实 DDL，
+ * 必须先让 ALTER TABLE ADD COLUMN 全部落地（例如 prayer_sessions.title）。
+ *
+ * 幂等：新库与已升级库都是 NO-OP。失败即抛错，宁可启动失败也不带着
+ * 半迁移状态跑 —— 详见 migrations/db12RoomFkCompat.ts。
+ */
+{
+  const rebuilt = dropObsoleteRoomForeignKeys(db);
+  if (rebuilt.length) {
+    console.log(
+      `[amas-backend] DB-12 兼容迁移：已移除 ${rebuilt.join(', ')} 指向 rooms 的失效外键`,
+    );
+  }
 }
 
 /**

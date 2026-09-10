@@ -49,11 +49,21 @@
 > ### ⬤ 当前阶段状态（写代码前必须先确认这一条）
 >
 > ```
-> APP STAGING:
-> BLOCKED BY EXTERNAL PREREQUISITES
+> DB-3 ~ DB-11  = CLOSED
+> DB-12         = CLOSED（App 运行时 DAL 已切到 Supabase/PostgreSQL staging）
+> NEXT PHASE    = NOT STARTED —— 等 Supervisor 验收 DB-12 closeout 后才开工
 > ```
 >
-> **权威来源**：`docs/operations/APP-STAGING-RUNBOOK.md` · `OPEN_ISSUES #19`
+> **不得**在验收前开工：剩余域 DAL 迁移 · STAGING-1B · 0027 · public staging 硬化 · production。
+>
+> 已过期的旧口径（勿再引用）：「APP STAGING: BLOCKED BY EXTERNAL PREREQUISITES」——
+> 凭据已交付、staging 数据库已就绪并已被真实读取（`OPEN_ISSUES #19` 已 CLOSED）。
+>
+> **仍然禁止**：0027 应用到 live（ABSENT / DO NOT APPLY）· public staging 暴露
+> （NOT AUTHORIZED）· 创建 staging personas · 往空的 `app_*` 表塞假数据。
+>
+> **权威来源**：`docs/project-memory/CURRENT_STATE.md` ·
+> `docs/operations/APP-STAGING-RUNBOOK.md` · `OPEN_ISSUES #19 / #24 / #25`
 > —— **不是**较早的 `amas-website/docs/operations/STAGING-0-READINESS-REPORT.md`。
 >
 > **状态入口**：[`docs/operations/APP-STAGING-STATUS-SNAPSHOT.md`](../operations/APP-STAGING-STATUS-SNAPSHOT.md)
