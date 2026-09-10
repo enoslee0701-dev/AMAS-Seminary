@@ -12,7 +12,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { mkdirSync, rmSync } from 'node:fs';
 import net from 'node:net';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { startFakeSupabase, provisionUser, supabaseEnv } from './helpers/regression-auth.mjs';
+import { startFakeSupabase, provisionUser, supabaseEnv, seedSystemRooms} from './helpers/regression-auth.mjs';
 
 const TMP = '.tmp-presence';
 const ROOMS = ['bible_reading', 'preaching_room', 'praise_room', 'fellowship_room'];
@@ -42,6 +42,8 @@ mkdirSync(TMP, { recursive: true });
 
 // AUTH-M7：register 端点已删除，测试身份改由唯一的 Supabase harness provision。
 sb = await startFakeSupabase();
+// DB-12：房间真相源已是 Postgres，须显式预置 5 个内置房间（复刻 staging 实际行）。
+seedSystemRooms(sb);
 
 const port = await freePort();
 const base = `http://127.0.0.1:${port}`;
@@ -99,7 +101,7 @@ for (const room of ROOMS) {
 
   let p = await presenceOf(A, room);
   check(`${room}: A 进入后 presence = A 一人`,
-    p.onlineCount === 1 && p.presence[0]?.userId === A.user.id,
+    p.onlineCount === 1 && p.presence[0]?.userId === A.supabaseUserId,
     `count=${p.onlineCount}`);
   check(`${room}: 显示名来自服务器 users.name`, p.presence[0]?.name === '林牧师', p.presence[0]?.name);
 
@@ -137,7 +139,7 @@ for (const room of ROOMS) {
   const [ra, rc] = await Promise.all([presenceOf(A, room), presenceOf(C, room)]);
   check(`${room}: B 退出后 A/C 看到 2`, ra.onlineCount === 2 && rc.onlineCount === 2,
     `${ra.onlineCount}/${rc.onlineCount}`);
-  check(`${room}: B 退出后名单里确实没有 B`, !ra.presence.some(x => x.userId === B.user.id));
+  check(`${room}: B 退出后名单里确实没有 B`, !ra.presence.some(x => x.userId === B.supabaseUserId));
 }
 
 // ── §14 跨房隔离 ──
@@ -149,12 +151,15 @@ await enter(A, 'bible_reading');
 await enter(B, 'praise_room');
 const bible = await presenceOf(A, 'bible_reading');
 const praise = await presenceOf(B, 'praise_room');
+// DB-12：presence 的身份主键已按 Supervisor 裁定 #24 改为 Supabase UUID
+// （app_room_presence.user_id -> profiles.id），因此断言比对 supabaseUserId
+// 而不是 canonical SQLite id。断言强度未变，变的是身份口径。
 check('A 只出现在 bible_reading',
-  bible.presence.length === 1 && bible.presence[0].userId === A.user.id);
+  bible.presence.length === 1 && bible.presence[0].userId === A.supabaseUserId);
 check('B 只出现在 praise_room',
-  praise.presence.length === 1 && praise.presence[0].userId === B.user.id);
-check('bible_reading 的名单里没有 B', !bible.presence.some(x => x.userId === B.user.id));
-check('praise_room 的名单里没有 A', !praise.presence.some(x => x.userId === A.user.id));
+  praise.presence.length === 1 && praise.presence[0].userId === B.supabaseUserId);
+check('bible_reading 的名单里没有 B', !bible.presence.some(x => x.userId === B.supabaseUserId));
+check('praise_room 的名单里没有 A', !praise.presence.some(x => x.userId === A.supabaseUserId));
 
 // 非成员读别人房间 → 403，且不泄漏任何成员
 const stranger = await reg('外人', 'p1-outsider@example.com');
@@ -175,7 +180,7 @@ cli('grant', 'preaching_room', 'p1-c@example.com');
 await enter(A, 'preaching_room');
 const modCheck = await presenceOf(A, 'preaching_room');
 check('moderator 不会因授权而自动出现在在线名单',
-  !modCheck.presence.some(x => x.userId === C.user.id),
+  !modCheck.presence.some(x => x.userId === C.supabaseUserId),
   `名单：${modCheck.presence.map(x => x.name).join(', ') || '(空)'}`);
 check('只有真实进入房间的人才算在线', modCheck.onlineCount === 1);
 

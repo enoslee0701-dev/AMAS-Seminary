@@ -20,7 +20,7 @@ import { readFileSync } from 'node:fs';
 import { mkdirSync, rmSync } from 'node:fs';
 import net from 'node:net';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { startFakeSupabase, provisionUser, supabaseEnv } from './helpers/regression-auth.mjs';
+import { startFakeSupabase, provisionUser, supabaseEnv, seedSystemRooms, runBackendCli} from './helpers/regression-auth.mjs';
 
 const TMP = '.tmp-sysroom';
 const SYSTEM_ROOMS = ['prayer_room', 'praise_room', 'bible_reading', 'preaching_room', 'fellowship_room'];
@@ -55,6 +55,8 @@ mkdirSync(TMP, { recursive: true });
 
 // AUTH-M7：register 端点已删除，测试身份由唯一的 Supabase harness provision。
 sb = await startFakeSupabase();
+// DB-12：房间真相源已是 Postgres，须显式预置 5 个内置房间（复刻 staging 实际行）。
+seedSystemRooms(sb);
 
 const port = await freePort();
 const base = `http://127.0.0.1:${port}`;
@@ -104,19 +106,17 @@ const call = async (method, path, body, token) => {
 const reg = (name, email) => provisionUser(DB_FROM_ROOT, sb, { email, name });
 
 /** 调用真实的 CLI 脚本，不走任何后门。 */
-const moderatorCli = (cmd, roomId, email) => {
-  const r = spawnSync(process.execPath,
-    ['node_modules/tsx/dist/cli.mjs', 'scripts/room-moderator.ts', cmd, roomId, ...(email ? [email] : [])],
-    { cwd: 'backend', env: { ...process.env, DB_PATH: DB_REL }, encoding: 'utf8' });
-  return { code: r.status, out: (r.stdout ?? '') + (r.stderr ?? '') };
-};
+// DB-12：必须异步 —— 假 Supabase 在本进程内，spawnSync 会自锁（见 helper 注释）。
+const moderatorCli = (cmd, roomId, email) => runBackendCli(
+  ['scripts/room-moderator.ts', cmd, roomId, ...(email ? [email] : [])],
+  { ...process.env, DB_PATH: DB_REL, ...supabaseEnv(sb) });
 
 const hostIdOf = async (roomId) => {
-  const { default: Database } = await import('../backend/node_modules/better-sqlite3/lib/index.js');
-  const d = new Database(`${TMP}/sysroom.sqlite`, { readonly: true });
-  const row = d.prepare('SELECT host_id FROM rooms WHERE room_id = ?').get(roomId);
-  d.close();
-  return row?.host_id;
+  // DB-12：房间真相源是 Postgres（app_rooms），SQLite 的 rooms 已不再被写入。
+  // system 房间对外的 host 口径仍是字面量 'system'。
+  const row = sb.tableRows('app_rooms').find(r => r.id === roomId);
+  if (!row) return undefined;
+  return row.host_type === 'system' ? 'system' : row.host_user_id;
 };
 
 const A = await reg('林牧师', 'mod-a@example.com');
@@ -130,10 +130,10 @@ check('起始 host_id 为 system', (await hostIdOf(ROOM)) === 'system');
 console.log('\n-- grant/revoke 覆盖五个内置房间 --');
 let allGrant = true, allRevoke = true, hostChanged = false;
 for (const room of SYSTEM_ROOMS) {
-  const g = moderatorCli('grant', room, 'mod-a@example.com');
+  const g = await moderatorCli('grant', room, 'mod-a@example.com');
   if (g.code !== 0 || !g.out.includes('已成为')) allGrant = false;
   if ((await hostIdOf(room)) !== 'system') hostChanged = true;
-  const v = moderatorCli('revoke', room, 'mod-a@example.com');
+  const v = await moderatorCli('revoke', room, 'mod-a@example.com');
   if (v.code !== 0 || !v.out.includes('已撤销')) allRevoke = false;
   if ((await hostIdOf(room)) !== 'system') hostChanged = true;
 }
@@ -162,9 +162,9 @@ const cCreate = await call('POST', `/api/rooms/${ROOM}/prayer-sessions`,
 check('Member C 创建 session → 403', cCreate.status === 403, `实际 ${cCreate.status}`);
 
 // 授予 A 与 B
-moderatorCli('grant', ROOM, 'mod-a@example.com');
-moderatorCli('grant', ROOM, 'mod-b@example.com');
-const listed = moderatorCli('list', ROOM);
+await moderatorCli('grant', ROOM, 'mod-a@example.com');
+await moderatorCli('grant', ROOM, 'mod-b@example.com');
+const listed = await moderatorCli('list', ROOM);
 check('list 显示两位 moderator', (listed.out.match(/\[M\]/g) ?? []).length === 2, listed.out.trim().split('\n').slice(-4).join(' / '));
 
 // A 创建
@@ -203,7 +203,7 @@ check('Member C 的 canManageSession 为 false',
 
 // ---- §2 撤销后立即失效 ----
 console.log('\n-- 撤销 A 之后 --');
-const rv = moderatorCli('revoke', ROOM, 'mod-a@example.com');
+const rv = await moderatorCli('revoke', ROOM, 'mod-a@example.com');
 check('revoke A 成功', rv.code === 0 && rv.out.includes('已撤销'));
 
 const aAfter = await call('POST', `/api/rooms/${ROOM}/prayer-sessions/${sess.id}/advance`,

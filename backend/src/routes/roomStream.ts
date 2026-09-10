@@ -67,12 +67,22 @@ export function registerRoomStreamRoutes(app: Express): void {
       const hb = setInterval(() => { res.write(': hb\n\n'); }, HEARTBEAT_MS);
       // §23 membership 被撤销后必须断开，不能让旧长连接继续收事件
       const recheck = setInterval(() => {
-        const stillHost = req.room?.hostId === userId;
-        if (!stillHost && !isMember(roomId, userId)) {
-          send('closed', { reason: 'membership_revoked' });
-          cleanup();
-          res.end();
-        }
+        // 回调本身不能是 async（setInterval 不等待），因此用 void + 内部 catch。
+        // isMember 在 DB-12 后是异步的；漏掉 await 会让 Promise 恒为真值，
+        // 取反恒 false —— membership 撤销后连接不会被断开，§23 的保护失效。
+        void (async () => {
+          try {
+            const stillHost = req.room?.hostId === userId;
+            if (!stillHost && !(await isMember(roomId, userId))) {
+              send('closed', { reason: 'membership_revoked' });
+              cleanup();
+              res.end();
+            }
+          } catch (e) {
+            // 查不到就保守处理：不主动断开，等下一个周期重试。
+            console.error('[roomStream] membership recheck failed:', (e as Error).message);
+          }
+        })();
       }, MEMBERSHIP_RECHECK_MS);
 
       let cleaned = false;

@@ -226,3 +226,91 @@ test('★ 迁移域 SQLite 写路径 = 0（cooperation + course_files）', () =>
   assert.equal(sqliteCount('cooperation_submissions'), 0);
   assert.equal(sqliteCount('course_files'), 0);
 });
+
+// ───────────────── ROOMS：身份口径（Supervisor 裁定 #24）─────────────────
+
+test('rooms：已认证用户建房，host_user_id = Supabase UUID 且 host_orphaned_at 为 null', async () => {
+  sb.seedTable('app_rooms', []);
+  sb.seedTable('app_room_members', []);
+  const r = await request('POST', '/api/rooms', { roomId: 'db12-room' }, bearer(admin));
+  assert.equal(r.status, 200, r.text);
+
+  const rooms = sb.tableRows('app_rooms');
+  assert.equal(rooms.length, 1);
+  assert.equal(rooms[0].id, 'db12-room');
+  assert.equal(rooms[0].host_type, 'user');
+  // ★ 写进 profiles FK 的必须是 Supabase UUID，不是 canonical SQLite id
+  assert.equal(rooms[0].host_user_id, admin.supabaseUserId);
+  assert.notEqual(rooms[0].host_user_id, admin.user.id, 'legacy SQLite id 混进了 uuid 身份列');
+  // app_rooms_host_shape 三态 CHECK：user 态要求 host_orphaned_at 为 null
+  assert.equal(rooms[0].host_orphaned_at, null);
+});
+
+test('rooms：建房同时建立房主 membership，且 user_id 也是 Supabase UUID', () => {
+  const members = sb.tableRows('app_room_members');
+  const host = members.find(m => m.room_id === 'db12-room');
+  assert.ok(host, '房主 membership 没有建立');
+  assert.equal(host!.user_id, admin.supabaseUserId);
+  assert.notEqual(host!.user_id, admin.user.id);
+  assert.equal(host!.role, 'member');
+});
+
+test('★ rooms：客户端传入他人 hostId 无法冒充房主', async () => {
+  const r = await request('POST', '/api/rooms',
+    { roomId: 'db12-impersonate', hostId: '00000000-0000-4000-8000-000000000999' }, bearer(admin));
+  assert.equal(r.status, 403, `期望 403，实际 ${r.status} ${r.text}`);
+  assert.ok(!sb.tableRows('app_rooms').some(x => x.id === 'db12-impersonate'),
+    '冒充请求竟然建出了房间');
+});
+
+test('★ rooms：legacy SQLite id 当作 hostId 传入同样被拒（不是同一个值域）', async () => {
+  const r = await request('POST', '/api/rooms',
+    { roomId: 'db12-legacy-host', hostId: admin.user.id }, bearer(admin));
+  assert.equal(r.status, 403, `期望 403，实际 ${r.status} ${r.text}`);
+  assert.ok(!sb.tableRows('app_rooms').some(x => x.id === 'db12-legacy-host'));
+});
+
+test('★ rooms：未认证不得建房（service principal 也不能成为人类房主）', async () => {
+  const r = await request('POST', '/api/rooms', { roomId: 'db12-anon' });
+  assert.ok(r.status === 401 || r.status === 403, `期望 401/403，实际 ${r.status}`);
+  assert.ok(!sb.tableRows('app_rooms').some(x => x.id === 'db12-anon'));
+});
+
+test('rooms：system 房间不可被改写，host_user_id 保持 null', async () => {
+  sb.seedTable('app_rooms', [{
+    id: 'bible_reading', host_type: 'system', host_user_id: null,
+    host_orphaned_at: null, password_hash: null, password_salt: null,
+    created_at: new Date(1_700_000_000_000).toISOString(),
+  }]);
+  const r = await request('POST', '/api/rooms', { roomId: 'bible_reading' }, bearer(admin));
+  assert.equal(r.status, 403, `system 房间竟然可被改写：${r.status} ${r.text}`);
+  const row = sb.tableRows('app_rooms').find(x => x.id === 'bible_reading');
+  assert.equal(row!.host_type, 'system');
+  assert.equal(row!.host_user_id, null);
+});
+
+test('rooms：presence 心跳写入的 user_id 是 Supabase UUID', async () => {
+  sb.seedTable('app_rooms', [{
+    id: 'db12-presence', host_type: 'system', host_user_id: null, host_orphaned_at: null,
+    password_hash: null, password_salt: null, created_at: new Date().toISOString(),
+  }]);
+  sb.seedTable('app_room_members', [{
+    room_id: 'db12-presence', user_id: admin.supabaseUserId, role: 'member',
+    joined_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+  }]);
+  sb.seedTable('app_room_presence', []);
+
+  const r = await request('POST', '/api/rooms/db12-presence/presence/heartbeat',
+    {}, bearer(admin));
+  assert.equal(r.status, 200, r.text);
+  const rows = sb.tableRows('app_room_presence');
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].user_id, admin.supabaseUserId);
+  assert.notEqual(rows[0].user_id, admin.user.id, 'presence 写入了 legacy SQLite id');
+});
+
+test('★ 迁移域 SQLite 写路径 = 0（rooms / room_members / room_presence）', () => {
+  assert.equal(sqliteCount('rooms'), 0, 'rooms 仍在往 SQLite 写');
+  assert.equal(sqliteCount('room_members'), 0, 'room_members 仍在往 SQLite 写');
+  assert.equal(sqliteCount('room_presence'), 0, 'room_presence 仍在往 SQLite 写');
+});

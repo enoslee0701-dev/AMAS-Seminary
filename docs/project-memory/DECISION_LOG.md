@@ -5,6 +5,40 @@
 
 ---
 
+## D-42｜迁移域的业务主体身份 = `profiles.id`（Supabase UUID）
+
+```
+日期     2026-09-10
+状态     APPROVED（Supervisor 裁定，DB-12 / OPEN_ISSUES #24）
+阶段     DB-12
+```
+
+**决策**：已迁到 Postgres 的业务域，其身份主体一律使用
+`public.profiles.id` = `auth.users.id` = **Supabase UUID**。
+
+**事实依据（live 只读实测）**：`app_*` 中共 **33 条** uuid 身份外键，
+全部指向 `profiles.id`，包括 `app_rooms.host_user_id`、`app_room_members.user_id`、
+`app_room_presence.user_id`、`app_course_files.uploader_id`。
+
+**不得**：放宽 DB-3 的外键 · 把 SQLite `users.id` 写进 app_* 的 uuid 列 ·
+在 Postgres 侧建第二套身份命名空间 · 为规避重构而加 legacy-id 列。
+
+**方向是** App identity → Supabase Auth identity，**不是**反过来。
+
+**过渡规则（重要，不是永久双身份模型）**：`AuthPrincipal` 同时带两个身份 ——
+`principal.authId`（已验证的 Supabase UUID）与 `principal.user.id`
+（尚未切换域仍在用的 legacy SQLite 业务 id）。
+已切到 Postgres 的域**必须**用 `authId`；尚未切换的 SQLite 域**可暂时**继续用
+`user.id`。这是迁移边界，不是长期架构。**不要**为此新建映射表或身份抽象层。
+
+**由此产生的契约变更**：房间创建的权威来源从请求体的 `hostId` 改为认证上下文；
+`x-host-id` 头不再具备授权效力；presence 对外返回的 `userId` 现在是 Supabase UUID。
+
+**证据**：DB-12 报告 · `backend/src/staging/roomStore.ts` ·
+`backend/src/test/db12-staging-dal.test.ts`
+
+---
+
 ## D-41｜`amas-staging` 是获批的 APP STAGING Supabase 目标
 
 ```

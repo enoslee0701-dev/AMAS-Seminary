@@ -287,7 +287,7 @@ export function registerPrayerSessionRoutes(app: Express): void {
    * **不接受客户端传入的 facilitatorName**。
    * facilitator 只是展示角色，不获得任何控制权（Phase 2 §14）。
    */
-  app.post('/api/rooms/:roomId/prayer-sessions/:sessionId/facilitator', ...managerGuards, (req: Request, res: Response) => {
+  app.post('/api/rooms/:roomId/prayer-sessions/:sessionId/facilitator', ...managerGuards, async (req: Request, res: Response) => {
     const me = userOf(req);
     if (!me) return res.status(401).json({ error: 'User token required.' });
     const s = loadForCommand(req, res);
@@ -296,7 +296,9 @@ export function registerPrayerSessionRoutes(app: Express): void {
     const target = userId ? String(userId) : null;
     if (target) {
       const isHostUser = req.room?.hostId === target;
-      if (!isMember(req.params.roomId, target) && !isHostUser) {
+      // isMember 在 DB-12 后是异步的（Postgres）。漏掉 await 会让 Promise
+      // 恒为真值，取反恒 false —— 守卫静默失效。必须 await。
+      if (!(await isMember(req.params.roomId, target)) && !isHostUser) {
         return res.status(400).json({ error: 'Facilitator must be a room member.', code: 'NOT_A_MEMBER' });
       }
     }

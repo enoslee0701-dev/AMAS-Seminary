@@ -137,7 +137,7 @@ server.listen(config.port, () => {
   warnIfJwtDerived();
   // 内置公共房间没有真人房主，治理全靠 moderator。缺人只写服务端日志，
   // 不影响启动，也**绝不**把 SYSTEM_ROOM_HAS_NO_MODERATOR 这类码发给客户端。
-  reportSystemRoomModerators();
+  void reportSystemRoomModerators();
   // 经文数据集缺失时共享阅读位置写不进去，启动就要说清楚
   reportScriptureCanon();
   // Realtime：全局一个事件轮询器（跨实例可见性 + 兜底），不是每连接一个

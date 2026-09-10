@@ -6,7 +6,7 @@
  * 运行：node scripts/verify-room-reading-position.mjs
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { startFakeSupabase, provisionUser, supabaseEnv } from './helpers/regression-auth.mjs';
+import { startFakeSupabase, provisionUser, supabaseEnv, seedSystemRooms, runBackendCli} from './helpers/regression-auth.mjs';
 import { mkdirSync, rmSync } from 'node:fs';
 import net from 'node:net';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -41,6 +41,8 @@ process.on('exit', cleanup);
 async function startBackend() {
   // AUTH-M7：测试身份由唯一的 Supabase harness 提供（register 端点已删除）
   if (!sb) sb = await startFakeSupabase();
+  // DB-12：房间真相源已是 Postgres，须显式预置 5 个内置房间（复刻 staging 实际行）。
+  seedSystemRooms(sb);
   backend = spawn(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'src/server.ts'], {
     cwd: 'backend', stdio: 'ignore',
     env: { ...process.env, PORT: String(port), APP_SECRET: 'reading-verify',
@@ -71,9 +73,11 @@ const join = (u, room) => call('POST', `/api/rooms/${room}/join`, {}, u.accessTo
 const get = (u, room = ROOM) => call('GET', `/api/rooms/${room}/reading-position`, undefined, u.accessToken);
 const put = (u, body, room = ROOM) =>
   call('PUT', `/api/rooms/${room}/reading-position`, body, u.accessToken);
-const cli = (cmd, room, email) => spawnSync(process.execPath,
-  ['node_modules/tsx/dist/cli.mjs', 'scripts/room-moderator.ts', cmd, room, ...(email ? [email] : [])],
-  { cwd: 'backend', env: { ...process.env, DB_PATH: DB_REL }, encoding: 'utf8' });
+// DB-12：必须异步。假 Supabase 跑在本进程里，spawnSync 会阻塞事件循环，
+// 导致子进程打不通假 Supabase（表现为 fetch failed / ECONNABORTED）。
+const cli = (cmd, room, email) => runBackendCli(
+  ['scripts/room-moderator.ts', cmd, room, ...(email ? [email] : [])],
+  { ...process.env, DB_PATH: DB_REL, ...supabaseEnv(sb) });
 
 rmSync(TMP, { recursive: true, force: true });
 mkdirSync(TMP, { recursive: true });
@@ -88,8 +92,8 @@ const B = await reg('李姊妹', 'r-b@example.com');
 const X = await reg('外人', 'r-x@example.com');
 
 for (const u of [M, M2, A, B]) await join(u, ROOM);
-cli('grant', ROOM, 'r-m@example.com');
-cli('grant', ROOM, 'r-m2@example.com');
+await cli('grant', ROOM, 'r-m@example.com');
+await cli('grant', ROOM, 'r-m2@example.com');
 
 // ── Case 1：没有共享位置 → null ──
 console.log('\n──── Case 1  初始无共享位置 ────');

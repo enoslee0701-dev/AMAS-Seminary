@@ -33,6 +33,8 @@ const APP_SECRET = 'test-secret';
 // AUTH-M7：后端不再提供注册/登录端点，fixture 用户改由本地假 Supabase 铸造。
 // 这不是 mock —— 真 ES256 密钥对、真 JWKS 端点、真验签，后端跑 100%% 生产路径。
 let fakeSb: FakeSupabase;
+/** DB-12：房间用例的真人房主。房主身份来自认证上下文，不能再用 service token。 */
+let roomHost: ProvisionedUser;
 const AUTH_HEADERS = { authorization: `Bearer ${APP_SECRET}` };
 
 /** 本次 run 专用的一次性数据库。绝不复用，绝不留下。 */
@@ -286,11 +288,13 @@ test('GET /api/health does NOT require auth', async () => {
 });
 
 test('POST /api/rooms registers a private room', async () => {
+  // DB-12：房主由**认证身份**决定，不再由请求体的 hostId 决定，
+  // 且 service principal 不得成为人类房主 —— 所以这里必须用真人 token。
+  roomHost = await newUser('room-host@example.test', 'Room Host');
   const r = await request('POST', '/api/rooms', {
     roomId: 'room-private',
-    hostId: 'host-1',
     password: 'sesame',
-  }, AUTH_HEADERS);
+  }, { authorization: `Bearer ${roomHost.accessToken}` });
   assert.equal(r.status, 200, `expected 200, got ${r.status} body=${r.body}`);
   const body = r.json<{ ok: boolean; hasPassword: boolean }>();
   assert.equal(body.ok, true);
@@ -300,8 +304,7 @@ test('POST /api/rooms registers a private room', async () => {
 test('POST /api/rooms registers a public room (no password)', async () => {
   const r = await request('POST', '/api/rooms', {
     roomId: 'room-public',
-    hostId: 'host-1',
-  }, AUTH_HEADERS);
+  }, { authorization: `Bearer ${roomHost.accessToken}` });
   assert.equal(r.status, 200);
   const body = r.json<{ ok: boolean; hasPassword: boolean }>();
   assert.equal(body.ok, true);
@@ -1674,7 +1677,7 @@ const bearer = (t: ProvisionedUser) => ({ authorization: `Bearer ${t.accessToken
 /** 建房 + 拉人进房。返回 roomId。 */
 async function p5Room(suffix: string, host: ProvisionedUser, members: ProvisionedUser[] = []): Promise<string> {
   const roomId = `p5-room-${suffix}`;
-  const c = await request('POST', '/api/rooms', { roomId, hostId: host.user.id }, bearer(host));
+  const c = await request('POST', '/api/rooms', { roomId }, bearer(host));
   assert.equal(c.status, 200, `create room failed: ${c.body}`);
   for (const m of members) {
     const j = await request('POST', `/api/rooms/${roomId}/join`, {}, bearer(m));

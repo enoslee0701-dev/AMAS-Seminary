@@ -146,7 +146,10 @@ db.exec(`
     revision INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
-    FOREIGN KEY (room_id) REFERENCES rooms(room_id) ON DELETE CASCADE,
+    -- DB-12：房间已迁到 Postgres（public.app_rooms），SQLite 的 rooms 表不再被写入，
+    -- 因此这条外键永远无法满足。房间存在性改由 requireRoomExists 中间件强制
+    -- （它读 Postgres），所有 prayer 路由都挂了这个守卫 —— 保护从库级移到了应用层。
+    -- rooms 表的 DDL 按 §12 保留作回滚参考，但不再作为本表的引用目标。
     FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (facilitator_user_id) REFERENCES users(id) ON DELETE SET NULL
   );
@@ -294,8 +297,9 @@ db.exec(`
     verse INTEGER,
     revision INTEGER NOT NULL DEFAULT 1,
     updated_by TEXT NOT NULL,
-    updated_at INTEGER NOT NULL,
-    FOREIGN KEY (room_id) REFERENCES rooms(room_id) ON DELETE CASCADE
+    updated_at INTEGER NOT NULL
+    -- DB-12：同上 —— 房间已迁到 Postgres，指向 SQLite rooms 的外键不再可满足。
+    -- 房间存在性由 requireRoomExists 在应用层强制。
   );
 
   CREATE TABLE IF NOT EXISTS push_tokens (
@@ -534,51 +538,19 @@ function hasColumn(table: string, column: string): boolean {
 }
 
 /**
- * SEC-2 种子：App 内置的 5 个公共房间。
+ * DB-12：内置公共房间的种子与 host membership 回填**已移除**。
  *
- * 这些房间定义在前端 CommunityView 里，从来没有登记进 rooms 表。
- * SEC-2 给 prayer API 加上 requireRoomExists 之后，真实用户进入内置祷告室
- * 会直接 404——因此必须把它们登记为**无密码的公共房间**。
+ * 原因：房间与成员制已迁到 Postgres（`public.app_rooms` / `app_room_members`），
+ * 那里已经存在 5 个 `host_type='system'` 的内置房间。继续在这里播种 SQLite
+ * 会构成迁移域的双写——正是 DB-12 §12 要求归零的东西。
  *
- * host_id 记为 'system'：'system' 不是真实用户，所以
- *   - 不会创建 room_members 行（addMember 的存在性守卫会跳过）；
- *   - 任何真实用户在这些房间里都不是房主，无法编辑祷告主题。
- * 这是刻意的保守选择——内置公共房间目前没有归属人，
- * 由谁担任房主是产品决策，不应由本轮的安全改动顺手决定。
+ * 曾经在这里的两段逻辑，现在的归属：
+ *   · 内置房间的存在性 —— 由 Postgres 的 app_rooms 保证（DB-3 迁入，已实测 5 行）
+ *   · 房主必须是成员 —— 由 routes/rooms.ts 建房时原子地建立 host membership 保证
+ *
+ * `rooms` / `room_members` / `room_presence` 三张 SQLite 表的 DDL 按 §12 保留，
+ * 仅作回滚与参考源，运行时不再写入。
  */
-const PUBLIC_ROOMS = ['prayer_room', 'praise_room', 'bible_reading', 'preaching_room', 'fellowship_room'];
-const seedRoom = db.prepare(
-  `INSERT OR IGNORE INTO rooms (room_id, host_id, password_hash, salt, created_at) VALUES (?, 'system', NULL, NULL, ?)`,
-);
-{
-  const t = Date.now();
-  let seeded = 0;
-  for (const id of PUBLIC_ROOMS) seeded += seedRoom.run(id, t).changes;
-  if (seeded > 0) console.log(`[amas-backend] seeded ${seeded} built-in public room(s)`);
-}
-
-/**
- * SEC-2 迁移回填：房主必须是成员。
- *
- * 现有数据库里已经存在房间，新增 room_members 后若不回填，
- * 这些房间的房主会立刻失去访问权。这里按 rooms.host_id 补齐。
- *
- * **刻意不从 room_presence 回填其他历史参与者**——presence 是在线状态，
- * 不是成员关系的真相源；用它回填会把"曾经路过"永久变成"成员"。
- * 没有可靠历史成员数据时，只保证 host membership，其余用户重新 join 即可。
- *
- * 幂等：INSERT OR IGNORE + 只回填 users 表中确实存在的 host。
- */
-const backfilled = db.prepare(`
-  INSERT OR IGNORE INTO room_members (room_id, user_id, joined_at, updated_at)
-  SELECT r.room_id, r.host_id, r.created_at, ?
-  FROM rooms r
-  WHERE EXISTS (SELECT 1 FROM users u WHERE u.id = r.host_id)
-`).run(Date.now());
-if (backfilled.changes > 0) {
-  console.log(`[amas-backend] room_members backfill: +${backfilled.changes} host membership(s)`);
-}
-
 
 /**
  * TEST-ONLY: wipe all rows in every wave-1 table. Guarded by

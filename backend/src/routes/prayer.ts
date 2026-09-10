@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from 'express';
 import crypto from 'node:crypto';
 import { requireAuth } from '../middleware/auth.js';
-import { requireRoomExists, requireRoomMember, requireRoomManager } from '../middleware/roomAuth.js';
+import { requireRoomExists, requireRoomMember, requireRoomManager, activeUserUuid } from '../middleware/roomAuth.js';
 import { sanitizeDisplayName, inspectPrayerText } from '../middleware/textSafety.js';
 import { readPresence, writeHeartbeat, clearPresence } from '../rooms/presence.js';
 import { prayerWriteLimiter, prayerHeartbeatLimiter } from '../middleware/rateLimit.js';
@@ -116,13 +116,13 @@ export function registerPrayerRoutes(app: Express): void {
    * 一次取回整个祷告室状态（主题 + 在线成员 + 分享 + 我的代祷）。
    * 客户端 10 秒轮询这一个接口即可，避免打 4 个请求。
    */
-  app.get('/api/rooms/:roomId/prayer', requireAuth, requireRoomExists, requireRoomMember, (req: Request, res: Response) => {
+  app.get('/api/rooms/:roomId/prayer', requireAuth, requireRoomExists, requireRoomMember, async (req: Request, res: Response) => {
     const me = userOf(req);
     if (!me) return res.status(401).json({ error: 'User token required.' });
     const { roomId } = req.params;
     // 在线名单与祷告室之外的四个房间共用同一份实现（rooms/presence.ts），
     // 免得 TTL、显示名清洗、role 判定在两处慢慢漂移。
-    const presence = readPresence(roomId);
+    const presence = await readPresence(roomId);
 
     const counts = new Map(stmtCounts.all(roomId).map(r => [r.share_id, r.n]));
     const mine = new Set(stmtMine.all(roomId, me.id).map(r => r.share_id));
@@ -335,20 +335,24 @@ export function registerPrayerRoutes(app: Express): void {
    * POST   /api/rooms/:roomId/prayer/heartbeat   Body: { name, avatar?, role? }
    * DELETE /api/rooms/:roomId/prayer/presence    离开房间
    */
-  app.post('/api/rooms/:roomId/prayer/heartbeat', requireAuth, requireRoomExists, requireRoomMember, prayerHeartbeatLimiter, (req: Request, res: Response) => {
+  app.post('/api/rooms/:roomId/prayer/heartbeat', requireAuth, requireRoomExists, requireRoomMember, prayerHeartbeatLimiter, async (req: Request, res: Response) => {
     const me = userOf(req);
     if (!me) return res.status(401).json({ error: 'User token required.' });
     const { roomId } = req.params;
     // SEC-2 §7 的「显示名只从服务器读取」与 §15 的 bidi 清洗都在
     // rooms/presence.ts 里，两条路径共用同一份实现。
-    writeHeartbeat(req, roomId, me.id);
+    const uid = activeUserUuid(req);
+    if (!uid) return res.status(401).json({ error: 'User token required.' });
+    await writeHeartbeat(req, roomId, uid);
     res.json({ ok: true });
   });
 
-  app.delete('/api/rooms/:roomId/prayer/presence', requireAuth, requireRoomExists, requireRoomMember, (req: Request, res: Response) => {
+  app.delete('/api/rooms/:roomId/prayer/presence', requireAuth, requireRoomExists, requireRoomMember, async (req: Request, res: Response) => {
     const me = userOf(req);
     if (!me) return res.status(401).json({ error: 'User token required.' });
-    clearPresence(req.params.roomId, me.id);
+    const uid = activeUserUuid(req);
+    if (!uid) return res.status(401).json({ error: 'User token required.' });
+    await clearPresence(req.params.roomId, uid);
     res.json({ ok: true });
   });
 }

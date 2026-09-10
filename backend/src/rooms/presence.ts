@@ -1,6 +1,8 @@
 import type { Request } from 'express';
-import { db } from '../db.js';
 import { sanitizeDisplayName } from '../middleware/textSafety.js';
+import {
+  upsertPresence, listPresence, deletePresence,
+} from '../staging/roomStore.js';
 
 /**
  * 房间在线状态（room_presence）的**唯一实现**。
@@ -19,10 +21,16 @@ import { sanitizeDisplayName } from '../middleware/textSafety.js';
  *
  * ## 显示名只信服务器
  *
- * name / avatar 一律从 users 表读，**不接受请求体里的任何身份字段**——
+ * name / avatar 一律由服务端解析后传入，**不接受请求体里的任何身份字段**——
  * 否则任何人都能把自己在成员列表里显示成「王牧师」。
  * 再经 sanitizeDisplayName 剥离 bidi 控制符与零宽字符（SEC-3 §15），
  * 阿拉伯文、希伯来文等正常 RTL 名字不受影响。
+ *
+ * ## DB-12 切换
+ *
+ * 数据面已从 SQLite `room_presence` 切到 Postgres `public.app_room_presence`，
+ * identity 列是 **Supabase UUID**（profiles.id）。显示名仍来自 canonical
+ * SQLite 用户档案 —— legacy 只作展示，不参与授权，也不进 uuid 外键。
  */
 
 /** 超过这个时长没有心跳即视为离线。与祷告室保持同一个值。 */
@@ -45,30 +53,10 @@ export interface PresenceEntry {
 
 const now = () => Date.now();
 
-const stmtUserProfile = db.prepare<[string], { name: string; avatar: string | null }>(
-  'SELECT name, avatar FROM users WHERE id = ?',
-);
 
-const stmtUpsert = db.prepare<[string, string, string, string | null, string, number]>(`
-  INSERT INTO room_presence (room_id, user_id, name, avatar, role, last_seen_at)
-  VALUES (?, ?, ?, ?, ?, ?)
-  ON CONFLICT(room_id, user_id) DO UPDATE SET
-    name = excluded.name, avatar = excluded.avatar,
-    role = excluded.role, last_seen_at = excluded.last_seen_at
-`);
 
-const stmtSelect = db.prepare<[string, number], {
-  user_id: string; name: string; avatar: string | null; role: string; last_seen_at: number;
-}>(
-  `SELECT user_id, name, avatar, role, last_seen_at FROM room_presence
-   WHERE room_id = ? AND last_seen_at > ? ORDER BY last_seen_at DESC`,
-);
 
-const stmtDelete = db.prepare<[string, string]>(
-  'DELETE FROM room_presence WHERE room_id = ? AND user_id = ?',
-);
 
-const stmtSweep = db.prepare<[number]>('DELETE FROM room_presence WHERE last_seen_at < ?');
 
 /** 当前有效的在线截止时间戳。早于它的记录视为离线。 */
 export const presenceCutoff = (): number => now() - PRESENCE_TTL_MS;
@@ -79,11 +67,17 @@ export const presenceCutoff = (): number => now() - PRESENCE_TTL_MS;
  * `req` 只用于取 `req.room?.isHost`（由 roomAuth 中间件解析），
  * 身份本身来自已通过鉴权的 principal。
  */
-export function writeHeartbeat(req: Request, roomId: string, userId: string): void {
-  const profile = stmtUserProfile.get(userId);
-  const name = sanitizeDisplayName(profile?.name ?? userId).slice(0, 40) || userId;
+export async function writeHeartbeat(
+  req: Request, roomId: string, userUuid: string,
+): Promise<void> {
+  // 显示名取自已解析的 principal（canonical 用户档案），不再单独查库。
+  const p = req.principal;
+  const legacy = p?.kind === 'user' ? p.user : undefined;
+  const name = sanitizeDisplayName(legacy?.name ?? userUuid).slice(0, 40) || userUuid;
   const role = req.room?.isHost ? 'host' : 'listener';
-  stmtUpsert.run(roomId, userId, name, profile?.avatar ?? null, role, now());
+  await upsertPresence({
+    roomId, userUuid, name, avatar: legacy?.avatar ?? null, role, at: now(),
+  });
 }
 
 /**
@@ -91,14 +85,10 @@ export function writeHeartbeat(req: Request, roomId: string, userId: string): vo
  *
  * 顺手清理一小时前的死记录——这类清扫放在读路径上，不需要额外的定时任务。
  */
-export function readPresence(roomId: string): PresenceEntry[] {
-  const cutoff = presenceCutoff();
-  stmtSweep.run(cutoff - 60 * 60 * 1000);
-  return stmtSelect.all(roomId, cutoff).map(p => ({
-    userId: p.user_id,
-    name: p.name,
-    avatar: p.avatar,
-    role: p.role,
+export async function readPresence(roomId: string): Promise<PresenceEntry[]> {
+  const rows = await listPresence(roomId, presenceCutoff());
+  return rows.map(p => ({
+    userId: p.userId, name: p.name, avatar: p.avatar, role: p.role,
   }));
 }
 
@@ -108,11 +98,11 @@ export function readPresence(roomId: string): PresenceEntry[] {
  * 主键是 (room_id, user_id)，所以同一个账号在多台设备上开着同一个房间，
  * 数据库里也只有一行 —— 天然算 1 人，无需额外去重。
  */
-export function onlineCount(roomId: string): number {
-  return stmtSelect.all(roomId, presenceCutoff()).length;
+export async function onlineCount(roomId: string): Promise<number> {
+  return (await listPresence(roomId, presenceCutoff())).length;
 }
 
 /** 显式离开：只清在线状态，**不解除 membership**。 */
-export function clearPresence(roomId: string, userId: string): void {
-  stmtDelete.run(roomId, userId);
+export async function clearPresence(roomId: string, userUuid: string): Promise<void> {
+  await deletePresence(roomId, userUuid);
 }

@@ -10,7 +10,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { startFakeSupabase, provisionUser, supabaseEnv } from './helpers/regression-auth.mjs';
+import { startFakeSupabase, provisionUser, supabaseEnv, seedSystemRooms} from './helpers/regression-auth.mjs';
 import net from 'node:net';
 import puppeteer from 'puppeteer-core';
 
@@ -50,6 +50,8 @@ mkdirSync(TMP, { recursive: true });
 
 // AUTH-M7：register 端点已删除，浏览器用的会话由唯一的 Supabase harness provision。
 const sb = await startFakeSupabase();
+// DB-12：房间真相源已是 Postgres，须显式预置 5 个内置房间（复刻 staging 实际行）。
+seedSystemRooms(sb);
 
 const apiPort = await freePort();
 const port = await freePort();

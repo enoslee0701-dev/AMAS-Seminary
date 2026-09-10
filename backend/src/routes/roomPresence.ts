@@ -1,6 +1,6 @@
 import type { Express, Request, Response } from 'express';
 import { requireAuth } from '../middleware/auth.js';
-import { requireRoomExists, requireRoomMember } from '../middleware/roomAuth.js';
+import { requireRoomExists, requireRoomMember, activeUserUuid } from '../middleware/roomAuth.js';
 import { prayerHeartbeatLimiter } from '../middleware/rateLimit.js';
 import {
   readPresence, writeHeartbeat, clearPresence,
@@ -35,8 +35,8 @@ export function registerRoomPresenceRoutes(app: Express): void {
    * onlineCount 直接由 presence 数组长度得出，不单独查一次——
    * 两个数字必须永远一致，分开算就有机会不一致。
    */
-  app.get('/api/rooms/:roomId/presence', ...guards, (req: Request, res: Response) => {
-    const presence = readPresence(req.params.roomId);
+  app.get('/api/rooms/:roomId/presence', ...guards, async (req: Request, res: Response) => {
+    const presence = await readPresence(req.params.roomId);
     res.json({
       presence,
       onlineCount: presence.length,
@@ -48,11 +48,12 @@ export function registerRoomPresenceRoutes(app: Express): void {
 
   /** POST /api/rooms/:roomId/presence/heartbeat */
   app.post('/api/rooms/:roomId/presence/heartbeat', ...guards, prayerHeartbeatLimiter,
-    (req: Request, res: Response) => {
-      const p = req.principal;
-      const me = p && p.kind === 'user' ? p.user : null;
-      if (!me) return res.status(401).json({ error: 'User token required.' });
-      writeHeartbeat(req, req.params.roomId, me.id);
+    async (req: Request, res: Response) => {
+      // DB-12：presence 的 identity 是 Supabase UUID（profiles.id 外键），
+      // 不再是 canonical SQLite id。
+      const uid = activeUserUuid(req);
+      if (!uid) return res.status(401).json({ error: 'User token required.' });
+      await writeHeartbeat(req, req.params.roomId, uid);
       res.json({ ok: true });
     });
 
@@ -62,11 +63,10 @@ export function registerRoomPresenceRoutes(app: Express): void {
    * 只清在线状态，**不解除 membership**——收起房间、切后台、断网都不该丢授权。
    * 解除成员关系只发生在用户显式「离开房间」时（POST /leave）。
    */
-  app.delete('/api/rooms/:roomId/presence', ...guards, (req: Request, res: Response) => {
-    const p = req.principal;
-    const me = p && p.kind === 'user' ? p.user : null;
-    if (!me) return res.status(401).json({ error: 'User token required.' });
-    clearPresence(req.params.roomId, me.id);
+  app.delete('/api/rooms/:roomId/presence', ...guards, async (req: Request, res: Response) => {
+    const uid = activeUserUuid(req);
+    if (!uid) return res.status(401).json({ error: 'User token required.' });
+    await clearPresence(req.params.roomId, uid);
     res.json({ ok: true });
   });
 }

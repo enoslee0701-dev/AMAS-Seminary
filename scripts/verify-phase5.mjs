@@ -14,7 +14,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import net from 'node:net';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { startFakeSupabase, provisionUser, supabaseEnv } from './helpers/regression-auth.mjs';
+import { startFakeSupabase, provisionUser, supabaseEnv, seedSystemRooms} from './helpers/regression-auth.mjs';
 import puppeteer from 'puppeteer-core';
 
 const CHROME = process.env.CHROME_PATH
@@ -79,6 +79,8 @@ const apiBase = `http://127.0.0.1:${apiPort}`;
 const webBase = `http://localhost:${webPort}/`;
 // AUTH-M7：register 端点已删除，测试身份由唯一的 Supabase harness provision。
 sb = await startFakeSupabase();
+// DB-12：房间真相源已是 Postgres，须显式预置 5 个内置房间（复刻 staging 实际行）。
+seedSystemRooms(sb);
 
 backend = spawn(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'src/server.ts'], {
   cwd: 'backend',
@@ -106,15 +108,21 @@ const guest = await reg('陈弟兄');
 // 否则种好的数据在界面上根本不在同一个房间里。
 const roomId = 'prayer_room';
 /**
- * 内置公共房间的 host_id 是 'system'（db.ts 刻意如此：由谁担任房主是产品决策）。
- * 没有 manager 就建不了祷告会，所以在这个**一次性临时库**里把房主指给测试用户。
+ * 内置公共房间是 host_type='system'（由谁担任房主是产品决策，不由脚本决定）。
+ * 没有 manager 就建不了祷告会，所以在这个**一次性临时环境**里把房主指给测试用户。
  * 这是测试夹具，不是产品行为——改完之后所有操作照样全走真实 API。
+ *
+ * DB-12：房间真相源已是 Postgres（app_rooms），且身份是 Supabase UUID。
+ * 必须同时满足 app_rooms_host_shape 三态 CHECK：
+ * user 态要求 host_user_id NOT NULL 且 host_orphaned_at 为 null。
  */
 {
-  const { default: Database } = await import('../backend/node_modules/better-sqlite3/lib/index.js');
-  const d = new Database(`${TMP}/phase5.db`);
-  d.prepare('UPDATE rooms SET host_id = ? WHERE room_id = ?').run(host.user.id, roomId);
-  d.close();
+  const rooms = sb.tableRows('app_rooms').map(r => (
+    r.id === roomId
+      ? { ...r, host_type: 'user', host_user_id: host.supabaseUserId, host_orphaned_at: null }
+      : r
+  ));
+  sb.seedTable('app_rooms', rooms);
 }
 for (const [who, tok] of [['host', host.accessToken], ['guest', guest.accessToken]]) {
   const jn = await call('POST', `/api/rooms/${roomId}/join`, {}, tok);

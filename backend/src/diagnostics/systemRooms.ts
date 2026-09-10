@@ -1,4 +1,5 @@
-import { db } from '../db.js';
+import { listSystemRooms, moderatorCount } from '../staging/roomStore.js';
+import { stagingConfigured } from '../staging/pgData.js';
 
 /**
  * 内置公共房间的 moderator 就绪诊断。
@@ -33,24 +34,24 @@ export interface SystemRoomStatus {
   belowLaunchThreshold: boolean;
 }
 
-const stmtSystemRooms = db.prepare<[], { room_id: string }>(
-  "SELECT room_id FROM rooms WHERE host_id = 'system' ORDER BY room_id",
-);
-const stmtModeratorCount = db.prepare<[string], { n: number }>(
-  "SELECT COUNT(*) AS n FROM room_members WHERE room_id = ? AND role = 'moderator'",
-);
 
-/** 逐个 system room 统计 moderator 数量。只读，无副作用。 */
-export function auditSystemRooms(): SystemRoomStatus[] {
-  return stmtSystemRooms.all().map(r => {
-    const n = stmtModeratorCount.get(r.room_id)?.n ?? 0;
-    return {
-      roomId: r.room_id,
+/**
+ * 逐个 system room 统计 moderator 数量。只读，无副作用。
+ * DB-12 后数据源是 Postgres（app_rooms / app_room_members），因此是异步的。
+ */
+export async function auditSystemRooms(): Promise<SystemRoomStatus[]> {
+  const rooms = await listSystemRooms();
+  const out: SystemRoomStatus[] = [];
+  for (const r of rooms) {
+    const n = await moderatorCount(r.roomId);
+    out.push({
+      roomId: r.roomId,
       moderatorCount: n,
       hasNone: n === 0,
       belowLaunchThreshold: n < MIN_MODERATORS_PER_PUBLIC_ROOM,
-    };
-  });
+    });
+  }
+  return out;
 }
 
 /**
@@ -59,11 +60,22 @@ export function auditSystemRooms(): SystemRoomStatus[] {
  * 注意它**不会**让启动失败：一个没有 moderator 的房间仍然可以被浏览、
  * 可以发代祷。缺的是运营权限，不是可用性。让服务起不来只会更糟。
  */
-export function reportSystemRoomModerators(
+export async function reportSystemRoomModerators(
   log: (msg: string) => void = console.warn,
   info: (msg: string) => void = console.log,
-): SystemRoomStatus[] {
-  const rows = auditSystemRooms();
+): Promise<SystemRoomStatus[]> {
+  if (!stagingConfigured()) {
+    log('[amas-backend] system rooms 诊断跳过：Supabase staging 未配置，房间数据不可读。');
+    return [];
+  }
+  let rows: SystemRoomStatus[];
+  try {
+    rows = await auditSystemRooms();
+  } catch (e) {
+    // 诊断失败绝不能让服务起不来 —— 与「不因缺 moderator 而失败」同一原则。
+    log(`[amas-backend] system rooms 诊断失败（不影响启动）：${(e as Error).message}`);
+    return [];
+  }
   const none = rows.filter(r => r.hasNone);
   const thin = rows.filter(r => !r.hasNone && r.belowLaunchThreshold);
 

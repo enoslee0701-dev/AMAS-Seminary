@@ -191,9 +191,19 @@ export async function startFakeSupabase(): Promise<FakeSupabase> {
                                              : [parsed as Record<string, unknown>];
           } catch { res.writeHead(400).end('{"message":"bad json"}'); return; }
           const prefer = String(req.headers['prefer'] ?? '');
+          // 冲突键必须按表而定：app_rooms / app_course_files 等以 `id` 为主键，
+          // 而 app_room_members / app_room_presence 的主键是 (room_id, user_id)、
+          // 根本没有 `id` 列。若一律拿 `id` 比对，两边都是 undefined 会恒等，
+          // 于是每次 upsert 都覆盖第一行 —— presence 人数会永远停在 1。
+          const keyCols = (r: Record<string, unknown>): string[] =>
+            'id' in r ? ['id']
+              : ['room_id', 'user_id'].every(k => k in r) ? ['room_id', 'user_id']
+                : Object.keys(r);
+          const sameKey = (a: Record<string, unknown>, b: Record<string, unknown>): boolean =>
+            keyCols(b).every(k => a[k] === b[k]);
           for (const row of incoming) {
             const i = prefer.includes('merge-duplicates')
-              ? rows.findIndex(r => r.id === row.id) : -1;
+              ? rows.findIndex(r => sameKey(r, row)) : -1;
             if (i >= 0) rows[i] = { ...rows[i], ...row }; else rows.push(row);
           }
           res.writeHead(201, { 'content-type': 'application/json' });

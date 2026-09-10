@@ -1185,14 +1185,22 @@ and must not show fake user count
 
 ---
 
-## #24 DB-12：app_* 的身份口径与 App 的 D-1 双身份模型冲突
+## #24 DB-12：app_* 的身份口径与 App 的 D-1 双身份模型冲突 — `RESOLVED`（2026-09-10）
 
 ```
-status:    OPEN
-severity:  P1（阻断 rooms / 成员制 / presence 等 user-scoped 域的 DAL 切换）
-owner:     待 Supervisor 裁定
+status:    RESOLVED
+severity:  —
+owner:     —
 phase:     DB-12
 ```
+
+**裁定（见 D-42）**：迁移域的业务主体 = `profiles.id`（Supabase UUID）。
+**不放宽** DB-3 外键，**不**在 Postgres 侧建第二套身份命名空间。
+过渡规则：已切域用 `principal.authId`，未切的 SQLite 域可暂用 `principal.user.id`。
+
+**已落地**：rooms / 成员制 / presence 全部切到 Postgres 并以 Supabase UUID 为身份；
+房间创建权威从请求体 `hostId` 改为认证上下文；`x-host-id` 不再具备授权效力。
+下方原文保留为背景。
 
 **事实（live 只读实测）**：`app_*` 中**每一个** uuid 身份列都外键到 `profiles.id`
 （即 `auth.users.id`，Supabase UUID）。共 33 条此类外键，含：
