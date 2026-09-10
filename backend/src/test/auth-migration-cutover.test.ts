@@ -307,9 +307,17 @@ test('迁移后 · A 能真正读写业务层（不只是 /me）', async () => {
   assert.equal(get.status, 200);
   assert.equal(get.json.state.marker, 'after-migration');
 
-  // 数据必须挂在 canonical 业务 id 上，不是 Supabase UUID
-  const rows = db<{ user_id: string }>('SELECT user_id FROM growth_state');
-  assert.deepEqual(rows.map(r => r.user_id), [USER_A.id], '业务数据必须归属 canonical id');
+  // ★ 这条断言在 DB-13B 里按 D-42 更新了，不是回归。
+  //   growth 已切到 Postgres `app_christian_profile`，身份列外键到 profiles.id，
+  //   因此主体是 **Supabase UUID**；canonical SQLite id 写不进那一列。
+  const written = sb.tableRows('app_christian_profile');
+  assert.deepEqual(
+    written.map(r => r.user_id), [row.supabase_user_id],
+    '已切域的业务数据必须归属 Supabase UUID（D-42）',
+  );
+  // 更强的一条：SQLite 侧必须保持为空 —— 只有它能区分「切换成功」与「双写」。
+  const legacyRows = db<{ user_id: string }>('SELECT user_id FROM growth_state');
+  assert.deepEqual(legacyRows, [], 'growth 已切换，SQLite growth_state 不得再有写入');
 });
 
 test('迁移后 · 被排除的测试账号无法进入业务层', async () => {

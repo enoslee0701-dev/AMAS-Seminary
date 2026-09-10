@@ -2,74 +2,67 @@ import type { Express, Request, Response } from 'express';
 import crypto from 'node:crypto';
 import { requireAdmin } from '../middleware/auth.js';
 import { broadcastToAllUsers } from './push.js';
-import { db } from '../db.js';
+import { activeUserUuid } from '../middleware/roomAuth.js';
+import { stagingConfigured } from '../staging/pgData.js';
+import {
+  listAnnouncements, getAnnouncement, insertAnnouncement, deleteAnnouncement,
+  type AnnouncementType, type AnnouncementRecord,
+} from '../staging/announcementStore.js';
 
 /**
  * School-wide announcements.
  *
  * Reads are public (anyone can see school news); writes require admin.
- * Persisted to SQLite (`announcements` table) — the wire shape is
- * unchanged so the frontend doesn't notice the swap.
+ *
+ * ── DB-13B 切换 ─────────────────────────────────────────────────────
+ * SQLite `announcements` → Postgres `public.app_announcements`。
+ * `type` 枚举两侧取值完全一致（important / normal），无需映射。
+ *
+ * ── 一处对外契约的诚实变化 ───────────────────────────────────────────
+ * `publishedBy` 恒为 `'system'`。SQLite 时期它是**发布者姓名**；
+ * Postgres 的 `published_by` 是 uuid（外键 profiles.id）。字段保留
+ * （前端把它声明为必填），但不再声称某条公告是某个人发的 ——
+ * 回传裸 UUID 当展示名比原来更糟，而列表接口逐条反查显示名是 N+1。
+ * `'system'` 本来就在既有取值域里（service principal 发的公告一直是这个值）。
  */
 
-type AnnouncementType = 'important' | 'normal';
-
-interface AnnouncementRow {
-  id: string;
-  title: string;
-  content: string;
-  type: AnnouncementType;
-  published_at: number;
-  published_by: string | null;
-}
-
-const stmtInsertAnnouncement = db.prepare<[
-  string, string, string, AnnouncementType, number, string,
-]>(`
-  INSERT INTO announcements
-    (id, title, content, type, published_at, published_by)
-  VALUES (?, ?, ?, ?, ?, ?)
-`);
-
-const stmtListAnnouncements = db.prepare<[], AnnouncementRow>(
-  'SELECT * FROM announcements ORDER BY published_at DESC',
-);
-
-const stmtGetAnnouncement = db.prepare<[string], AnnouncementRow>(
-  'SELECT * FROM announcements WHERE id = ? LIMIT 1',
-);
-
-const stmtDeleteAnnouncement = db.prepare<[string]>(
-  'DELETE FROM announcements WHERE id = ?',
-);
-
-const stmtClearAnnouncements = db.prepare('DELETE FROM announcements');
-
-function rowToWire(r: AnnouncementRow): unknown {
+function toWire(r: AnnouncementRecord): unknown {
   return {
     id: r.id,
     title: r.title,
     content: r.content,
     type: r.type,
-    publishedAt: r.published_at,
-    publishedBy: r.published_by ?? 'system',
+    publishedAt: r.publishedAt,
+    publishedBy: 'system',
   };
+}
+
+/** staging 未配置时明确报错，绝不静默回落到 SQLite。 */
+function guardConfigured(res: Response): boolean {
+  if (stagingConfigured()) return true;
+  res.status(503).json({ error: 'Staging database not configured.' });
+  return false;
 }
 
 export function registerAnnouncementRoutes(app: Express): void {
   /**
    * GET /api/announcements — public. Newest-first.
    */
-  app.get('/api/announcements', (_req: Request, res: Response) => {
-    const list = stmtListAnnouncements.all().map(rowToWire);
-    res.status(200).json(list);
+  app.get('/api/announcements', async (_req: Request, res: Response) => {
+    if (!guardConfigured(res)) return;
+    try {
+      res.status(200).json((await listAnnouncements()).map(toWire));
+    } catch (e) {
+      console.error('[announcements] list failed:', (e as Error).message);
+      res.status(502).json({ error: 'Failed to read announcements.' });
+    }
   });
 
   /**
    * POST /api/announcements — admin only.
    * Body: { title, content, type? }   (type defaults to 'normal')
    */
-  app.post('/api/announcements', requireAdmin, (req: Request, res: Response) => {
+  app.post('/api/announcements', requireAdmin, async (req: Request, res: Response) => {
     const { title, content, type } = (req.body ?? {}) as {
       title?: unknown; content?: unknown; type?: unknown;
     };
@@ -79,55 +72,50 @@ export function registerAnnouncementRoutes(app: Express): void {
     if (typeof content !== 'string' || !content.trim()) {
       return res.status(400).json({ error: 'content is required.' });
     }
+    if (!guardConfigured(res)) return;
     const t: AnnouncementType = type === 'important' ? 'important' : 'normal';
-    const principal = req.principal;
-    const publishedBy = principal && principal.kind === 'user'
-      ? principal.user.name
-      : 'system';
-    const id = crypto.randomUUID();
-    const publishedAt = Date.now();
     const titleTrim = title.trim().slice(0, 200);
     const contentTrim = content.slice(0, 8000);
-    stmtInsertAnnouncement.run(
-      id, titleTrim, contentTrim, t, publishedAt, publishedBy,
-    );
-    const wire = {
-      id,
-      title: titleTrim,
-      content: contentTrim,
-      type: t,
-      publishedAt,
-      publishedBy,
-    };
-    res.status(200).json(wire);
+
+    let rec: AnnouncementRecord;
+    try {
+      rec = await insertAnnouncement({
+        id: crypto.randomUUID(),
+        title: titleTrim,
+        content: contentTrim,
+        type: t,
+        // service principal（APP_SECRET）没有人类身份 → null。
+        publishedByUuid: activeUserUuid(req),
+      });
+    } catch (e) {
+      console.error('[announcements] create failed:', (e as Error).message);
+      return res.status(502).json({ error: 'Failed to create announcement.' });
+    }
+    res.status(200).json(toWire(rec));
 
     // Fan-out push to every iOS device. Fire-and-forget so a push failure
     // never breaks announcement creation. No-op when APNs isn't configured.
-    try {
-      void broadcastToAllUsers({
-        title: '新公告',
-        body: titleTrim,
-        data: { announcementId: id },
-      }).catch(() => { /* swallow — push failure must not surface to clients */ });
-    } catch {
-      /* swallow — push failure must not surface to clients */
-    }
+    void broadcastToAllUsers({
+      title: '新公告',
+      body: titleTrim,
+      data: { announcementId: rec.id },
+    }).catch(() => { /* swallow — push failure must not surface to clients */ });
   });
 
   /**
    * DELETE /api/announcements/:id — admin only.
    */
-  app.delete('/api/announcements/:id', requireAdmin, (req: Request, res: Response) => {
-    const id = req.params.id;
-    if (!stmtGetAnnouncement.get(id)) {
-      return res.status(404).json({ error: 'Announcement not found.' });
+  app.delete('/api/announcements/:id', requireAdmin, async (req: Request, res: Response) => {
+    if (!guardConfigured(res)) return;
+    try {
+      if (!(await getAnnouncement(req.params.id))) {
+        return res.status(404).json({ error: 'Announcement not found.' });
+      }
+      await deleteAnnouncement(req.params.id);
+      res.status(200).json({ ok: true });
+    } catch (e) {
+      console.error('[announcements] delete failed:', (e as Error).message);
+      res.status(502).json({ error: 'Failed to delete announcement.' });
     }
-    stmtDeleteAnnouncement.run(id);
-    res.status(200).json({ ok: true });
   });
-}
-
-/** Test-only: wipe the announcements table. */
-export function _resetAnnouncements(): void {
-  stmtClearAnnouncements.run();
 }

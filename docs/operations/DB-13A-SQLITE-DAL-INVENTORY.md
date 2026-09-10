@@ -1,5 +1,20 @@
 # DB-13A · 剩余 SQLite DAL 清点与下一批切换计划
 
+> ## ✅ 本文提出的 DB-13B 切换包已于 2026-09-10 实施完成
+>
+> COMMUNITY + LEARNING + PUSH + PRAYER（整域）已切到 Postgres。
+> 实施后复测：**import `db.ts` 的运行时消费者 15 → 5，被写入的 SQLite 表 18 → 2**
+> （只剩 `users` 与 `room_realtime_events`，正是本文归入 C/D 两类的那两张）。
+>
+> 一处与本文预期不同、需要产品决定的结果：**课程目录的 admin 写路径已停用**
+> （501），因为 `course_catalog` 的 `availability` / `sort_order` 是 NOT NULL
+> 而 App 侧没有对应输入 —— 见 **D-43**。本文下方「courses 表本身不切」那段
+> 提前点到了这个风险，实施时确认它确实是硬缺口。
+>
+> 本文其余内容保留为**当时的清点记录**，不再作为当前状态引用；
+> 当前状态见 `docs/project-memory/CURRENT_STATE.md`。
+
+
 > **基线**：App `9e374f5`（DB-12 已 CLOSED）。
 > 本文的每个数字都是**当轮实测**：SQLite 侧读 canonical `backend/data/amas.sqlite`（只读），
 > Postgres 侧对 live `amas-staging` 做只读 `GET ... Prefer: count=exact`。不引用旧报告。

@@ -218,6 +218,60 @@ export async function requireAuth(
 }
 
 /**
+ * 「有凭据就解析，没有也放行」—— 用于**公开**但需要知道「你是谁」的读接口。
+ *
+ * ── 为什么需要它（DB-13B 期间发现的既有缺陷）───────────────────────────
+ * `GET /api/posts` 是公开的（未登录也能看动态墙），但它的实现一直在读
+ * `req.principal` 来算 `likedByMe`。而项目里**没有任何**中间件会在公开路由上
+ * 填充 `req.principal` —— 所以 `likedByMe` 对任何调用者都恒为 `false`，
+ * 哪怕带着有效 token。这不是 DB-13B 引入的，是切换时被测试撞出来的旧缺陷。
+ *
+ * 与 `requireAuth` 的区别只有一条：**任何失败都不写响应，直接 next()**。
+ *   没有 Authorization 头        → 匿名放行
+ *   token 无效 / 过期            → 匿名放行（不是 401）
+ *   token 有效但无 AMAS 身份     → 匿名放行（不是 403）
+ * 因为这是公开接口，「认不出你」不该变成拒绝服务；认出来只是为了给
+ * 个性化字段（likedByMe）一个正确的值。
+ *
+ * ★ 绝不能用它替代 `requireAuth`：它不做任何拒绝，用在写接口上等于没有鉴权。
+ */
+export async function attachPrincipalIfPresent(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  const header = req.header('authorization') ?? '';
+  const match = /^Bearer\s+(.+)$/i.exec(header);
+  const presented = match ? match[1].trim() : '';
+  if (!presented) { next(); return; }
+
+  if (config.appSecret && constantTimeStringEqual(presented, config.appSecret)) {
+    req.principal = { kind: 'service' };
+    next();
+    return;
+  }
+
+  if (isSupabaseConfigured() && looksLikeSupabaseToken(presented)) {
+    try {
+      const payload = await verifySupabaseAccess(presented);
+      const resolved = resolveCanonicalUserFromSupabase(payload.sub);
+      if (resolved.ok && resolved.user) {
+        req.principal = {
+          kind: 'user',
+          authSource: 'supabase',
+          authId: payload.sub,
+          user: resolved.user,
+          payload: payload as unknown as AccessPayload,
+        };
+      }
+    } catch {
+      // 公开接口上认证失败不是错误 —— 当作匿名继续。
+    }
+  }
+  next();
+}
+
+/**
  * Wraps `requireAuth` and additionally enforces that the principal is a
  * logged-in user with `role === 'admin'`. Service-token (APP_SECRET)
  * callers are also accepted as machine-admin so internal tooling can

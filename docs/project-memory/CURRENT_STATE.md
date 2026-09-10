@@ -23,7 +23,8 @@
 > DB-9  ✅  CLOSED              DB-10 ✅  NO-OP / CLOSED
 > DB-11 ✅  CLOSED
 > DB-12 ✅ **CLOSED**（Supervisor 已正式验收，canonical head `9e374f5`）
-> DB-13A 🔵 **ACTIVE** —— canonical SQLite 写入守卫 + 剩余 DAL 清点
+> DB-13A ✅ **CLOSED**（已验收）—— canonical SQLite 写入守卫 + 剩余 DAL 清点
+> DB-13B 🔵 **完成待验收** —— COMMUNITY + LEARNING + PUSH + PRAYER 整域切到 Postgres
 > ```
 >
 > ---
@@ -33,9 +34,38 @@
 > ```
 > STAGING DATABASE READY
 > DB-3 ~ DB-12  = CLOSED（DB-12 已正式验收）
-> DB-13A CANONICAL SQLITE GUARD + REMAINING DAL AUDIT = ACTIVE
-> 验收世系      0af8cc6 → de34fe5 → 88a908b → b67eabc → 9e374f5
+> DB-13A CANONICAL SQLITE GUARD + REMAINING DAL AUDIT = CLOSED（已验收）
+> DB-13B REMAINING APP DAL CUTOVER = 完成，待 Supervisor 验收
+> 验收世系      0af8cc6 → de34fe5 → 88a908b → b67eabc → 9e374f5 → b7c619a → 156c55a
 > ```
+>
+> ### DB-13B 切换结果（当轮实测）
+>
+> ```
+> import db.ts 的运行时消费者   15 → **5**
+> 被写入的 SQLite 表           18 → **2**（users · room_realtime_events）
+> 已切到 Postgres              COMMUNITY（posts/likes/comments/friends/
+>                             recordings/images/announcements）
+>                             LEARNING（course_catalog 只读 · course_progress ·
+>                             christian_profile · practice_training_state ·
+>                             library_books/favorites）
+>                             PUSH（push_tokens）
+>                             PRAYER 整域（shares/intercessions/reports/topics ·
+>                             sessions/items/events · room_reading_state）
+> 身份                        全部 Supabase UUID（D-42）
+> 刻意保留 SQLite              users · legacy_user_map · refresh_jti ·
+>                             room_realtime_events ·
+>                             rooms/room_members/room_presence（§12 回滚参考）
+> ```
+>
+> **posts / friends / recordings / images 第一次获得持久化** —— 它们此前存在
+> 进程内 `Map`，重启即全丢。回归里有一条专门重启后端再读回来的断言。
+>
+> **课程目录 admin 写路径已停用**（501 `CATALOG_MUTATION_UNSUPPORTED`），
+> 理由与待决产品问题见 **D-43**。目录读取与学习进度正常切换。
+>
+> 那 15 行按 STAGING-1A11 永久 SKIP 的祷告历史数据**没有被复制**，
+> 且切换代码里不存在任何搬运路径。
 >
 > ### DB-13A 已落地：canonical SQLite 写入守卫
 >
@@ -136,8 +166,8 @@
 > public staging 暴露 · 往空的 app_* 表塞假数据 · 复活 SQLite users/密码哈希 ·
 > 把 legacy user id 当作活动身份。
 >
-> **当前活动任务：DB-13A**（守卫已实现 + 清点已完成）。剩余业务域 DAL 本轮只 AUDIT / PLAN，
-> 未开始大规模切换 —— 等 Supervisor 批准 DB-13B 切换包。
+> **当前活动任务：DB-13B 已完成，等 Supervisor 验收。** 未开工任何后续阶段
+> （STAGING-1B persona 验收 · 0027 · DB-4 · public staging · production）。
 >
 > **验证环境**：本地 PostgreSQL **17.6**（与 Supabase 目标版本一致）+ 18.6 对照。
 > **仍未验证**：真实 Supabase（Auth / PostgREST / RLS 运行时 / SECURITY DEFINER 上下文 /

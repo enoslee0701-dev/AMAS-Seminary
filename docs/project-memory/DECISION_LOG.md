@@ -5,6 +5,50 @@
 
 ---
 
+## D-43｜课程目录的写权威留在 `course_catalog`，App 侧 admin 写路径停用
+
+```
+日期     2026-09-10
+状态     APPROVED（DB-13B §B 授权的「停用并报告」）
+阶段     DB-13B
+```
+
+**决策**：课程目录（`public.course_catalog`，DB-6 迁入 67 行）是**唯一权威**且
+对 App **只读**。`POST` / `PATCH` / `DELETE /api/courses` 三个 admin 写路径
+返回 `501` + `CATALOG_MUTATION_UNSUPPORTED`。
+
+**为什么不能机械翻译过去（逐项具体缺口）**：
+
+```
+availability   NOT NULL 枚举（available / in_development）
+               App 侧没有任何对应输入 —— 填什么都是凭空替产品做决定
+sort_order     NOT NULL 整数，目录编排意图；App 侧同样没有输入
+thumbnail      App 接受任意 URL（≤4000 字符），而 thumbnail_path 语义是存储路径
+created_by     SQLite 存的是创建者姓名；created_by_provenance 是数据溯源标签，语义不同
+DELETE         会删掉 DB-6 迁入的 canonical 目录行，影响远超「删一门 App 自建课程」
+```
+
+**为什么不能把写路径留在 SQLite**：目录读取已切到 `course_catalog`。若写仍落
+SQLite，管理员的改动**永远不会出现在读取结果里** —— 那是比报错更糟的静默失败，
+也正是 DB-13B 禁止的双存储。
+
+**读路径的两处映射是实测得出的一一对应，不是猜测**：把 live 67 行按 `title_zh`
+与 SQLite `courses.title` 对齐后逐条统计 ——
+`category`：nt 27↔新约书卷 · ot 2↔旧约书卷 · bible_basics 3↔圣经基础与研经 ·
+theology 11↔神学与思想 · practical 18↔实践神学与牧养 · history 3↔历史与文化 ·
+language 3↔语言与工具（合计 67/67）；
+`level`：bth 8↔B.Th · dmin 21↔D.Min · mdiv 11↔M.Div · null 27↔''。
+对外保留中文标签，因为前端把它直接当 `TheologyCategory` 用，
+换成英文 slug 会让分类筛选全部失效。
+
+**待产品决定（不由实现者选）**：目录内容今后由谁维护 —— Website 侧的目录管理，
+还是给 App 补上 availability / sort_order 的录入界面。在有结论前维持 501。
+
+**证据**：`backend/src/staging/courseStore.ts` · `backend/src/routes/courses.ts` ·
+`backend/src/test/db13b-dal-cutover.test.ts`
+
+---
+
 ## D-42｜迁移域的业务主体身份 = `profiles.id`（Supabase UUID）
 
 ```

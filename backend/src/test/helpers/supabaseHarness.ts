@@ -24,6 +24,14 @@ export interface FakeSupabase {
   origin: string;
   /** 签一张真实可验证的 Supabase 风格 access token */
   mintToken(sub: string, extra?: Record<string, unknown>): Promise<string>;
+  /**
+   * 签一张**故意不合格**的 token，用于否定式断言：
+   *   issuer   换成别的签发者（验证 iss 校验没被绕过）
+   *   expired  已过期
+   *   foreignKey  用另一把私钥签（验证 JWKS 验签真的在做）
+   * 这些能力集中在 harness 里，测试就不必各自持有第二把密钥。
+   */
+  mintBadToken(sub: string, kind: 'issuer' | 'expired' | 'foreignKey'): Promise<string>;
   /** 设置某个 Supabase UUID 的活动角色（模拟 user_roles 表） */
   setRoles(supabaseUserId: string, roles: string[]): void;
   /**
@@ -62,6 +70,114 @@ export function freePort(): Promise<number> {
  *   GET /auth/v1/.well-known/jwks.json   —— 供 jose 拉公钥验签
  *   GET /rest/v1/user_roles?user_id=eq.X —— 供 requireAdmin 现查角色
  */
+/**
+ * ── PostgREST 过滤器求值（仅测试用）─────────────────────────────────
+ *
+ * 这几个函数复刻 PostgREST 的查询语义，覆盖 `staging/*.ts` 实际发出的形式。
+ * 刻意**只**实现用到的算子：多实现一个，就多一条「测试能过、线上不能过」的
+ * 缝隙。新增算子时请连同真实调用点一起加。
+ */
+
+/** `in.("a","b")` → ['a','b']。PostgREST 用双引号包裹每个值。 */
+function parseInList(expr: string): string[] {
+  const inner = expr.slice(expr.indexOf('(') + 1, expr.lastIndexOf(')'));
+  if (!inner.trim()) return [];
+  return inner.split(',').map(v => {
+    const t = decodeURIComponent(v.trim());
+    return t.startsWith('"') && t.endsWith('"') ? t.slice(1, -1) : t;
+  });
+}
+
+/**
+ * 值比较。两边都能解析成有限数字就按数字比，否则按字符串比。
+ *
+ * 时间戳是 ISO 8601 字符串，字典序与时间序一致，因此字符串比较即正确 ——
+ * 这也是 `ended_at=lt.<iso>` 这类过滤能工作的原因。
+ */
+function cmpValues(a: unknown, b: unknown): number {
+  if (a === b) return 0;
+  if (a === null || a === undefined) return -1;
+  if (b === null || b === undefined) return 1;
+  const na = Number(a); const nb = Number(b);
+  if (Number.isFinite(na) && Number.isFinite(nb) && typeof a !== 'boolean' && typeof b !== 'boolean') {
+    return na < nb ? -1 : na > nb ? 1 : 0;
+  }
+  const sa = String(a); const sb = String(b);
+  return sa < sb ? -1 : sa > sb ? 1 : 0;
+}
+
+/** 单个 `col=<op>.<value>` 条件。 */
+function matchOne(row: Record<string, unknown>, col: string, expr: string): boolean {
+  const val = row[col];
+  if (expr === 'is.null') return val === null || val === undefined;
+  if (expr === 'not.is.null') return val !== null && val !== undefined;
+  if (expr.startsWith('in.')) {
+    return parseInList(expr).includes(String(val ?? ''));
+  }
+  const dot = expr.indexOf('.');
+  if (dot < 0) return false;
+  const op = expr.slice(0, dot);
+  const raw = decodeURIComponent(expr.slice(dot + 1));
+  switch (op) {
+    case 'eq': return String(val ?? '') === raw;
+    case 'neq': return String(val ?? '') !== raw;
+    case 'gt': return cmpValues(val, raw) > 0;
+    case 'gte': return cmpValues(val, raw) >= 0;
+    case 'lt': return cmpValues(val, raw) < 0;
+    case 'lte': return cmpValues(val, raw) <= 0;
+    default: return false;
+  }
+}
+
+/** 顶层按逗号切分，尊重括号嵌套（`and(a.eq.1,b.eq.2),c.eq.3` → 两项）。 */
+function splitTerms(inner: string): string[] {
+  const out: string[] = [];
+  let depth = 0; let cur = '';
+  for (const ch of inner) {
+    if (ch === '(') depth++;
+    if (ch === ')') depth--;
+    if (ch === ',' && depth === 0) { out.push(cur); cur = ''; continue; }
+    cur += ch;
+  }
+  if (cur.trim()) out.push(cur);
+  return out;
+}
+
+/** `or=(...)` / `and=(...)` 的一个项：要么是嵌套组，要么是 `col.op.value`。 */
+function matchTerm(row: Record<string, unknown>, term: string): boolean {
+  const t = term.trim();
+  const grp = /^(and|or)\((.*)\)$/s.exec(t);
+  if (grp) {
+    const terms = splitTerms(grp[2]!);
+    return grp[1] === 'and'
+      ? terms.every(x => matchTerm(row, x))
+      : terms.some(x => matchTerm(row, x));
+  }
+  // `col.op.value` —— 第一个点之前是列名，其余交给 matchOne。
+  const dot = t.indexOf('.');
+  if (dot < 0) return false;
+  return matchOne(row, t.slice(0, dot), t.slice(dot + 1));
+}
+
+/** 整个查询串对一行是否成立。 */
+function matchesQuery(row: Record<string, unknown>, params: URLSearchParams): boolean {
+  for (const [k, v] of params) {
+    if (['select', 'order', 'limit', 'offset'].includes(k)) continue;
+    if (k === 'or') {
+      const inner = v.startsWith('(') ? v.slice(1, -1) : v;
+      if (!splitTerms(inner).some(t => matchTerm(row, t))) return false;
+      continue;
+    }
+    if (k === 'and') {
+      const inner = v.startsWith('(') ? v.slice(1, -1) : v;
+      if (!splitTerms(inner).every(t => matchTerm(row, t))) return false;
+      continue;
+    }
+    if (!matchOne(row, k, v)) return false;
+  }
+  return true;
+}
+
 export async function startFakeSupabase(): Promise<FakeSupabase> {
   const kp = await generateKeyPair('ES256', { extractable: true });
   const privateKey: PrivateKey = kp.privateKey;
@@ -128,40 +244,56 @@ export async function startFakeSupabase(): Promise<FakeSupabase> {
     }
 
     if (u.pathname === '/rest/v1/user_roles') {
-      // 复刻 PostgREST 的 user_id=eq.<id> 过滤
+      // 复刻 PostgREST 的 user_id 过滤。两种形式都要支持：
+      //   eq.<id>        —— 运行时授权现查（auth/supabase.ts）
+      //   in.("a","b")   —— DB-13B 的批量显示身份解析（staging/profileStore.ts）
       const filter = u.searchParams.get('user_id') ?? '';
-      const id = filter.startsWith('eq.') ? decodeURIComponent(filter.slice(3)) : '';
-      const roles = (rolesByUserId[id] ?? []).map(role => ({ role, expires_at: null }));
+      let ids: string[] = [];
+      if (filter.startsWith('eq.')) {
+        ids = [decodeURIComponent(filter.slice(3))];
+      } else if (filter.startsWith('in.')) {
+        ids = parseInList(filter);
+      }
+      const roles = ids.flatMap(id =>
+        (rolesByUserId[id] ?? []).map(role => ({
+          user_id: id, role, expires_at: null, revoked_at: null,
+        })));
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify(roles));
       return;
     }
 
-    // ── DB-12：业务表的通用 PostgREST 模拟 ─────────────────────────────
-    // 只支持后端真正用到的子集：eq. 过滤、order、limit、insert、delete。
-    // 刻意不做成完整 PostgREST——多出来的能力只会让测试通过而线上失败。
-    const m = /^\/rest\/v1\/(app_[a-z_]+)$/.exec(u.pathname);
+    // ── DB-12/DB-13B：业务表的通用 PostgREST 模拟 ────────────────────
+    // 只支持后端**真正用到**的子集。刻意不做成完整 PostgREST——
+    // 多出来的能力只会让测试通过而线上失败。
+    //
+    // 覆盖范围（每一项都对应 staging/*.ts 里实际发出的查询）：
+    //   过滤   eq. neq. gt. gte. lt. lte. is.null not.is.null in.(...)
+    //          以及 or=(...) / and(...) 嵌套（friendStore 的无向关系查询要用）
+    //   排序   order=col.dir[,col2.dir]（sessionStore 的 created_at,id 双键）
+    //   分页   limit
+    //   写入   POST（insert / upsert）· PATCH（条件更新）· DELETE（必须带过滤）
+    const m = /^\/rest\/v1\/(app_[a-z_]+|profiles|course_catalog)$/.exec(u.pathname);
     if (m) {
-      const table = m[1];
+      const table = m[1]!;
       const rows = tables[table] ?? (tables[table] = []);
-      const matches = (row: Record<string, unknown>): boolean => {
-        for (const [k, v] of u.searchParams) {
-          if (k === 'select' || k === 'order' || k === 'limit') continue;
-          if (!v.startsWith('eq.')) continue;
-          if (String(row[k] ?? '') !== decodeURIComponent(v.slice(3))) return false;
-        }
-        return true;
-      };
+      const RESERVED = ['select', 'order', 'limit', 'offset'];
 
       if (req.method === 'GET') {
-        let out = rows.filter(matches);
+        let out = rows.filter(r => matchesQuery(r, u.searchParams));
         const order = u.searchParams.get('order');
         if (order) {
-          const [col, dir] = order.split('.');
+          // 多键排序：`created_at.asc,id.asc`
+          const keys = order.split(',').map(seg => {
+            const [col, dir] = seg.split('.');
+            return { col: col!, desc: dir === 'desc' };
+          });
           out = [...out].sort((a, b) => {
-            const x = a[col] as never, y = b[col] as never;
-            const c = x < y ? -1 : x > y ? 1 : 0;
-            return dir === 'desc' ? -c : c;
+            for (const k of keys) {
+              const c = cmpValues(a[k.col], b[k.col]);
+              if (c !== 0) return k.desc ? -c : c;
+            }
+            return 0;
           });
         }
         const limit = Number(u.searchParams.get('limit') ?? '0');
@@ -171,34 +303,63 @@ export async function startFakeSupabase(): Promise<FakeSupabase> {
         return;
       }
 
-      if (req.method === 'POST' || req.method === 'DELETE') {
+      if (req.method === 'POST' || req.method === 'PATCH' || req.method === 'DELETE') {
         let body = '';
         req.on('data', c => { body += c; });
         req.on('end', () => {
+          // 与真实实现一致：DELETE / PATCH 必须带过滤条件，拒绝全表操作。
+          const hasFilter = [...u.searchParams].some(([k]) => !RESERVED.includes(k));
+
           if (req.method === 'DELETE') {
-            // 与真实实现一致：必须带过滤条件，拒绝清空整表。
-            const filtered = [...u.searchParams].some(([k, v]) =>
-              !['select', 'order', 'limit'].includes(k) && v.startsWith('eq.'));
-            if (!filtered) { res.writeHead(400).end('{"message":"delete requires filter"}'); return; }
-            tables[table] = rows.filter(r => !matches(r));
+            if (!hasFilter) { res.writeHead(400).end('{"message":"delete requires filter"}'); return; }
+            tables[table] = rows.filter(r => !matchesQuery(r, u.searchParams));
             res.writeHead(204).end();
             return;
           }
-          let incoming: Record<string, unknown>[];
-          try {
-            const parsed: unknown = JSON.parse(body || '{}');
-            incoming = Array.isArray(parsed) ? parsed as Record<string, unknown>[]
-                                             : [parsed as Record<string, unknown>];
-          } catch { res.writeHead(400).end('{"message":"bad json"}'); return; }
+
+          let parsed: unknown;
+          try { parsed = JSON.parse(body || '{}'); } catch {
+            res.writeHead(400).end('{"message":"bad json"}'); return;
+          }
           const prefer = String(req.headers['prefer'] ?? '');
+
+          if (req.method === 'PATCH') {
+            if (!hasFilter) { res.writeHead(400).end('{"message":"update requires filter"}'); return; }
+            const patch = parsed as Record<string, unknown>;
+            const touched: Record<string, unknown>[] = [];
+            for (let i = 0; i < rows.length; i++) {
+              if (!matchesQuery(rows[i]!, u.searchParams)) continue;
+              rows[i] = { ...rows[i], ...patch };
+              touched.push(rows[i]!);
+            }
+            // 返回**实际被更新的行**。空数组即「影响 0 行」——
+            // 乐观并发的冲突判定就靠它（见 pgData.updateRows）。
+            res.writeHead(200, { 'content-type': 'application/json' });
+            res.end(JSON.stringify(touched));
+            return;
+          }
+
+          const incoming = Array.isArray(parsed)
+            ? parsed as Record<string, unknown>[]
+            : [parsed as Record<string, unknown>];
           // 冲突键必须按表而定：app_rooms / app_course_files 等以 `id` 为主键，
           // 而 app_room_members / app_room_presence 的主键是 (room_id, user_id)、
           // 根本没有 `id` 列。若一律拿 `id` 比对，两边都是 undefined 会恒等，
           // 于是每次 upsert 都覆盖第一行 —— presence 人数会永远停在 1。
-          const keyCols = (r: Record<string, unknown>): string[] =>
-            'id' in r ? ['id']
-              : ['room_id', 'user_id'].every(k => k in r) ? ['room_id', 'user_id']
-                : Object.keys(r);
+          const keyCols = (r: Record<string, unknown>): string[] => {
+            if ('id' in r) return ['id'];
+            for (const pair of [
+              ['room_id', 'user_id'], ['post_id', 'user_id'],
+              ['user_id', 'book_id'], ['user_id', 'course_code'],
+              ['share_id', 'user_id'], ['user_id', 'token'],
+              ['user_a', 'user_b'],
+            ]) {
+              if (pair.every(k => k in r)) return pair;
+            }
+            // 单列主键（room_id 的 reading state、user_id 的状态表）
+            for (const k of ['room_id', 'user_id', 'code']) if (k in r) return [k];
+            return Object.keys(r);
+          };
           const sameKey = (a: Record<string, unknown>, b: Record<string, unknown>): boolean =>
             keyCols(b).every(k => a[k] === b[k]);
           for (const row of incoming) {
@@ -230,6 +391,25 @@ export async function startFakeSupabase(): Promise<FakeSupabase> {
         .setSubject(sub)
         .setExpirationTime('30m')
         .sign(privateKey);
+    },
+    async mintBadToken(sub, kind) {
+      const base = () => new SignJWT({ email: `${sub}@example.test` })
+        .setProtectedHeader({ alg: 'ES256' })
+        .setAudience('authenticated')
+        .setSubject(sub);
+      if (kind === 'issuer') {
+        return base().setIssuedAt().setIssuer('https://evil.example/auth/v1')
+          .setExpirationTime('10m').sign(privateKey);
+      }
+      if (kind === 'expired') {
+        const past = Math.floor(Date.now() / 1000) - 3600;
+        return base().setIssuedAt(past).setIssuer(`${origin}/auth/v1`)
+          .setExpirationTime(past + 60).sign(privateKey);
+      }
+      // foreignKey：另一把 ES256 私钥，公钥**不在** JWKS 里
+      const other = await generateKeyPair('ES256', { extractable: true });
+      return base().setIssuedAt().setIssuer(`${origin}/auth/v1`)
+        .setExpirationTime('10m').sign(other.privateKey);
     },
     setRoles(supabaseUserId, roles) {
       rolesByUserId[supabaseUserId] = roles;
@@ -319,6 +499,30 @@ export async function provisionUser(
   //   直接把 'admin' 塞进 user_roles 不会被 isAdminRole 认可 —— 会静默 403。
   if (role === 'admin') sb.setRoles(supabaseUserId, [opts.supabaseRole ?? 'super_admin']);
   else if (opts.supabaseRole) sb.setRoles(supabaseUserId, [opts.supabaseRole]);
+
+  // DB-13B：同时播种 `profiles` 行。
+  //
+  // 切换后好友 / 带领者 / 阅读位置发布者的**显示身份**来自 `profiles`
+  // （见 staging/profileStore.ts），不再来自 SQLite `users` —— 因为业务主体
+  // 已经是 Supabase UUID，两者值域不同。不播种这一行，这些接口会把用户
+  // 当作「profile 已不存在」而过滤掉，测试会以一个很难定位的空列表失败。
+  //
+  // 用 push 而非替换：一个测试里会 provision 多个用户。
+  sb.seedTable('profiles', [
+    ...sb.tableRows('profiles').filter(r => r.id !== supabaseUserId),
+    {
+      id: supabaseUserId,
+      display_name: opts.name,
+      legal_name: null,
+      email: opts.email,
+      timezone: 'Asia/Hong_Kong',
+      locale: 'zh-HK',
+      avatar_path: avatar,
+      account_status: 'active',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+  ]);
 
   const accessToken = await sb.mintToken(supabaseUserId);
   return {

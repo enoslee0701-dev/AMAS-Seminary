@@ -15,6 +15,19 @@
  *
  * 第 3 条才是那个 release blocker 的真实复现路径，
  * 它必须经真实路由（含 requireRoomExists）而不是直接操作数据库。
+ *
+ * ── DB-13B 之后的诚实说明 ────────────────────────────────────────────
+ * PRAYER 整域已切到 Postgres，因此 SQLite 的 `prayer_sessions` /
+ * `room_reading_state` **运行时已完全没有写入** —— 当初那条
+ * `room_id → rooms` 外键在运行时**不再可达**。
+ *
+ * 本兼容迁移因此不再是「阻止线上报错」的补丁，而降级为 **schema 卫生**：
+ * 升级安装里那两条外键指向一张运行时不再被写的表，留着它只会让
+ * 未来任何回滚/取数动作踩到一个无法满足的约束。A / B 两组
+ * （旧库升级 / 新库 NO-OP）仍然是它的正当性依据，且全部照常通过。
+ *
+ * C 组的断言相应改为「落 Postgres 且 SQLite 为 0」—— 那既验证了升级路径，
+ * 也验证了 DB-13B 没有留下双写。
  */
 import { test, before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -486,9 +499,16 @@ describe('DB-12 兼容迁移 · Postgres 房间 + 遗留祷告/读经路径', ()
     const r = await request('POST', `/api/rooms/${roomId}/prayer-sessions`,
       { title: '兼容验证', items: [{ title: '为学院祷告' }, { title: '为同学祷告' }] },
       bearer(host));
-    assert.equal(r.status, 201, `开祷告会失败（升级路径未修好）：${r.text}`);
+    assert.equal(r.status, 201, `开祷告会失败：${r.text}`);
+
+    // ★ DB-13B 之后祷告会落在 Postgres，不再落 SQLite。
+    //   这条测试原本断言 SQLite `prayer_sessions` 有 1 行 —— 现在必须是 0，
+    //   而 Postgres 侧有 1 行。见本文件末尾关于「外键路径已不可达」的说明。
+    assert.equal(sb.tableRows('app_prayer_sessions')
+      .filter(x => x.room_id === roomId).length, 1, '祷告会应落在 Postgres');
     assert.equal(readonly(d =>
-      countOf(d, 'SELECT COUNT(*) n FROM prayer_sessions WHERE room_id=?', roomId)), 1);
+      countOf(d, 'SELECT COUNT(*) n FROM prayer_sessions WHERE room_id=?', roomId)), 0,
+    'prayer_sessions 已切换，SQLite 不得再有写入');
   });
 
   test('Postgres 内置读经室 → 写共享阅读位置：不再触发 SQLite 外键错误', async () => {
@@ -504,12 +524,17 @@ describe('DB-12 兼容迁移 · Postgres 房间 + 遗留祷告/读经路径', ()
 
     const r = await request('PUT', '/api/rooms/bible_reading/reading-position',
       { book: '创世记', chapter: 1, verse: 1 }, bearer(host));
-    assert.equal(r.status, 200, `写阅读位置失败（升级路径未修好）：${r.text}`);
-    const row = readonly(d => d.prepare(
-      "SELECT book, chapter FROM room_reading_state WHERE room_id='bible_reading'",
-    ).get()) as { book: string; chapter: number };
-    assert.equal(row.book, '创世记');
-    assert.equal(row.chapter, 1);
+    assert.equal(r.status, 200, `写阅读位置失败：${r.text}`);
+
+    // ★ 同上：DB-13B 之后阅读位置落 Postgres。
+    const pg = sb.tableRows('app_room_reading_state')
+      .find(x => x.room_id === 'bible_reading') as { book: string; chapter: number } | undefined;
+    assert.ok(pg, '阅读位置应落在 Postgres');
+    assert.equal(pg!.book, '创世记');
+    assert.equal(pg!.chapter, 1);
+    assert.equal(readonly(d =>
+      countOf(d, "SELECT COUNT(*) n FROM room_reading_state WHERE room_id='bible_reading'")), 0,
+    'room_reading_state 已切换，SQLite 不得再有写入');
   });
 
   test('切换域的 SQLite 写入仍为 0，没有回写影子房间', () => {

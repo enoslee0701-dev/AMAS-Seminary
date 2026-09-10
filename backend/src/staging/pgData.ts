@@ -96,6 +96,32 @@ export async function upsertRow<T>(table: string, row: Record<string, unknown>):
   return rows[0];
 }
 
+/**
+ * UPDATE（PATCH）。返回**实际被更新的行**。
+ *
+ * 返回空数组即「没有行匹配过滤条件」—— 乐观并发就靠这个：
+ * SQLite 时期用 `info.changes === 0` 判断 revision 不匹配，
+ * 这里用 `rows.length === 0`，语义逐字对应。
+ *
+ * `query` 必须带过滤条件，理由同 deleteRows：无条件 UPDATE 会打穿整张表。
+ */
+export async function updateRows<T>(
+  table: string, query: string, patch: Record<string, unknown>,
+): Promise<T[]> {
+  if (!query.trim()) throw new Error('updateRows 需要过滤条件，拒绝无条件更新');
+  const r = await call(`/${table}?${query}`, {
+    method: 'PATCH',
+    headers: headers({ Prefer: 'return=representation' }),
+    body: JSON.stringify(patch),
+  });
+  return (await r.json()) as T[];
+}
+
+/** 是否是唯一约束冲突（PostgREST 对 unique violation 返回 409）。 */
+export function isUniqueViolation(e: unknown): boolean {
+  return e instanceof StagingRequestError && e.status === 409;
+}
+
 /** DELETE。`query` 必须带过滤条件——不接受无条件删除。 */
 export async function deleteRows(table: string, query: string): Promise<void> {
   if (!query.trim()) throw new Error('deleteRows 需要过滤条件，拒绝无条件删除');

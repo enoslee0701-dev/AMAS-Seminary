@@ -49,9 +49,19 @@
 > ### ⬤ 当前阶段状态（写代码前必须先确认这一条）
 >
 > ```
-> DB-3 ~ DB-12  = CLOSED（DB-12 已正式验收，canonical head 9e374f5）
-> DB-13A        = ACTIVE —— canonical SQLite 写入守卫 + 剩余 DAL 清点
+> DB-3 ~ DB-12  = CLOSED    DB-13A = CLOSED（已验收）
+> DB-13B        = 完成，等 Supervisor 验收
+>                 COMMUNITY + LEARNING + PUSH + PRAYER 整域已切到 Postgres
 > ```
+>
+> **DB-13B 起的硬规则**：这四个域的运行时数据在 **Postgres**，身份是
+> **Supabase UUID**（D-42）。SQLite 里对应的表**运行时写入必须为 0** ——
+> 看到有人往 `posts` / `prayer_shares` / `push_tokens` 之类写 SQLite，
+> 那是双写，不是兼容。仍留在 SQLite 的只有：`users` · `legacy_user_map` ·
+> `refresh_jti` · `room_realtime_events` · `rooms`/`room_members`/`room_presence`。
+>
+> 课程目录（`course_catalog`）对 App **只读**；admin 写路径返回 501，
+> 理由见 **D-43**。不要「顺手把它接回来」。
 >
 > **DB-13A 起的硬规则**：任何后端进程 / 测试 / 脚本都必须显式给出 `DB_PATH`。
 > 测试上下文缺 `DB_PATH` 会**拒绝启动**；对 canonical 缺省库改 schema

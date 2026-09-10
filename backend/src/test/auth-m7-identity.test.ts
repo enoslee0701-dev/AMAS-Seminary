@@ -27,9 +27,7 @@ import crypto from 'node:crypto';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
-import { SignJWT, exportJWK, generateKeyPair } from 'jose';
-
-type PrivateKey = Awaited<ReturnType<typeof generateKeyPair>>['privateKey'];
+import { startFakeSupabase, type FakeSupabase } from './helpers/supabaseHarness.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BACKEND_ROOT = path.resolve(__dirname, '../..');
@@ -51,11 +49,15 @@ const REAL_AVATAR = '/real/avatar.png';
 const FAKE_NAME = 'Fake Admin Name';
 const FAKE_AVATAR = 'https://attacker.example/evil.png';
 
-let privateKey: PrivateKey;
-let fakeSupabase: http.Server;
-let supabaseOrigin = '';
-/** 本轮 /rest/v1/user_roles 要返回的角色，按 user_id 索引。 */
-let rolesByUserId: Record<string, string[]> = {};
+/**
+ * ★ 用**唯一那套** fake Supabase（helpers/supabaseHarness.ts）。
+ *
+ * 本文件此前自带一个内联的 http.createServer 假 Supabase —— 那是项目明令
+ * 禁止的第二套 harness。它只实现了 JWKS + user_roles，因此 DB-13B 把
+ * growth / posts 切到 Postgres 之后，这里的业务探针一律 404。
+ * 修法是并入共享 harness，而不是给内联那套补 app_* 端点。
+ */
+let sb: FakeSupabase;
 let serverProcess: ChildProcess | null = null;
 let baseUrl = '';
 
@@ -106,21 +108,18 @@ async function request(
   });
 }
 
-/** 签一张真实可验证的 Supabase 风格 access token。 */
+/** 签一张真实可验证的 Supabase 风格 access token（走共享 harness 的签名器）。 */
 async function mintToken(sub: string, extra: Record<string, unknown> = {}): Promise<string> {
-  return new SignJWT({
-    email: `${sub}@example.test`,
+  return sb.mintToken(sub, {
     user_metadata: { name: FAKE_NAME, avatar_url: FAKE_AVATAR },
     app_metadata: { role: 'admin' },     // token 自称 admin —— 必须无效
     ...extra,
-  })
-    .setProtectedHeader({ alg: 'ES256' })
-    .setIssuedAt()
-    .setIssuer(`${supabaseOrigin}/auth/v1`)
-    .setAudience('authenticated')
-    .setSubject(sub)
-    .setExpirationTime('10m')
-    .sign(privateKey);
+  });
+}
+
+/** 设置本轮 user_roles 现查要返回的角色。 */
+function setRoles(map: Record<string, string[]>): void {
+  for (const [id, roles] of Object.entries(map)) sb.setRoles(id, roles);
 }
 
 /** 直接写 fixture 库：canonical 用户 + 映射行。刻意不经任何 HTTP 端点。 */
@@ -150,16 +149,18 @@ function seed(rows: {
   }
 }
 
-/** 直接给 fixture 库播种 growth_state，用作"业务层拿到的是哪个 id"的探针。 */
+/**
+ * 播种「业务层拿到的是哪个 id」的探针。
+ *
+ * DB-13B 之后 growth 已迁到 Postgres `app_christian_profile`，主体是
+ * **Supabase UUID**（D-42），所以探针也要播在 Postgres 侧、按 UUID 索引 ——
+ * 继续写 SQLite `growth_state` 只会播种一张运行时再也不读的表。
+ */
 function seedGrowth(userId: string, state: unknown): void {
-  const d = new Database(TEST_DB_PATH);
-  try {
-    d.prepare(
-      `INSERT OR REPLACE INTO growth_state (user_id, state_json, updated_at) VALUES (?, ?, ?)`,
-    ).run(userId, JSON.stringify(state), Date.now());
-  } finally {
-    d.close();
-  }
+  sb.seedTable('app_christian_profile', [
+    ...sb.tableRows('app_christian_profile').filter(r => r.user_id !== userId),
+    { user_id: userId, state, updated_at: new Date().toISOString() },
+  ]);
 }
 
 function countRows(table: string, column: string, value: string): number {
@@ -176,35 +177,8 @@ before(async () => {
   rmTestDb();
   fs.mkdirSync(path.dirname(TEST_DB_PATH), { recursive: true });
 
-  // ---- 本地假 Supabase：真 ES256 密钥对 + JWKS + user_roles ----
-  const kp = await generateKeyPair('ES256', { extractable: true });
-  privateKey = kp.privateKey;
-  const publicJwk = await exportJWK(kp.publicKey);
-  publicJwk.kid = 'authm7-test-key';
-  publicJwk.alg = 'ES256';
-  publicJwk.use = 'sig';
-
-  fakeSupabase = http.createServer((req, res) => {
-    const u = new URL(req.url ?? '/', 'http://127.0.0.1');
-    if (u.pathname === '/auth/v1/.well-known/jwks.json') {
-      res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ keys: [publicJwk] }));
-      return;
-    }
-    if (u.pathname === '/rest/v1/user_roles') {
-      // 复刻 Supabase PostgREST 的 user_id=eq.<id> 过滤
-      const filter = u.searchParams.get('user_id') ?? '';
-      const id = filter.startsWith('eq.') ? decodeURIComponent(filter.slice(3)) : '';
-      const roles = (rolesByUserId[id] ?? []).map(role => ({ role, expires_at: null }));
-      res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify(roles));
-      return;
-    }
-    res.writeHead(404).end('{}');
-  });
-  const sbPort = await freePort();
-  await new Promise<void>(r => fakeSupabase.listen(sbPort, '127.0.0.1', r));
-  supabaseOrigin = `http://127.0.0.1:${sbPort}`;
+  // ---- 唯一那套 fake Supabase：真 ES256 密钥对 + JWKS + user_roles + app_* ----
+  sb = await startFakeSupabase();
 
   // ---- 起后端，指向本地假 Supabase ----
   const port = await freePort();
@@ -226,7 +200,7 @@ before(async () => {
       CORS_ORIGINS: '*',
       NODE_ENV: 'test',
       DB_PATH: TEST_DB_PATH,
-      SUPABASE_URL: supabaseOrigin,
+      SUPABASE_URL: sb.origin,
       SUPABASE_SERVICE_ROLE_KEY: SERVICE_KEY,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -252,28 +226,37 @@ before(async () => {
 
 after(async () => {
   serverProcess?.kill();
-  await new Promise<void>(r => fakeSupabase?.close(() => r()));
+  await sb?.stop();
   rmTestDb();
 });
 
 // ─────────────────────────── §14 双身份分离（D-1 核心验收） ───────────────────────────
 
-test('AUTH-M7 · principal 携带两个身份：authId=Supabase UUID，user.id=canonical SQLite id', async () => {
-  // 探针：growth_state 按 principal.user.id 取行。预先只给 canonical id 播种，
-  // 取到它就证明业务层拿到的是 canonical SQLite 身份而非 Supabase UUID。
-  seedGrowth(LEGACY_123, { marker: 'canonical' });
-  seedGrowth(UUID_A, { marker: 'supabase-uuid' });   // 陷阱行：不该被读到
+test('AUTH-M7 + D-42 · 已切域的业务数据按 Supabase UUID 取，不按 canonical SQLite id', async () => {
+  // ★ 这条断言在 DB-13B 里**按裁定反转了**，不是回归。
+  //
+  //   AUTH-M7 时期：growth 在 SQLite，业务数据挂 canonical SQLite id（D-1）。
+  //   D-42 之后：   已迁到 Postgres 的域，主体是 profiles.id = Supabase UUID，
+  //                因为 app_* 的每个身份列都外键到 profiles.id。
+  //
+  // D-1 的双身份**依然存在**（principal 同时带 authId 与 user.id），
+  // 只是「业务数据挂哪个」按域而定。下一条测试仍然验证 canonical
+  // `principal.user` 是显示资料的唯一来源 —— 那部分一个字没变。
+  seedGrowth(UUID_A, { marker: 'supabase-uuid' });
+  seedGrowth(LEGACY_123, { marker: 'canonical' });   // 陷阱行：已切域不该读到它
 
   const token = await mintToken(UUID_A);
   const r = await request('GET', '/api/growth/state', undefined, { authorization: `Bearer ${token}` });
 
   assert.equal(r.status, 200, `应放行，实际 ${r.status} ${r.text}`);
-  assert.equal(r.json.state.marker, 'canonical', '业务路由必须按 canonical SQLite id 取数据');
-  assert.notEqual(r.json.state.marker, 'supabase-uuid', 'principal.user.id 不得是 Supabase UUID');
+  assert.equal(r.json.state.marker, 'supabase-uuid',
+    '已切域必须按 Supabase UUID 取数据（D-42）');
+  assert.notEqual(r.json.state.marker, 'canonical',
+    '已切域不得回退用 canonical SQLite id —— 那个值写不进 profiles 外键');
 });
 
 test('AUTH-M7 · requireAdmin 用 authId 查角色（给 UUID-A 授角色 → 放行）', async () => {
-  rolesByUserId = { [UUID_A]: ['super_admin'] };   // Portal 口径：registrar / academic_admin / super_admin
+  setRoles({ [UUID_A]: ['super_admin'] });   // Portal 口径：registrar / academic_admin / super_admin
   const token = await mintToken(UUID_A);
   const r = await request('GET', '/api/cooperation', undefined, { authorization: `Bearer ${token}` });
   assert.notEqual(r.status, 403, `按 authId 查到 admin 角色应放行，实际 403：${r.text}`);
@@ -282,17 +265,17 @@ test('AUTH-M7 · requireAdmin 用 authId 查角色（给 UUID-A 授角色 → �
 test('AUTH-M7 · D-1 回归：角色只挂在 canonical SQLite id 上时必须 403（证明查的不是 user.id）', async () => {
   // 只给 LEGACY-123 授角色。如果实现回退成 fetchActiveRoles(principal.user.id)，
   // 这里会错误地放行 —— 那正是 D-1 描述的静默故障的镜像。
-  rolesByUserId = { [LEGACY_123]: ['super_admin'] };
+  setRoles({ [UUID_A]: [], [LEGACY_123]: ['super_admin'] });
   const token = await mintToken(UUID_A);
   const r = await request('GET', '/api/cooperation', undefined, { authorization: `Bearer ${token}` });
   assert.equal(r.status, 403, '角色查询必须以 Supabase UUID 为键，不得使用 canonical SQLite id');
-  rolesByUserId = {};
+  setRoles({ [LEGACY_123]: [] });
 });
 
 // ─────────────────────────── §16 资料信任边界 ───────────────────────────
 
 test('AUTH-M7 · token 里的 name/avatar 不得进入业务身份', async () => {
-  rolesByUserId = {};
+  setRoles({ [UUID_A]: [] });
   const token = await mintToken(UUID_A);
   // POST /api/posts 会把 principal.user 的 name/avatar/role 直接落库 ——
   // 这正是 ghost 身份此前能用 token 里的名字发帖的那条路径。
@@ -300,8 +283,12 @@ test('AUTH-M7 · token 里的 name/avatar 不得进入业务身份', async () =>
     'POST', '/api/posts', { content: 'identity boundary probe', category: 'general' }, { authorization: `Bearer ${token}` },
   );
 
-  assert.equal(r.status, 200, `canonical 用户应能发帖，实际 ${r.status} ${r.text}`);
-  assert.equal(r.json.userId, LEGACY_123, '业务数据必须挂在 canonical SQLite id 上');
+  assert.equal(r.status, 200, `已 provision 的用户应能发帖，实际 ${r.status} ${r.text}`);
+  // 主体 id 按 D-42 换成 Supabase UUID（app_posts.user_id 外键到 profiles.id）。
+  assert.equal(r.json.userId, UUID_A, '已切域的业务数据必须挂在 Supabase UUID 上');
+  assert.notEqual(r.json.userId, LEGACY_123, 'canonical SQLite id 不得进入 uuid 列');
+  // ★ 本测试的真正要点未变：显示资料只能来自服务器解析出的 canonical user，
+  //   绝不能来自 token 自称的 user_metadata。
   assert.equal(r.json.userName, REAL_NAME, '显示名必须来自服务器 canonical user');
   assert.notEqual(r.json.userName, FAKE_NAME, 'token 里的名字不得成为业务资料');
   assert.equal(r.json.userAvatar, REAL_AVATAR, '头像必须来自服务器 canonical user');
@@ -309,7 +296,7 @@ test('AUTH-M7 · token 里的 name/avatar 不得进入业务身份', async () =>
 });
 
 test('AUTH-M7 · token 自称 admin 不产生管理员权限', async () => {
-  rolesByUserId = {};   // Supabase 侧没有任何角色
+  setRoles({ [UUID_A]: [] });   // Supabase 侧没有任何角色
   const token = await mintToken(UUID_A);   // token 的 app_metadata.role = 'admin'
   const r = await request('GET', '/api/cooperation', undefined, { authorization: `Bearer ${token}` });
   assert.equal(r.status, 403, 'token 自称的 role 不得被信任');
@@ -332,7 +319,7 @@ test('AUTH-M7 · mapping_status=provisioned 放行', async () => {
     users: [{ id: 'legacy-prov', email: 'prov@example.test', name: 'Provisioned User' }],
     map: [{ legacy: 'legacy-prov', supabase: sub, status: 'provisioned' }],
   });
-  seedGrowth('legacy-prov', { marker: 'prov' });
+  seedGrowth(sub, { marker: 'prov' });   // 已切域按 UUID 索引（D-42）
   const token = await mintToken(sub);
   const r = await request('GET', '/api/growth/state', undefined, { authorization: `Bearer ${token}` });
   assert.equal(r.status, 200);
@@ -444,44 +431,19 @@ test('AUTH-M7 · 无 token → 401（不是 403）', async () => {
 });
 
 test('AUTH-M7 · 伪造签名的 Supabase token → 401（不是 403）', async () => {
-  const otherKp = await generateKeyPair('ES256', { extractable: true });
-  const forged = await new SignJWT({ email: 'x@example.test' })
-    .setProtectedHeader({ alg: 'ES256' })
-    .setIssuedAt()
-    .setIssuer(`${supabaseOrigin}/auth/v1`)
-    .setAudience('authenticated')
-    .setSubject(UUID_A)
-    .setExpirationTime('10m')
-    .sign(otherKp.privateKey);
-
+  const forged = await sb.mintBadToken(UUID_A, 'foreignKey');
   const r = await request('GET', '/api/growth/state', undefined, { authorization: `Bearer ${forged}` });
   assert.equal(r.status, 401, '验签失败是认证失败，必须 401 而不是 403');
 });
 
 test('AUTH-M7 · 过期的 Supabase token → 401', async () => {
-  const expired = await new SignJWT({ email: 'x@example.test' })
-    .setProtectedHeader({ alg: 'ES256' })
-    .setIssuedAt(Math.floor(Date.now() / 1000) - 3600)
-    .setIssuer(`${supabaseOrigin}/auth/v1`)
-    .setAudience('authenticated')
-    .setSubject(UUID_A)
-    .setExpirationTime(Math.floor(Date.now() / 1000) - 60)
-    .sign(privateKey);
-
+  const expired = await sb.mintBadToken(UUID_A, 'expired');
   const r = await request('GET', '/api/growth/state', undefined, { authorization: `Bearer ${expired}` });
   assert.equal(r.status, 401);
 });
 
 test('AUTH-M7 · 有效签名但 issuer 不对 → 401（绝不回退 legacy 验签）', async () => {
-  const wrongIss = await new SignJWT({ email: 'x@example.test' })
-    .setProtectedHeader({ alg: 'ES256' })
-    .setIssuedAt()
-    .setIssuer('https://evil.example/auth/v1')
-    .setAudience('authenticated')
-    .setSubject(UUID_A)
-    .setExpirationTime('10m')
-    .sign(privateKey);
-
+  const wrongIss = await sb.mintBadToken(UUID_A, 'issuer');
   const r = await request('GET', '/api/growth/state', undefined, { authorization: `Bearer ${wrongIss}` });
   assert.notEqual(r.status, 200, 'issuer 不匹配的 token 不得被接受');
 });

@@ -7,7 +7,12 @@ import {
   TERMINAL_REASONS,
   type PushPayload,
 } from '../push/apnsClient.js';
-import { db } from '../db.js';
+import { activeUserUuid } from '../middleware/roomAuth.js';
+import { stagingConfigured } from '../staging/pgData.js';
+import {
+  upsertToken, deleteToken, tokensForUser, allIosTokens,
+  PLATFORMS, type Platform, type PushToken,
+} from '../staging/pushStore.js';
 
 /**
  * Push notification token registry.
@@ -18,59 +23,32 @@ import { db } from '../db.js';
  * `broadcastToAllUsers` becomes a silent no-op so other routes can
  * fire-and-forget without leaking errors.
  *
- * Storage is the SQLite `push_tokens` table; the primary key
- * `(user_id, token)` makes register idempotent and unregister a simple
- * DELETE. A future Postgres swap is a single-file change.
+ * ── DB-13B 切换 ─────────────────────────────────────────────────────
+ * 存储从 SQLite `push_tokens` 换成 Postgres `public.app_push_tokens`。
+ * 主键仍是 `(user_id, token)`，所以 register 幂等、unregister 是双条件
+ * DELETE —— 对外语义逐字不变。
+ *
+ * 身份换成 **Supabase UUID**（`principal.authId`，D-42）：`user_id` 外键到
+ * `profiles.id`，写 canonical SQLite id 必然违反外键。拿不到 UUID 一律
+ * 401 fail closed，**不回落**到 legacy id。
+ *
+ * 未配置 staging 时返回 503，绝不静默落回 SQLite（双写正是要消灭的东西）。
  */
 
-type Platform = 'ios' | 'android' | 'web';
-
-interface PushTokenRow {
-  user_id: string;
-  token: string;
-  platform: Platform;
-  registered_at: number;
+/** 令牌数与按平台分布 —— 对外只暴露统计，不暴露 token 本身。 */
+function summarize(tokens: PushToken[]): {
+  count: number; platforms: Record<Platform, number>;
+} {
+  const platforms: Record<Platform, number> = { ios: 0, android: 0, web: 0 };
+  for (const t of tokens) platforms[t.platform] += 1;
+  return { count: tokens.length, platforms };
 }
 
-const stmtUpsertToken = db.prepare<[
-  string, string, Platform, number,
-]>(`
-  INSERT INTO push_tokens (user_id, token, platform, registered_at)
-  VALUES (?, ?, ?, ?)
-  ON CONFLICT(user_id, token) DO UPDATE SET
-    platform = excluded.platform,
-    registered_at = excluded.registered_at
-`);
-const stmtDeleteToken = db.prepare<[string, string]>(
-  'DELETE FROM push_tokens WHERE user_id = ? AND token = ?',
-);
-const stmtCountForUser = db.prepare<[string], { c: number }>(
-  'SELECT COUNT(*) AS c FROM push_tokens WHERE user_id = ?',
-);
-const stmtPlatformsForUser = db.prepare<[string], { platform: Platform; c: number }>(
-  `SELECT platform, COUNT(*) AS c
-     FROM push_tokens
-    WHERE user_id = ?
-    GROUP BY platform`,
-);
-const stmtTokensForUser = db.prepare<[string], PushTokenRow>(
-  'SELECT * FROM push_tokens WHERE user_id = ?',
-);
-const stmtAllIosTokens = db.prepare<[], PushTokenRow>(
-  "SELECT * FROM push_tokens WHERE platform = 'ios'",
-);
-
-function countForUser(userId: string): number {
-  const r = stmtCountForUser.get(userId);
-  return r ? r.c : 0;
-}
-
-function platformBreakdownForUser(userId: string): Record<Platform, number> {
-  const breakdown: Record<Platform, number> = { ios: 0, android: 0, web: 0 };
-  for (const row of stmtPlatformsForUser.all(userId)) {
-    breakdown[row.platform] = row.c;
-  }
-  return breakdown;
+/** staging 未配置时明确报错，绝不静默回落到 SQLite。 */
+function guardConfigured(res: Response): boolean {
+  if (stagingConfigured()) return true;
+  res.status(503).json({ error: 'Staging database not configured.' });
+  return false;
 }
 
 export function registerPushRoutes(app: Express): void {
@@ -81,20 +59,24 @@ export function registerPushRoutes(app: Express): void {
    * but does not duplicate the entry. Returns the total token count
    * for the calling user.
    */
-  app.post('/api/push/register', requireAuth, (req: Request, res: Response) => {
-    const principal = req.principal;
-    if (!principal || principal.kind !== 'user') {
-      return res.status(401).json({ error: 'User token required.' });
-    }
+  app.post('/api/push/register', requireAuth, async (req: Request, res: Response) => {
+    const uid = activeUserUuid(req);
+    if (!uid) return res.status(401).json({ error: 'User token required.' });
     const { token, platform } = (req.body ?? {}) as { token?: unknown; platform?: unknown };
     if (typeof token !== 'string' || !token.trim()) {
       return res.status(400).json({ error: 'token is required.' });
     }
-    if (platform !== 'ios' && platform !== 'android' && platform !== 'web') {
+    if (!PLATFORMS.includes(platform as Platform)) {
       return res.status(400).json({ error: "platform must be 'ios' | 'android' | 'web'." });
     }
-    stmtUpsertToken.run(principal.user.id, token, platform, Date.now());
-    res.status(200).json({ ok: true, count: countForUser(principal.user.id) });
+    if (!guardConfigured(res)) return;
+    try {
+      await upsertToken(uid, token, platform as Platform);
+      res.status(200).json({ ok: true, count: (await tokensForUser(uid)).length });
+    } catch (e) {
+      console.error('[push] register failed:', (e as Error).message);
+      res.status(502).json({ error: 'Failed to register push token.' });
+    }
   });
 
   /**
@@ -102,17 +84,21 @@ export function registerPushRoutes(app: Express): void {
    * Body: { token: string }. Removes the given token from the
    * caller's set. No-op if the token was never registered.
    */
-  app.post('/api/push/unregister', requireAuth, (req: Request, res: Response) => {
-    const principal = req.principal;
-    if (!principal || principal.kind !== 'user') {
-      return res.status(401).json({ error: 'User token required.' });
-    }
+  app.post('/api/push/unregister', requireAuth, async (req: Request, res: Response) => {
+    const uid = activeUserUuid(req);
+    if (!uid) return res.status(401).json({ error: 'User token required.' });
     const { token } = (req.body ?? {}) as { token?: unknown };
     if (typeof token !== 'string' || !token.trim()) {
       return res.status(400).json({ error: 'token is required.' });
     }
-    stmtDeleteToken.run(principal.user.id, token);
-    res.status(200).json({ ok: true, count: countForUser(principal.user.id) });
+    if (!guardConfigured(res)) return;
+    try {
+      await deleteToken(uid, token);
+      res.status(200).json({ ok: true, count: (await tokensForUser(uid)).length });
+    } catch (e) {
+      console.error('[push] unregister failed:', (e as Error).message);
+      res.status(502).json({ error: 'Failed to unregister push token.' });
+    }
   });
 
   /**
@@ -122,15 +108,16 @@ export function registerPushRoutes(app: Express): void {
    * per-platform breakdown — so the UI can render "you have N devices"
    * without exposing push tokens to the JS context.
    */
-  app.get('/api/push/tokens', requireAuth, (req: Request, res: Response) => {
-    const principal = req.principal;
-    if (!principal || principal.kind !== 'user') {
-      return res.status(401).json({ error: 'User token required.' });
+  app.get('/api/push/tokens', requireAuth, async (req: Request, res: Response) => {
+    const uid = activeUserUuid(req);
+    if (!uid) return res.status(401).json({ error: 'User token required.' });
+    if (!guardConfigured(res)) return;
+    try {
+      res.status(200).json(summarize(await tokensForUser(uid)));
+    } catch (e) {
+      console.error('[push] list failed:', (e as Error).message);
+      res.status(502).json({ error: 'Failed to read push tokens.' });
     }
-    res.status(200).json({
-      count: countForUser(principal.user.id),
-      platforms: platformBreakdownForUser(principal.user.id),
-    });
   });
 
   /**
@@ -145,11 +132,16 @@ export function registerPushRoutes(app: Express): void {
    * prefix — so logs and HTTP captures remain safe to share.
    */
   app.post('/api/push/test', requireAuth, async (req: Request, res: Response) => {
-    const principal = req.principal;
-    if (!principal || principal.kind !== 'user') {
-      return res.status(401).json({ error: 'User token required.' });
+    const uid = activeUserUuid(req);
+    if (!uid) return res.status(401).json({ error: 'User token required.' });
+    if (!guardConfigured(res)) return;
+    let rows: PushToken[];
+    try {
+      rows = await tokensForUser(uid);
+    } catch (e) {
+      console.error('[push] test lookup failed:', (e as Error).message);
+      return res.status(502).json({ error: 'Failed to read push tokens.' });
     }
-    const rows = stmtTokensForUser.all(principal.user.id);
     // Prefer an iOS token (only APNs is wired today); fall back to the first
     // registered token of any platform so the stub response still shows
     // something useful on web/android dev devices.
@@ -175,7 +167,7 @@ export function registerPushRoutes(app: Express): void {
     });
     if (!result.ok && result.reason && TERMINAL_REASONS.has(result.reason)) {
       // Token is dead — prune so future tests don't keep hitting it.
-      stmtDeleteToken.run(principal.user.id, first.token);
+      await deleteToken(uid, first.token).catch(() => {});
     }
     return res.status(200).json({
       ok: result.ok,
@@ -202,10 +194,19 @@ export async function broadcastToAllUsers(
   payload: PushPayload,
 ): Promise<{ delivered: number; removed: number }> {
   if (!apnsConfigured()) return { delivered: 0, removed: 0 };
+  // staging 未配置时静默跳过：广播是 fire-and-forget 的附带动作，
+  // 不该因为它让「发帖 / 发公告」这些主流程报错。
+  if (!stagingConfigured()) return { delivered: 0, removed: 0 };
 
   // Collect every iOS token with its owning user_id so we can prune the
   // right row on a terminal failure.
-  const targets = stmtAllIosTokens.all();
+  let targets: PushToken[];
+  try {
+    targets = await allIosTokens();
+  } catch (e) {
+    console.error('[push] broadcast lookup failed:', (e as Error).message);
+    return { delivered: 0, removed: 0 };
+  }
   if (targets.length === 0) return { delivered: 0, removed: 0 };
 
   const tokens = targets.map(t => t.token);
@@ -215,15 +216,9 @@ export async function broadcastToAllUsers(
     if (!r.ok && r.reason && TERMINAL_REASONS.has(r.reason)) {
       const owner = targets.find(t => t.token === r.token);
       if (owner) {
-        const info = stmtDeleteToken.run(owner.user_id, r.token);
-        if (info.changes > 0) removed++;
+        try { await deleteToken(owner.userId, r.token); removed++; } catch { /* 尽力而为 */ }
       }
     }
   }
   return { delivered: bulk.ok, removed };
-}
-
-/** Test-only: wipe in-memory state. */
-export function _resetPushTokens(): void {
-  db.prepare('DELETE FROM push_tokens').run();
 }

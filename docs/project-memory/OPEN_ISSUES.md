@@ -1279,6 +1279,45 @@ phase:     DB-12 closeout
 
 ---
 
+## #27 DB-13B 期间撞出并修掉的三个既有缺陷 — `CLOSED`（2026-09-10）
+
+```
+status:    CLOSED
+severity:  #27a P1（身份可冒充）· #27b P2（功能恒失效）· #27c P2（测试卫生）
+owner:     —
+phase:     DB-13B
+```
+
+这三个都**不是** DB-13B 引入的，是切换时被新测试撞出来的。留档以免日后被
+误当成「切换造成的回归」。
+
+**#27a 录音上传的身份取自客户端请求头** ——
+`POST /api/recordings` 用 `X-User-Id` 请求头当上传者身份。任何人都能声称
+一段录音属于别人。DB-13B 把 `user_id` 改为一律取自已验证的认证上下文；
+`X-User-Id` 若仍被旧客户端发送，**只做一致性校验**，不符即 403。
+（`X-Room-Id` 保留 —— 它选的是房间，不是身份，且现在必须是既存房间。）
+
+**#27b 公开动态墙的 `likedByMe` 恒为 false** ——
+`GET /api/posts` 是公开接口，实现里读 `req.principal` 算 `likedByMe`，
+但项目里**没有任何**中间件会在公开路由上填充 `req.principal`。
+于是这个字段对所有人恒为 false，哪怕带着有效 token。
+新增 `attachPrincipalIfPresent`（有凭据就解析、任何失败都不拒绝）并只挂在
+这条路由上。**它绝不能替代 `requireAuth`** —— 它不做任何拒绝。
+
+**#27c `auth-m7-identity.test.ts` 自带第二套 fake Supabase** ——
+项目规则是「只允许 `helpers/supabaseHarness.ts` 一套」。那个内联实现只有
+JWTS + user_roles，因此 DB-13B 把 growth / posts 切到 Postgres 后它一律 404。
+已并入共享 harness，并给 harness 补了 `mintBadToken()`
+（issuer 错 / 已过期 / 外来密钥），这样否定式断言不必各自持有第二把私钥。
+
+**顺带**：`endedSessions` 的首页游标是 `Number.MAX_SAFE_INTEGER`，
+在 SQLite 下直接参与数值比较毫无问题，但格式化成 timestamptz 时
+`new Date(9007199254740991)` 是 Invalid Date，`toISOString()` 抛 RangeError ——
+整个祷告会历史列表 500。这是 SQLite→PostgREST 翻译引入的**新**缺陷，
+已在 `staging/sessionStore.ts` 修掉（超出可表示范围就不加上界过滤）。
+
+---
+
 ## #26 CANONICAL SQLITE WRITE CONTAINMENT
 
 ```

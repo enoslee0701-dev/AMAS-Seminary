@@ -37,6 +37,14 @@ let fakeSb: FakeSupabase;
 let roomHost: ProvisionedUser;
 const AUTH_HEADERS = { authorization: `Bearer ${APP_SECRET}` };
 
+/**
+ * DB-13B：课程目录读自 canonical `public.course_catalog`，App 侧不再能建课程
+ * （admin 写路径已停用，见下文）。因此课程相关用例改为**播种目录**，
+ * 用的是 live staging 里真实存在的两个 code 与真实取值。
+ */
+const CATALOG_COURSE = 'c_matthew';
+const CATALOG_COURSE_2 = 'c_dr_mark';
+
 /** 本次 run 专用的一次性数据库。绝不复用，绝不留下。 */
 const TEST_DB_PATH = path.join(
   BACKEND_ROOT, '.tmp-test', `smoke-${process.pid}-${Date.now()}.sqlite`,
@@ -165,6 +173,22 @@ async function waitForReady(timeoutMs = 10_000): Promise<void> {
 
 before(async () => {
   fakeSb = await startFakeSupabase();
+  // 目录是 canonical 的、只读的 —— 用真实 live 行的形状播种，
+  // 包括 NOT NULL 的 availability / sort_order（App 侧没有对应输入的那两列）。
+  fakeSb.seedTable('course_catalog', [
+    {
+      code: CATALOG_COURSE, title_zh: '马太福音', category: 'nt', level: 'mdiv',
+      instructor: 'Dr. Kim Joy', total_lessons: 26, availability: 'available',
+      sort_order: 10, credits: null, thumbnail_path: null, thumbnail_image_id: null,
+      created_at: new Date(0).toISOString(), created_by_provenance: 'db-6-migration',
+    },
+    {
+      code: CATALOG_COURSE_2, title_zh: '马可福音', category: 'nt', level: 'dmin',
+      instructor: null, total_lessons: 2, availability: 'available',
+      sort_order: 20, credits: null, thumbnail_path: null, thumbnail_image_id: null,
+      created_at: new Date(0).toISOString(), created_by_provenance: 'db-6-migration',
+    },
+  ]);
   port = await pickFreePort();
   baseUrl = `http://127.0.0.1:${port}`;
 
@@ -603,7 +627,9 @@ test('POST /api/posts creates a post for the authed user', async () => {
     likes: number; likedByMe: boolean; commentList: unknown[];
   }>();
   assert.equal(typeof body.id, 'string');
-  assert.equal(body.userId, tokens.user.id);
+  // DB-13B/D-42：动态已切到 Postgres，`app_posts.user_id` 外键到 profiles.id，
+  // 因此主体是 Supabase UUID，不再是 canonical SQLite id。
+  assert.equal(body.userId, tokens.supabaseUserId);
   assert.equal(body.userName, 'Poster1');
   assert.equal(body.content, 'My first post');
   assert.equal(body.likes, 0);
@@ -773,83 +799,60 @@ test('POST /api/courses as student returns 403', async () => {
   assert.equal(r.status, 403, `expected 403, got ${r.status} body=${r.body}`);
 });
 
-test('POST /api/courses as admin (service) returns 200 + new course', async () => {
+/**
+ * DB-13B：课程目录的 admin 写路径**已停用**（501），这不是回归。
+ *
+ * 目录读取切到 canonical `public.course_catalog` 之后，这些写路径无法如实
+ * 翻译过去：`availability` / `sort_order` 是 NOT NULL 而 App 侧没有任何
+ * 对应输入，硬填等于凭空替产品做决定；`DELETE` 会删掉 DB-6 迁入的
+ * canonical 目录行。按 DB-13B §B：停用该路径并报告，不改 Supabase schema、
+ * 不猜填必填列。详见 routes/courses.ts 顶部。
+ *
+ * 授权语义不因停用而放宽 —— 上一条「学生 POST → 403」仍然有效：
+ * 非管理员先拿到 403，而不是从 501 反推出「这个端点存在但不可用」。
+ */
+const CATALOG_BLOCKED_CODE = 'CATALOG_MUTATION_UNSUPPORTED';
+
+test('POST /api/courses as admin -> 501（目录写路径已停用，附明确 code）', async () => {
   const r = await request('POST', '/api/courses', {
-    title: 'Intro to Theology',
-    instructor: 'Dr. Smith',
-    category: '系统神学',
-    level: 'B.Th',
-    thumbnail: 'https://example.com/cover.jpg',
-    totalLessons: 12,
+    title: 'Intro to Theology', instructor: 'Dr. Smith', category: '系统神学',
+    level: 'B.Th', thumbnail: 'https://example.com/cover.jpg', totalLessons: 12,
   }, AUTH_HEADERS);
-  assert.equal(r.status, 200, `expected 200, got ${r.status} body=${r.body}`);
-  const body = r.json<{
-    id: string; title: string; instructor: string; totalLessons: number;
-  }>();
-  assert.equal(typeof body.id, 'string');
-  assert.equal(body.title, 'Intro to Theology');
-  assert.equal(body.instructor, 'Dr. Smith');
-  assert.equal(body.totalLessons, 12);
+  assert.equal(r.status, 501, `expected 501, got ${r.status} body=${r.body}`);
+  assert.equal(r.json<{ code: string }>().code, CATALOG_BLOCKED_CODE);
 });
 
-test('PATCH /api/courses/:id as admin returns 200 + patched fields', async () => {
-  const create = await request('POST', '/api/courses', {
-    title: 'Patch me',
-    instructor: 'Original',
-    category: '圣经神学',
-    level: 'M.Div',
-    thumbnail: '',
-    totalLessons: 8,
+test('PATCH /api/courses/:id as admin -> 501', async () => {
+  const r = await request('PATCH', `/api/courses/${CATALOG_COURSE}`, {
+    title: 'Patched title', totalLessons: 20,
   }, AUTH_HEADERS);
-  assert.equal(create.status, 200);
-  const { id } = create.json<{ id: string }>();
-
-  const r = await request('PATCH', `/api/courses/${id}`, {
-    title: 'Patched title',
-    totalLessons: 20,
-  }, AUTH_HEADERS);
-  assert.equal(r.status, 200, `expected 200, got ${r.status} body=${r.body}`);
-  const body = r.json<{ title: string; totalLessons: number; instructor: string }>();
-  assert.equal(body.title, 'Patched title');
-  assert.equal(body.totalLessons, 20);
-  // Untouched field should remain.
-  assert.equal(body.instructor, 'Original');
+  assert.equal(r.status, 501, `expected 501, got ${r.status} body=${r.body}`);
+  assert.equal(r.json<{ code: string }>().code, CATALOG_BLOCKED_CODE);
 });
 
-test('DELETE /api/courses/:id as admin returns 200', async () => {
-  const create = await request('POST', '/api/courses', {
-    title: 'Delete me',
-    instructor: 'X',
-    category: '宣教神学',
-    level: 'B.Th',
-    thumbnail: '',
-    totalLessons: 1,
-  }, AUTH_HEADERS);
-  assert.equal(create.status, 200);
-  const { id } = create.json<{ id: string }>();
-  const del = await request('DELETE', `/api/courses/${id}`, undefined, AUTH_HEADERS);
-  assert.equal(del.status, 200, `expected 200, got ${del.status} body=${del.body}`);
+test('DELETE /api/courses/:id as admin -> 501（绝不删 canonical 目录行）', async () => {
+  const r = await request('DELETE', `/api/courses/${CATALOG_COURSE}`, undefined, AUTH_HEADERS);
+  assert.equal(r.status, 501, `expected 501, got ${r.status} body=${r.body}`);
+  assert.equal(r.json<{ code: string }>().code, CATALOG_BLOCKED_CODE);
+});
+
+test('GET /api/courses 从 canonical course_catalog 读，中文分类/学位标签保持不变', async () => {
+  const r = await request('GET', '/api/courses');
+  assert.equal(r.status, 200, `expected 200, got ${r.status} body=${r.body}`);
+  const list = r.json<{ id: string; title: string; category: string; level: string }[]>();
+  const c = list.find(x => x.id === CATALOG_COURSE);
+  assert.ok(c, 'expected the seeded catalog course');
+  assert.equal(c!.title, '马太福音');
+  // 枚举 → 中文标签的映射是按 live 67 行实测得出的一一对应（courseStore.ts）。
+  // 换成英文 slug 会让前端按 TheologyCategory 做的分类筛选全部失效。
+  assert.equal(c!.category, '新约书卷');
+  assert.equal(c!.level, 'M.Div');
 });
 
 test('POST /api/courses/:id/progress as authed user saves progress', async () => {
-  // Create a course as admin.
-  const create = await request('POST', '/api/courses', {
-    title: 'Progress course',
-    instructor: 'Prof.',
-    category: '实践神学',
-    level: 'B.Th',
-    thumbnail: '',
-    totalLessons: 10,
-  }, AUTH_HEADERS);
-  assert.equal(create.status, 200);
-  const { id: courseId } = create.json<{ id: string }>();
-
-  // Register a student.
   const tokens = await newUser('progress-user-1@example.com', 'ProgressUser1');
-
-  const r = await request('POST', `/api/courses/${courseId}/progress`, {
-    progress: 42,
-    completedLessons: 4,
+  const r = await request('POST', `/api/courses/${CATALOG_COURSE}/progress`, {
+    progress: 42, completedLessons: 4,
   }, { authorization: `Bearer ${tokens.accessToken}` });
   assert.equal(r.status, 200, `expected 200, got ${r.status} body=${r.body}`);
   const body = r.json<{ progress: number; completedLessons: number }>();
@@ -858,92 +861,44 @@ test('POST /api/courses/:id/progress as authed user saves progress', async () =>
 });
 
 test('GET /api/courses/:id/progress returns the saved value for that user', async () => {
-  // Create course + user; save progress; then GET it back.
-  const create = await request('POST', '/api/courses', {
-    title: 'Per-user progress course',
-    instructor: 'Prof.',
-    category: '历史神学',
-    level: 'B.Th',
-    thumbnail: '',
-    totalLessons: 10,
-  }, AUTH_HEADERS);
-  const { id: courseId } = create.json<{ id: string }>();
-
   const tokens = await newUser('progress-user-2@example.com', 'ProgressUser2');
-
-  await request('POST', `/api/courses/${courseId}/progress`, {
-    progress: 75,
-    completedLessons: 7,
-  }, { authorization: `Bearer ${tokens.accessToken}` });
-
-  const r = await request('GET', `/api/courses/${courseId}/progress`, undefined, {
+  await request('POST', `/api/courses/${CATALOG_COURSE}/progress`,
+    { progress: 75, completedLessons: 7 },
+    { authorization: `Bearer ${tokens.accessToken}` });
+  const r = await request('GET', `/api/courses/${CATALOG_COURSE}/progress`, undefined, {
     authorization: `Bearer ${tokens.accessToken}`,
   });
-  assert.equal(r.status, 200);
+  assert.equal(r.status, 200, `expected 200, got ${r.status} body=${r.body}`);
   const body = r.json<{ progress: number; completedLessons: number }>();
   assert.equal(body.progress, 75);
   assert.equal(body.completedLessons, 7);
 });
 
 test('GET /api/courses/:id/progress for a DIFFERENT user is independent', async () => {
-  // Create one course.
-  const create = await request('POST', '/api/courses', {
-    title: 'Independent progress course',
-    instructor: 'Prof.',
-    category: '宣教神学',
-    level: 'B.Th',
-    thumbnail: '',
-    totalLessons: 10,
-  }, AUTH_HEADERS);
-  const { id: courseId } = create.json<{ id: string }>();
-
-  // User A saves progress.
-  const tokensA = await newUser('multi-user-A@example.com', 'MultiUserA');
-  await request('POST', `/api/courses/${courseId}/progress`, {
-    progress: 88,
-    completedLessons: 9,
-  }, { authorization: `Bearer ${tokensA.accessToken}` });
-
-  // User B has not interacted with this course at all.
-  const tokensB = await newUser('multi-user-B@example.com', 'MultiUserB');
-
-  // User B sees zeros — not user A's 88.
-  const rB = await request('GET', `/api/courses/${courseId}/progress`, undefined, {
-    authorization: `Bearer ${tokensB.accessToken}` ,
+  const a = await newUser('progress-indep-a@example.com', 'IndepA');
+  const b = await newUser('progress-indep-b@example.com', 'IndepB');
+  await request('POST', `/api/courses/${CATALOG_COURSE}/progress`,
+    { progress: 33, completedLessons: 3 },
+    { authorization: `Bearer ${a.accessToken}` });
+  const r = await request('GET', `/api/courses/${CATALOG_COURSE}/progress`, undefined, {
+    authorization: `Bearer ${b.accessToken}`,
   });
-  assert.equal(rB.status, 200);
-  const bodyB = rB.json<{ progress: number; completedLessons: number }>();
-  assert.equal(bodyB.progress, 0, 'user B must NOT see user A\'s progress');
-  assert.equal(bodyB.completedLessons, 0);
-
-  // User A still sees their saved value — proving independence.
-  const rA = await request('GET', `/api/courses/${courseId}/progress`, undefined, {
-    authorization: `Bearer ${tokensA.accessToken}` ,
-  });
-  const bodyA = rA.json<{ progress: number; completedLessons: number }>();
-  assert.equal(bodyA.progress, 88);
-  assert.equal(bodyA.completedLessons, 9);
+  assert.equal(r.status, 200);
+  const body = r.json<{ progress: number; completedLessons: number }>();
+  assert.equal(body.progress, 0, 'B must not see A progress');
+  assert.equal(body.completedLessons, 0);
 });
 
-test('GET /api/courses/progress batch endpoint returns this user\'s progress map', async () => {
-  // Two courses.
-  const c1 = await request('POST', '/api/courses', {
-    title: 'Batch course 1', instructor: 'X', category: '系统神学',
-    level: 'B.Th', thumbnail: '', totalLessons: 5,
-  }, AUTH_HEADERS);
-  const c2 = await request('POST', '/api/courses', {
-    title: 'Batch course 2', instructor: 'Y', category: '圣经神学',
-    level: 'B.Th', thumbnail: '', totalLessons: 6,
-  }, AUTH_HEADERS);
-  const id1 = c1.json<{ id: string }>().id;
-  const id2 = c2.json<{ id: string }>().id;
-
+test('GET /api/courses/progress batch endpoint returns only this user progress map', async () => {
   const tokens = await newUser('batch-progress@example.com', 'BatchProgress');
-  await request('POST', `/api/courses/${id1}/progress`,
+  await request('POST', `/api/courses/${CATALOG_COURSE}/progress`,
     { progress: 10, completedLessons: 1 },
     { authorization: `Bearer ${tokens.accessToken}` });
-  await request('POST', `/api/courses/${id2}/progress`,
-    { progress: 60, completedLessons: 4 },
+  // ★ CATALOG_COURSE_2 只有 2 课。服务端会把 completedLessons 收敛到
+  //   [0, total_lessons]，所以这里必须传合法值 —— 传 4 会被正确地夹成 2，
+  //   那是行为对、断言错。
+  await request('POST', `/api/courses/${CATALOG_COURSE_2}/progress`,
+    { progress: 60, completedLessons: 2 },
     { authorization: `Bearer ${tokens.accessToken}` });
 
   const r = await request('GET', '/api/courses/progress', undefined, {
@@ -951,22 +906,23 @@ test('GET /api/courses/progress batch endpoint returns this user\'s progress map
   });
   assert.equal(r.status, 200, `expected 200, got ${r.status} body=${r.body}`);
   const body = r.json<Record<string, { progress: number; completedLessons: number }>>();
-  assert.equal(body[id1]?.progress, 10);
-  assert.equal(body[id1]?.completedLessons, 1);
-  assert.equal(body[id2]?.progress, 60);
-  assert.equal(body[id2]?.completedLessons, 4);
+  assert.equal(body[CATALOG_COURSE]?.progress, 10);
+  assert.equal(body[CATALOG_COURSE]?.completedLessons, 1);
+  assert.equal(body[CATALOG_COURSE_2]?.progress, 60);
+  assert.equal(body[CATALOG_COURSE_2]?.completedLessons, 2);
 });
 
 // ---------------------------------------------------------------------------
-// Friends endpoint tests
-//
+// Friends: requests + friendships.
 // Each test re-registers a fresh pair (sometimes triple) of users so prior
-// state in the in-memory store doesn't bleed across the scenarios.
+// state doesn't bleed across the scenarios.
 // ---------------------------------------------------------------------------
 
 async function registerFriendUser(prefix: string, suffix: string): Promise<ProvisionedUser> {
   // AUTH-M7：不再经 POST /api/auth/register（该端点已移除）。
   // 直接播种 canonical 用户 + 身份映射并签发 Supabase token。
+  // DB-13B 起 provisionUser 还会播种 `profiles` 行 —— 好友的显示名
+  // 现在从那里解析（见 staging/profileStore.ts）。
   return newUser(`${prefix}-${suffix}@example.com`, `${prefix}-${suffix}`);
 }
 
@@ -974,24 +930,24 @@ test('POST /api/friends/requests A->B returns 200', async () => {
   const a = await registerFriendUser('fr-a', 'basic');
   const b = await registerFriendUser('fr-b', 'basic');
   const r = await request('POST', '/api/friends/requests', {
-    targetUserId: b.user.id,
+    targetUserId: b.supabaseUserId,
   }, { authorization: `Bearer ${a.accessToken}` });
   assert.equal(r.status, 200, `expected 200, got ${r.status} body=${r.body}`);
   const body = r.json<{ id: string; fromUserId: string; toUserId: string }>();
   assert.equal(typeof body.id, 'string');
-  assert.equal(body.fromUserId, a.user.id);
-  assert.equal(body.toUserId, b.user.id);
+  assert.equal(body.fromUserId, a.supabaseUserId);
+  assert.equal(body.toUserId, b.supabaseUserId);
 });
 
 test('POST /api/friends/requests duplicate returns 409', async () => {
   const a = await registerFriendUser('fr-a', 'dup');
   const b = await registerFriendUser('fr-b', 'dup');
   const r1 = await request('POST', '/api/friends/requests', {
-    targetUserId: b.user.id,
+    targetUserId: b.supabaseUserId,
   }, { authorization: `Bearer ${a.accessToken}` });
   assert.equal(r1.status, 200);
   const r2 = await request('POST', '/api/friends/requests', {
-    targetUserId: b.user.id,
+    targetUserId: b.supabaseUserId,
   }, { authorization: `Bearer ${a.accessToken}` });
   assert.equal(r2.status, 409, `expected 409, got ${r2.status} body=${r2.body}`);
 });
@@ -1000,7 +956,7 @@ test('GET /api/friends/requests/incoming lists A as sender for B', async () => {
   const a = await registerFriendUser('fr-a', 'incoming');
   const b = await registerFriendUser('fr-b', 'incoming');
   const send = await request('POST', '/api/friends/requests', {
-    targetUserId: b.user.id,
+    targetUserId: b.supabaseUserId,
   }, { authorization: `Bearer ${a.accessToken}` });
   assert.equal(send.status, 200);
   const r = await request('GET', '/api/friends/requests/incoming', undefined, {
@@ -1009,8 +965,8 @@ test('GET /api/friends/requests/incoming lists A as sender for B', async () => {
   assert.equal(r.status, 200);
   const list = r.json<{ id: string; fromUserId: string; fromUserName: string }[]>();
   assert.ok(Array.isArray(list));
-  const match = list.find(x => x.fromUserId === a.user.id);
-  assert.ok(match, `expected request from ${a.user.id} in incoming list`);
+  const match = list.find(x => x.fromUserId === a.supabaseUserId);
+  assert.ok(match, `expected request from ${a.supabaseUserId} in incoming list`);
   assert.equal(match!.fromUserName, a.user.name);
 });
 
@@ -1019,7 +975,7 @@ test('POST /api/friends/requests/:id/accept by non-target returns 403', async ()
   const b = await registerFriendUser('fr-b', 'accept-403');
   const c = await registerFriendUser('fr-c', 'accept-403');
   const send = await request('POST', '/api/friends/requests', {
-    targetUserId: b.user.id,
+    targetUserId: b.supabaseUserId,
   }, { authorization: `Bearer ${a.accessToken}` });
   assert.equal(send.status, 200);
   const reqId = send.json<{ id: string }>().id;
@@ -1033,7 +989,7 @@ test('POST /api/friends/requests/:id/accept by target creates friendship', async
   const a = await registerFriendUser('fr-a', 'accept-ok');
   const b = await registerFriendUser('fr-b', 'accept-ok');
   const send = await request('POST', '/api/friends/requests', {
-    targetUserId: b.user.id,
+    targetUserId: b.supabaseUserId,
   }, { authorization: `Bearer ${a.accessToken}` });
   assert.equal(send.status, 200);
   const reqId = send.json<{ id: string }>().id;
@@ -1047,14 +1003,14 @@ test('POST /api/friends/requests/:id/accept by target creates friendship', async
   });
   assert.equal(friends.status, 200);
   const list = friends.json<{ id: string; name: string }[]>();
-  assert.ok(list.some(f => f.id === b.user.id), 'B should appear in A\'s friend list');
+  assert.ok(list.some(f => f.id === b.supabaseUserId), 'B should appear in A\'s friend list');
 });
 
 test('GET /api/friends as A returns B after accept', async () => {
   const a = await registerFriendUser('fr-a', 'list');
   const b = await registerFriendUser('fr-b', 'list');
   const send = await request('POST', '/api/friends/requests', {
-    targetUserId: b.user.id,
+    targetUserId: b.supabaseUserId,
   }, { authorization: `Bearer ${a.accessToken}` });
   const reqId = send.json<{ id: string }>().id;
   await request('POST', `/api/friends/requests/${reqId}/accept`, undefined, {
@@ -1065,7 +1021,7 @@ test('GET /api/friends as A returns B after accept', async () => {
   });
   assert.equal(r.status, 200);
   const list = r.json<{ id: string; name: string }[]>();
-  const found = list.find(f => f.id === b.user.id);
+  const found = list.find(f => f.id === b.supabaseUserId);
   assert.ok(found, 'expected B in A\'s friend list');
   assert.equal(found!.name, b.user.name);
 });
@@ -1074,14 +1030,14 @@ test('DELETE /api/friends/:userId unfriends both sides', async () => {
   const a = await registerFriendUser('fr-a', 'unfriend');
   const b = await registerFriendUser('fr-b', 'unfriend');
   const send = await request('POST', '/api/friends/requests', {
-    targetUserId: b.user.id,
+    targetUserId: b.supabaseUserId,
   }, { authorization: `Bearer ${a.accessToken}` });
   const reqId = send.json<{ id: string }>().id;
   await request('POST', `/api/friends/requests/${reqId}/accept`, undefined, {
     authorization: `Bearer ${b.accessToken}`,
   });
   // A unfriends B.
-  const del = await request('DELETE', `/api/friends/${b.user.id}`, undefined, {
+  const del = await request('DELETE', `/api/friends/${b.supabaseUserId}`, undefined, {
     authorization: `Bearer ${a.accessToken}`,
   });
   assert.equal(del.status, 200, `expected 200, got ${del.status} body=${del.body}`);
