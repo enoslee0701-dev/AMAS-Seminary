@@ -237,10 +237,23 @@ console.log('');
   await sleep(1000);
 
   backend.kill();
-  // 等一个轮询周期（10s）让 presence 请求真的失败
-  await sleep(13000);
 
-  const body = await page.evaluate(() => document.body.innerText || '');
+  // 等 presence 轮询真的失败一次。
+  //
+  // 这里原本是 `await sleep(13000)` —— 轮询周期 10s，只留 3s 余量。
+  // DB-13B 之后每次请求都要走一趟 Postgres，启动与首轮轮询都变慢，
+  // 这 3s 在 CI 的慢机上不够（本地稳定通过、CI 间歇性失败，重跑即绿）。
+  // 固定 sleep 换成**有界轮询**：等到降级提示出现（或压根没有人数显示）
+  // 就继续，最多等 30s。这样既不靠运气，也不会把等待时间白白拉长。
+  let body = '';
+  const deadline = Date.now() + 30_000;
+  for (;;) {
+    body = await page.evaluate(() => document.body.innerText || '');
+    const degraded = body.includes('成员状态暂时无法更新')
+      || /\d+ 人在线/.test(body) === false;
+    if (degraded || Date.now() > deadline) break;
+    await sleep(1000);
+  }
   check('presence 失败后读经室未白屏', body.trim().length > 40, `正文 ${body.trim().length} 字`);
   check('presence 失败后圣经仍可读', body.includes('起初') || body.includes('创世记'));
   check('presence 失败显示轻量提示，不显示假人数',
