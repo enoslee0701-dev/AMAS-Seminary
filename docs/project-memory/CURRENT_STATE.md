@@ -56,12 +56,17 @@
 > ```
 > import db.ts 的运行时消费者   15（11 有写入 / 4 只读）
 > 被写入的 SQLite 表           18
-> 可直接切（仅需身份适配）      COMMUNITY · LEARNING · PUSH · PRAYER-SESSIONS 子集
-> 必须先做 DB-4                prayer_shares(12) · prayer_intercessions(1)
->                             room_prayer_topics(2) · users(7)
+> 可直接切（仅需身份适配）      COMMUNITY · LEARNING · PUSH · PRAYER（整域）
+> 必须先做 DB-4                users(7) —— **只剩这一张**
 > 应暂留 SQLite                room_realtime_events · refresh_jti
 >                             rooms/room_members/room_presence（§12 回滚参考）
 > ```
+>
+> `prayer_shares`(12) / `prayer_intercessions`(1) / `room_prayer_topics`(2) 的 15 行
+> **不是**在等 DB-4：STAGING-1A11 已按 fixture 溯源永久裁定 SKIP
+> （13 行源自 6 个 D-34 装置，2 行是父房间不存在的孤儿）。本地独立核对吻合，
+> 且 D-35 的 POTENTIAL_REAL_USER 一行都不占。这三张 Postgres 表是**按裁定为空**，
+> 不是尚欠 15 行未迁 —— 切换时「空」就是正确终态。
 >
 > **posts / friends / recordings / images 根本不在 SQLite —— 它们存在进程内
 > `new Map<>()` 里，重启即全丢。** 因此 `db.ts` 里 posts / post_likes /

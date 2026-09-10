@@ -80,9 +80,9 @@ import db.ts 的运行时消费者     15
 | pt_state | 0 | `app_practice_training_state` | 0 | 否 |
 | library_books | 0 | `app_library_books` | 0 | 否 |
 | library_favorites | 0 | `app_library_favorites` | 0 | 否 |
-| prayer_shares | **12** | `app_prayer_shares` | 0 | **是 —— 会丢** |
-| prayer_intercessions | **1** | `app_prayer_intercessions` | 0 | **是 —— 会丢** |
-| room_prayer_topics | **2** | `app_room_prayer_topics` | 0 | **是 —— 会丢** |
+| prayer_shares | **12** | `app_prayer_shares` | 0 | 会变空，但**空即正确终态**（见下）|
+| prayer_intercessions | **1** | `app_prayer_intercessions` | 0 | 同上 |
+| room_prayer_topics | **2** | `app_room_prayer_topics` | 0 | 同上 |
 | prayer_share_reports | 0 | `app_prayer_share_reports` | 0 | 否 |
 | prayer_sessions | 0 | `app_prayer_sessions` | 0 | 否 |
 | prayer_session_items | 0 | `app_prayer_session_items` | 0 | 否 |
@@ -110,8 +110,9 @@ COMMUNITY   posts · friends · recordings · images · announcements
 LEARNING    courses(catalog 只读) · course_progress · growth_state · pt_state
             library_books · library_favorites
 OTHER       push_tokens
-PRAYER 子集  prayer_sessions · prayer_session_items · prayer_session_events
-            room_reading_state · prayer_share_reports
+PRAYER      整域 —— sessions · items · events · room_reading_state
+            share_reports · prayer_shares · prayer_intercessions
+            · room_prayer_topics（后三张见下方「空即正确终态」）
 ```
 
 共同点：Postgres 目标表全部存在；用户域表**两侧都是 0 行**；
@@ -127,14 +128,45 @@ PRAYER 子集  prayer_sessions · prayer_session_items · prayer_session_events
 ### C. 必须先做 DB-4 业务数据迁移才能切
 
 ```
-prayer_shares         12 行   ← 真实祷告分享
-prayer_intercessions   1 行   ← 真实代祷登记
-room_prayer_topics     2 行   ← 真实房间祷告主题
 users                  7 行   ← 身份域（D-34/D-35：6 个测试装置 + 1 个待核实真人）
 ```
 
-切到空表会让用户看到**祷告分享墙突然空掉**。为了「完成 Supabase 化」而切过去
-是不可接受的 —— 明确 STOP，标记 NEEDS DB-4。
+**只剩这一张。** 七行 crosswalk 全部未解决，是真正开放的身份问题。
+
+> #### ⚠️ 本文初版在这里判错了，已更正
+>
+> 初版把 `prayer_shares`(12) · `prayer_intercessions`(1) · `room_prayer_topics`(2)
+> 也列为 NEEDS DB-4，理由是「切到空表会丢数据」。**结论的后半句对，前半句错。**
+>
+> 这 15 行不是在等身份裁定，而是 STAGING-1A11 已**永久裁定 SKIP**，
+> 依据是 fixture 溯源。live `migration.row_manifest`：
+>
+> ```
+> prayer_shares         SKIPPED  TEST_FIXTURE_DERIVED          10
+> prayer_shares         SKIPPED  ORPHAN_MISSING_ROOM_PARENT     2
+> prayer_intercessions  SKIPPED  TEST_FIXTURE_DERIVED           1
+> room_prayer_topics    SKIPPED  TEST_FIXTURE_DERIVED           2
+> ```
+>
+> **本地独立核对（读 canonical SQLite，只读）与之逐项吻合**：
+>
+> ```
+> 10 行  归属 sec2_* 装置用户（房主甲 1cb28215… / 成员乙 dc4c6c4d…）
+>        位于 sec2_r1 / sec2_r2 装置房间
+>  2 行  room_id = 字面量 'no_such_room_9x'，其 user_id 根本不在 users 表内
+>  1 行  intercession 归属成员乙        2 行 topic 由房主甲创建
+> ```
+>
+> 关键一条：`est***@gmail.com`（D-35 的 POTENTIAL_REAL_USER）在这三张表里
+> **一行都不占**。所以没有任何真实用户内容会因此消失。
+>
+> 13 行因源自 6 个 D-34 装置而被排除 —— **DB-4 的身份裁定怎么变都不会改变这个理由**。
+> 另 2 行是孤儿分享，父房间在源库里就不存在，而
+> `app_prayer_shares.room_id` 是 NOT NULL 外键到 `app_rooms` —— 任何身份决定都修不好它。
+>
+> **对切换的实际影响**：这三张 Postgres 表是**按裁定为空**，不是**尚欠 15 行未迁**。
+> 祷告域的 DAL 切换应把「空」当作这份数据集的正确终态，
+> 而不是当作一笔待还的迁移债。
 
 ### D. 应继续暂留 SQLite
 
@@ -149,23 +181,23 @@ rooms / room_members / room_presence
 
 ---
 
-## ⚠️ 一个会被机械切换忽略的真实复杂点
+## 一个初版误判、现已澄清的点
 
-`routes/prayerHistory.ts` **同时读** `prayer_sessions`（0 行，可切）
-**和** `prayer_shares` / `prayer_intercessions`（13 行，需 DB-4）。
+`routes/prayerHistory.ts` **同时读** `prayer_sessions`(0) 与
+`prayer_shares` / `prayer_intercessions`(13)。初版据此担心它会横跨两个存储。
 
-按文件边界切，它会变成一个跨两个存储的读取端 —— 要么让它同时读
-Postgres 与 SQLite（复杂但可行），要么把它连同 C 类一起推迟。
-**建议：把 `prayerHistory.ts` 划入 C 类一起推迟**，避免为一个只读页面
-引入跨库聚合。切 `prayerSession.ts` 时它读的 sessions 两侧都是 0 行，
-历史页在切换后仍能正确显示（因为本来就没有 session 历史）。
+~~按文件边界切，它会变成一个跨两个存储的读取端。~~
+**这个顾虑随上面的更正一起消失了**：既然 shares / intercessions 也属于
+可切的 A 类，`prayerHistory.ts` 读的六张表可以在同一批里一起切走，
+不存在跨库聚合。它应当**与 `prayer.ts` / `prayerSession.ts` 同批**完成，
+否则才会真的出现一个读取端横跨两个存储。
 
 ---
 
 ## 下一批切换建议（Internal Fast Track，一个包）
 
 ```
-DB-13B  COMMUNITY + LEARNING + PUSH + PRAYER-SESSIONS 子集
+DB-13B  COMMUNITY + LEARNING + PUSH + PRAYER（整域）
 ```
 
 一个包而不是十几个小阶段，理由：它们共享**同一处改动**（身份换 UUID），
@@ -178,11 +210,14 @@ DB-13B  COMMUNITY + LEARNING + PUSH + PRAYER-SESSIONS 子集
 2. **LEARNING**（course_progress / growth_state / pt_state / library_*）
    —— 全 0/0；`growth_state → app_christian_profile` 要处理多出来的两列。
 3. **PUSH**（push_tokens）—— 0/0，最小。
-4. **PRAYER 子集**（sessions / items / events / room_reading_state / share_reports）
-   —— 0/0；`prayerHistory.ts` 留在 SQLite 一侧不动。
+4. **PRAYER 整域**（prayer.ts / prayerSession.ts / prayerHistory.ts / roomReading.ts）
+   —— sessions / items / events / room_reading_state / share_reports 两侧 0/0；
+   shares / intercessions / topics 的 15 行按 1A11 裁定为 SKIP，**空即终态**。
+   四个文件必须同批，否则 `prayerHistory.ts` 会横跨两个存储。
 
-**明确不在本包内**：`prayer_shares` · `prayer_intercessions` ·
-`room_prayer_topics` · `users` · `prayerHistory.ts` · `room_realtime_events`。
+**明确不在本包内**：`users`（身份域，NEEDS DB-4）· `room_realtime_events`
+（实时扇出日志，应换传输而非换 DAL）· `refresh_jti`（无消费者）·
+`rooms`/`room_members`/`room_presence`（§12 回滚参考）。
 
 `courses` 表本身（67 行）**不切**：`course_catalog` 已是权威副本且数量一致，
 但 `courses.ts` 目前仍有 admin 写入路径（`INSERT INTO courses` / `UPDATE courses`），
