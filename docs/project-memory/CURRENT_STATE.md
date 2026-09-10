@@ -47,7 +47,9 @@
 >                         course_files=0 cooperation_submissions=0
 > 身份口径                 #24 = RESOLVED / D-42
 >                         profiles.id = auth.users.id = Supabase UUID
-> 真实 staging 只读 smoke  10/10 PASS（backend/scripts/db12-staging-smoke.mjs）
+> 真实 staging smoke      10/10 PASS（backend/scripts/db12-staging-smoke.mjs）
+>                         以读为主，含**一次受控写入**：只建一行带标记的测试投稿，
+>                         验证后只删自己那一行，历史行不动。不是纯只读。
 > 旧 SQLite 升级兼容        已修复（见下「旧库升级兼容」）
 > ROOM USER WRITE live smoke
 >                         EXTERNAL-OWNER BLOCKED —— 目前不存在任何合法 provision
@@ -218,11 +220,11 @@ frontend tsc / backend tsc     clean
 build                          PASS
 verify:local-release           PASS（聚合门禁 exit 0）
 
-真实 staging 只读 smoke         10/10 PASS
+真实 staging smoke             10/10 PASS（含一次受控写入，自行清除）
 FAIL 数：0
 ```
 
-**验收级别：TESTED LOCALLY + 真实 staging 只读 smoke。**
+**验收级别：TESTED LOCALLY + 真实 staging smoke（读为主，含一次受控写入）。**
 仍**不是** STAGING VERIFIED / PRODUCTION VERIFIED —— 真实写入路径的端到端验收
 仍缺一个合法 provision 的 staging 学生身份（EXTERNAL-OWNER BLOCKED）。
 
