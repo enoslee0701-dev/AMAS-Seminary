@@ -4,6 +4,13 @@ import { Search, BookOpen, Bot, Send, X, FileText, Headphones, Download, Star } 
 import { generateTheologicalResponse } from '../services/geminiService';
 import { MODAL_LAYER } from '../services/layers';
 import {
+  useLibraryFavorites,
+  seedFromServer as seedFavorites,
+  toggleFavorite as toggleFavoriteStore,
+  setFavorites as setFavoritesStore,
+  getFavorites as getFavoritesSnapshot,
+} from '../services/libraryFavorites';
+import {
   listBooks as apiListBooks,
   listFavorites as apiListFavorites,
   toggleFavorite as apiToggleFavorite,
@@ -46,8 +53,12 @@ const LibraryView: React.FC = () => {
   const [activeCategory, setActiveCategory] = useState<'全部' | '神学藏书' | '宣教资料库'>('全部');
   const [previewBook, setPreviewBook] = useState<Book | null>(null);
   const [books, setBooks] = useState<Book[]>(FALLBACK_BOOKS);
-  const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<string | null>(null);
+  /* 收藏搬到进程内共享 store：原本放在本组件 useState 里，切个标签页
+     视图一卸载就归零，而重新挂载时 listFavorites() 在本地模式下返回空数组，
+     补不回来 —— 实测「收藏数 1 → 切页 → 0」。同一份 store 也让「我的」页的
+     「收藏图书」计数不再永远是 0。 */
+  const favorites = useLibraryFavorites();
 
   // Boot-time hydrate: fetch the live catalog + this user's favorites.
   // If the backend returns an empty list or fails, we keep the fallback
@@ -64,7 +75,7 @@ const LibraryView: React.FC = () => {
       // logged in / backend unreachable so it's safe to seed unconditionally.
       const favIds = await apiListFavorites();
       if (cancelled) return;
-      if (favIds.length > 0) setFavorites(new Set(favIds));
+      seedFavorites(favIds);   // 空数组不覆盖本地已有的
     })();
     return () => { cancelled = true; };
   }, []);
@@ -126,32 +137,22 @@ const LibraryView: React.FC = () => {
     const key = String(bookId);
     const wasFav = favorites.has(key);
     // Optimistic flip.
-    setFavorites(prev => {
-      const next = new Set(prev);
-      if (wasFav) next.delete(key); else next.add(key);
-      return next;
-    });
+    toggleFavoriteStore(key);
     // Only call the backend for server-issued (string) ids. Numeric mock
     // ids belong to FALLBACK_BOOKS and don't exist server-side.
     if (typeof bookId !== 'string') return;
     const result = await apiToggleFavorite(bookId);
     if (result === null) {
       // Revert.
-      setFavorites(prev => {
-        const next = new Set(prev);
-        if (wasFav) next.add(key); else next.delete(key);
-        return next;
-      });
+      toggleFavoriteStore(key);
       setToast('收藏失败，请稍后再试');
       window.setTimeout(() => setToast(null), 2200);
       return;
     }
     // Reconcile with server truth in case it differed (rare).
-    setFavorites(prev => {
-      const next = new Set(prev);
-      if (result.favorited) next.add(key); else next.delete(key);
-      return next;
-    });
+    const next = new Set(getFavoritesSnapshot());
+    if (result.favorited) next.add(key); else next.delete(key);
+    setFavoritesStore(next);
   };
 
   const counts = {

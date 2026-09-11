@@ -268,6 +268,41 @@ try {
   check('切走再切回，课程页仍在刚才的位置',
     Math.abs(afterSwap - beforeSwap) <= 40, `${beforeSwap} → ${afterSwap}`);
 
+  /* ---------------- 5. 图书馆收藏跨页一致 ---------------- */
+  console.log('\n-- 图书馆收藏 → 我的页计数 → 切回来 --');
+  if (!await fresh()) throw new Error('启动超时');
+  await tab('图书馆');
+  const favState = () => page.evaluate(() => {
+    const btns = [...document.querySelectorAll('button')]
+      .filter(x => ['收藏', '取消收藏'].includes(x.getAttribute('aria-label') || ''));
+    return { total: btns.length, faved: btns.filter(x => x.getAttribute('aria-label') === '取消收藏').length };
+  });
+  const fav0 = await favState();
+  check('前提：图书馆列出了书，且一开始没有收藏', fav0.total > 0 && fav0.faved === 0, JSON.stringify(fav0));
+
+  await page.evaluate(() => [...document.querySelectorAll('button')]
+    .find(x => x.getAttribute('aria-label') === '收藏')?.click());
+  await sleep(1200);
+  const fav1 = await favState();
+  const failToast = await page.evaluate(() => document.body.innerText.includes('收藏失败'));
+  check('点一下收藏，星星确实填上且没有报错', fav1.faved === 1 && !failToast, JSON.stringify(fav1));
+
+  await tab('我的');
+  const profileCount = await page.evaluate(() => {
+    for (const b of document.querySelectorAll('button')) {
+      const m = /^(\d+)\s*收藏图书$/.exec((b.innerText || '').replace(/\s+/g, ' ').trim());
+      if (m) return Number(m[1]);
+    }
+    return -1;
+  });
+  check('★「我的」页的「收藏图书」对得上刚才收的那本',
+    profileCount === fav1.faved, `我的页=${profileCount} 图书馆=${fav1.faved}`);
+
+  await tab('图书馆');
+  const fav2 = await favState();
+  check('★ 切走再切回图书馆，收藏还在',
+    fav2.faved === fav1.faved, `${fav1.faved} → ${fav2.faved}`);
+
   check('全程无 JS 运行时错误', errors.length === 0, errors.slice(0, 3).join(' | '));
 } finally {
   await browser.close();

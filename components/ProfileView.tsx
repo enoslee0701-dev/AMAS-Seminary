@@ -12,6 +12,7 @@ import { initialAvatar } from '../services/imageFallback';
 import { MODAL_LAYER } from '../services/layers';
 import { readGrowthRole, archImg } from '../services/growthArchetypes';
 import { listFavorites as libListFavorites } from '../services/libraryService';
+import { useLibraryFavorites, seedFromServer as seedLibraryFavorites } from '../services/libraryFavorites';
 import { listFriends } from '../services/friendsService';
 import { listMyProgress, type ProgressEntry } from '../services/coursesService';
 import { changePassword, getAccessToken, updateMe } from '../services/authService';
@@ -262,7 +263,12 @@ const ProfileView: React.FC<ProfileViewProps> = ({ favoriteCourseIds = [], onLog
   // Library favorites, friend count and per-course progress come from the
   // backend. In the local/demo path (no access token) we skip the calls and
   // fall back to what we already have client-side (favoriteCourseIds is real).
-  const [libFavCount, setLibFavCount] = useState(0);
+  /* 「收藏图书」原本只认后端：没有 access token 时下面那个 effect 直接
+     return，于是本地模式下这个数永远是 0 —— 用户刚在图书馆收藏了几本，
+     回到这里还是 0，两个页面各查各的本来也对不上。
+     改为读图书馆那份共享 store；后端有数据时由它灌进去，服务端说了算。 */
+  const libraryFavorites = useLibraryFavorites();
+  const libFavCount = libraryFavorites.size;
   const [friendCount, setFriendCount] = useState(0);
   const [progressMap, setProgressMap] = useState<Record<string, ProgressEntry>>({});
   const [statsLoading, setStatsLoading] = useState(() => !!getAccessToken());
@@ -276,7 +282,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ favoriteCourseIds = [], onLog
         listMyProgress().catch(() => ({} as Record<string, ProgressEntry>)),
       ]);
       if (cancelled) return;
-      setLibFavCount(favs.length);
+      seedLibraryFavorites(favs);   // 空数组不覆盖本地已有的
       setFriendCount(friends.length);
       setProgressMap(prog);
       setStatsLoading(false);
