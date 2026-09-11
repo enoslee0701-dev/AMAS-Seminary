@@ -50,6 +50,7 @@ const BACKEND_ROOT = path.resolve(__dirname, '../..');
 const TMP = path.join(BACKEND_ROOT, '.tmp-test');
 const TSX = path.join(BACKEND_ROOT, 'node_modules', 'tsx', 'dist', 'cli.mjs');
 const LOAD_DB = path.join(BACKEND_ROOT, 'src', 'test', 'helpers', 'createFreshDb.ts');
+const SERVER = path.join(BACKEND_ROOT, 'src', 'server.ts');
 const DEV_WRAPPER = path.join(BACKEND_ROOT, 'scripts', 'dev.mjs');
 const CANONICAL = canonicalDbPath(BACKEND_ROOT);
 
@@ -261,5 +262,47 @@ describe('#26 · npm run dev 的包装器', () => {
       assert.equal(r.code, 0, `包装器给的这类路径应当可用：\n${r.stderr}`);
       assert.ok(fs.existsSync(probe));
     } finally { rm(probe); }
+  });
+});
+
+describe('#26 · production 被拒时不得先碰数据文件（启动顺序）', () => {
+  /*
+   * Codex 复核提出的：production 分支在 startupGuard 之前就返回了 canonical，
+   * 那 db.ts 到底是在 exit(1) 之前还是之后打开这个文件？
+   *
+   * 实测答案是「之前」，而且不止打开 —— 修复前那次运行的日志里有
+   * `SEC-3 migration: +prayer_sessions.title, …`，也就是说一个被判定
+   * 配置不合格、随即拒绝启动的实例，已经改过 canonical 的 schema 了。
+   * 根因是 ESM 的 import 先于模块体求值，而门禁写在模块体里。
+   *
+   * 修法是把门禁提到 server.ts 的第一个 import（bootstrap/productionGate.ts）。
+   * 这条用例钉住的就是那个顺序：既要仍然 exit(1) 并给出 RB-06 的完整清单，
+   * 又要在退出前**没有碰过**数据文件。
+   */
+  test('★ production 缺配置 → exit(1)，且数据文件未被创建/打开', async () => {
+    const existedBefore = fs.existsSync(CANONICAL);
+    const env = devEnv({ NODE_ENV: 'production' });
+    delete env.JWT_SECRET;
+    delete env.CORS_ORIGINS;
+
+    const r = await run([TSX, SERVER], env);
+    assert.equal(r.code, 1, `production 缺配置应当 exit(1)：
+${r.stdout}
+${r.stderr}`);
+
+    const all = r.stdout + r.stderr;
+    // RB-06 的完整清单必须仍然是三项一次列全，而不是被一条 DB_PATH 异常顶掉
+    for (const key of ['JWT_SECRET', 'DB_PATH', 'CORS_ORIGINS']) {
+      assert.ok(all.includes(key), `RB-06 清单里应当仍有 ${key}`);
+    }
+    assert.match(all, /FATAL/);
+
+    // 最要紧的一条：被拒之前不得碰数据文件
+    assert.equal(fs.existsSync(CANONICAL), existedBefore,
+      '配置不合格的 production 实例在被拒绝启动前创建/打开了数据文件');
+    assert.equal(all.includes('SQLite:'), false,
+      'db.ts 的启动日志出现了 —— 说明它在门禁之前就被加载了');
+    assert.equal(all.includes('SEC-3 migration'), false,
+      '被拒绝的这次启动跑了 schema 迁移');
   });
 });

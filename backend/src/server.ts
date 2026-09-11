@@ -1,3 +1,14 @@
+/*
+ * ★ 这一行必须留在最前面。
+ *
+ * ESM 的 import 在模块体之前求值，而下面那串路由 import 里有 db.ts ——
+ * db.ts 在模块加载期就会打开（必要时创建）SQLite 文件并跑 schema 迁移。
+ * 生产门禁若写在模块体里（本文件原先就是那样），实际上跑在 db.ts 之后：
+ * 一个被判定配置不合格、随即 exit(1) 的实例，已经先碰过数据文件了。
+ * 实测证据与完整说明见 bootstrap/productionGate.ts。
+ */
+import './bootstrap/productionGate.js';
+
 import express from 'express';
 import cors from 'cors';
 import http from 'node:http';
@@ -30,12 +41,10 @@ import { registerPtRoutes } from './routes/pt.js';
 import { registerGrowthRoutes } from './routes/growth.js';
 import { requireAuth, requireAdmin, warnIfNoAppSecret, warnIfJwtDerived } from './middleware/auth.js';
 import { generalApiLimiter, tokenLimiter } from './middleware/rateLimit.js';
-import { assertProductionConfigOrExit } from './startupGuard.js';
 import { identityEnvLines } from './diagnostics/identityEnv.js';
 
-// RB-06 · 生产启动护栏。放在建 app 之前：配置不合格的生产实例
-// 不应该开出监听端口。开发与测试环境一律放行，流程不受影响。
-assertProductionConfigOrExit();
+// RB-06 · 生产启动护栏现在由最上面的 `./bootstrap/productionGate.js` 执行 ——
+// 必须早于 db.ts 的模块加载，详见该文件。这里不再重复调用。
 
 const app = express();
 app.use(cors({

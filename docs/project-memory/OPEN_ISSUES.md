@@ -1429,11 +1429,39 @@ production                  → 语义刻意不变：仍落 canonical，仍由 R
                              异常，是退步不是加固。
 ```
 
+**启动顺序（Codex 复核追加，2026-09-11）**：production 分支在 startupGuard
+之前就返回 canonical，那 db.ts 究竟在 exit(1) 之前还是之后打开文件？实测答案是
+**之前**，而且不止打开 —— 修复前那次运行日志里有
+`SEC-3 migration: +prayer_sessions.title, …`：一个被判定配置不合格、随即拒绝
+启动的实例，已经改过 canonical 的 schema 了。
+
+根因是 ESM 的 **import 先于模块体求值**：`server.ts` 的门禁调用写在模块体里
+（看起来很靠前），但那一串路由 import 里有 `db.ts`，db.ts 的模块体先跑完。
+
+修法：`backend/src/bootstrap/productionGate.ts` 把 `assertProductionConfigOrExit()`
+放进模块体，并成为 `server.ts` 的**第一个 import**。RB-06 语义一字未改 ——
+同一个函数、同一份三项清单、同一个 exit(1)，只是提前跑。刻意**不**把检查搬进
+`dbPath.ts`：那样会把完整清单换成一条孤立的 DB_PATH 异常。
+
+```
+修复前   exit 1 · canonical 文件被创建 = true  · 日志有 SQLite: / SEC-3 migration
+修复后   exit 1 · canonical 文件被创建 = false · 日志中二者皆无，三项清单完整
+```
+
+**精确边界（不要误读为整条已关）**：
+```
+production 缺 DB_PATH 经 server.ts 启动 → 门禁先跑，数据文件一个字节不碰
+production 缺 DB_PATH 但直接 import db.ts（运维脚本等不经 server.ts 的入口）
+                                       → 仍返回 canonical。刻意保留：
+                                         那类入口本就是操作者指名要跑的。
+存储布局本身                           → 未重新设计，#26 因此仍 OPEN
+```
+
 **仍 OPEN 的部分**：canonical 数据文件位于仓库目录内的一个**缺省**路径上 ——
 重新设计存储布局不属于本轮范围（Supervisor：不要在本阶段重构存储）。
 本条因此仍 OPEN，只是范围收窄到「存储布局」这一项。
 
-**回归**：`backend/src/test/issue26-dev-db-containment.test.ts`（17 项，已并入
+**回归**：`backend/src/test/issue26-dev-db-containment.test.ts`（18 项，已并入
 `test:local`）。负向控制：临时把 dev 分支改回旧行为重跑，5 条转红 ——
 其中一条正是「canonical 文件在本组用例全程未被改动」，旧代码确实会把
 `backend/data/amas.sqlite` 凭空创建出来。恢复后 17/17。
