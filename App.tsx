@@ -50,6 +50,7 @@ import { useTranslation } from 'react-i18next';
 import { getAccessToken, getCurrentUser, me as fetchMe, logout as apiLogout } from './services/authService';
 import { initialAvatar } from './services/imageFallback';
 import { loadCustomGroups } from './services/customGroups';
+import { loadCourseFavorites, saveCourseFavorites } from './services/courseFavorites';
 import { hasPendingDiscoverHandoff } from './services/christianProfile/discoverHandoff';
 import { listAnnouncements } from './services/announcementsService';
 import {
@@ -161,7 +162,13 @@ const App: React.FC = () => {
     setCurrentView(ViewState.COLLEGE_OVERVIEW);
   };
   const [communityTab, setCommunityTab] = useState<'rooms' | 'feed' | 'directory' | 'prayer'>('rooms');
-  const [favoriteCourseIds, setFavoriteCourseIds] = useState<string[]>([]);
+  /* 收藏的课程。改之前是 useState<string[]>([]) —— 既不落盘也不向任何地方
+     同步，刷新一次全没。课程收藏后端没有任何对应端点（backend/src/routes 里
+     只有 library 那两条），所以本地不是影子副本而是唯一的存储；
+     不写就等于这个功能不存在。按身份分键，见 services/courseFavorites.ts。 */
+  const [favoriteCourseIds, setFavoriteCourseIds] = useState<string[]>(
+    () => loadCourseFavorites(currentUser?.id),
+  );
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
 
   /**
@@ -298,6 +305,12 @@ const App: React.FC = () => {
   useEffect(() => {
     const combined = [...INITIAL_CONVERSATIONS, ...loadCustomGroups(currentUserId)];
     setConversations(Array.from(new Map(combined.map(item => [item.id, item])).values()));
+  }, [currentUserId]);
+
+  /* 收藏的课程同理：登录 / 切换 / 登出都按新身份重算，否则登出后
+     上一个身份的收藏还留在内存里，下一个人看得见。 */
+  useEffect(() => {
+    setFavoriteCourseIds(loadCourseFavorites(currentUserId));
   }, [currentUserId]);
 
   // --- User Profile Modal State ---
@@ -500,9 +513,18 @@ const App: React.FC = () => {
   };
 
   const handleToggleFavorite = (courseId: string) => {
-    setFavoriteCourseIds(prev => 
-      prev.includes(courseId) ? prev.filter(id => id !== courseId) : [...prev, courseId]
-    );
+    setFavoriteCourseIds(prev => {
+      const next = prev.includes(courseId)
+        ? prev.filter(id => id !== courseId)
+        : [...prev, courseId];
+      /* 落盘写在 updater 里：下一个值就在手上，不用再搭一个 effect 去跟。
+         这个 updater 只写 localStorage，不调别的组件的 setState，
+         所以不会触发 React 的跨组件更新警告。
+         persisted=false 暂不弹提示 —— 收藏是个轻动作，每次都弹太吵；
+         写本地不等于「已同步到云端」，这点在 services/courseFavorites.ts 写明。 */
+      saveCourseFavorites(currentUser?.id, next);
+      return next;
+    });
   };
 
   const handleCourseClick = (courseId: string) => {

@@ -491,6 +491,14 @@ try {
   /* ---------------- 8a. 课程列表直接收藏 ---------------- */
   console.log('');
   console.log('-- 课程列表 · 直接收藏 --');
+  /* 前面第 6 节在详情页收过一门课，而收藏现在是真落盘的 —— 这一节要从
+     「还没收藏」起步，所以先清掉本地 fixture 身份的桶再进页面。
+     清的只是 amas_course_favorites:* 这几个键，不碰任何真实数据。 */
+  await page.evaluate(() => {
+    for (const k of Object.keys(localStorage)) {
+      if (k.startsWith('amas_course_favorites:')) localStorage.removeItem(k);
+    }
+  });
   if (!await fresh()) throw new Error('启动超时');
   await tab('课程');
   {
@@ -627,6 +635,57 @@ try {
     f = await favBtn();
     check('★ 在详情页取消收藏，列表那一行同步变回未收藏',
       f.pressed === 'false', String(f.pressed));
+
+    /* ---- 落盘：刷新后还在，且不跨身份串 ----
+       改之前 favoriteCourseIds 是 useState([])，纯内存，刷新即空。
+       课程收藏后端没有端点，本地是唯一存储，所以这条必须在浏览器里验，
+       光有 fixture 不够 —— fixture 证不了 App 真的接上了。 */
+    await clickFav();
+    await sleep(700);
+    f = await favBtn();
+    check('前提：重新收藏', f.pressed === 'true', String(f.pressed));
+    const favTitle = f.title;
+
+    const bucket = (uid) => page.evaluate(
+      (u) => localStorage.getItem('amas_course_favorites:v1:' + u), uid);
+    const own = await bucket('flow-local');
+    check('★ 收藏落到了按身份分的键上（不是全局键）',
+      !!own && JSON.parse(own).length === 1, String(own));
+    const globalKey = await page.evaluate(() => localStorage.getItem('amas_course_favorites'));
+    check('没有写不带身份的全局键', globalKey === null, String(globalKey));
+
+    if (!await fresh()) throw new Error('刷新超时');
+    await tab('课程');
+    f = await favBtn();
+    check('★ 刷新之后收藏还在（此前是纯内存 useState([])，刷新即空）',
+      f.pressed === 'true' && f.title === favTitle, `${f.title} pressed=${f.pressed}`);
+
+    /* 换个身份登录，同一台机器上不能看见上一个人的收藏。 */
+    await page.evaluate(() => localStorage.setItem('amas_current_user', JSON.stringify({
+      id: 'flow-other', name: '另一个身份', email: 'other@example.com', role: 'student' })));
+    if (!await fresh()) throw new Error('换身份后刷新超时');
+    await tab('课程');
+    f = await favBtn();
+    check('★ 换一个身份登录，看不到上一个身份的收藏',
+      f.pressed === 'false', `${f.label} pressed=${f.pressed}`);
+
+    await clickFav();
+    await sleep(700);
+    const other = await bucket('flow-other');
+    const first = await bucket('flow-local');
+    check('★ 新身份写自己的桶，没覆盖上一个身份的',
+      !!other && !!first && JSON.parse(first).length === 1, `a=${first} b=${other}`);
+
+    // 换回原身份，后面的小节继续用它
+    await page.evaluate(() => localStorage.setItem('amas_current_user', JSON.stringify({
+      id: 'flow-local', name: '本地验证', email: 'flow@example.com', role: 'student' })));
+    if (!await fresh()) throw new Error('换回身份后刷新超时');
+    await tab('课程');
+    f = await favBtn();
+    check('★ 切回原身份，原来的收藏原样回来',
+      f.pressed === 'true', String(f.pressed));
+    await clickFav();          // 收干净，不给后面的小节留状态
+    await sleep(500);
   }
 
   /* ---------------- 8b. 发起群聊弹窗的完整使用流程 ---------------- */
