@@ -102,6 +102,43 @@ jobs:
       - name: Verify local release gate
         run: npm run verify:local-release
 
+  ui-flows:
+    # -- 为什么单开一个 job，而不是塞进 verify:local-release ----------
+    # 这八个脚本是本阶段陆续加的 UI / 流程门禁（触控目标、弹窗层级、
+    # 核心用户流程、discover 同源副本、自建群的身份隔离）。它们各自要起
+    # vite 或极小静态服务器 + headless Chrome，全套约 10-15 分钟。
+    # 塞进 regression 那条 && 链会把发布门禁的时长翻倍，而且一旦某个 UI
+    # 断言抖动就会连带挡住后端与构建的信号 —— 两件事该分开判。
+    #
+    # 所以：独立 job、独立信号、与 regression 并行，互不阻塞。
+    # 这里**不得**加 continue-on-error / || true —— 那就又变成假绿了。
+    #
+    # 这些脚本全程只写浏览器 localStorage 里自己用到的键，用例间互相清理；
+    # 不连后端、不创建真实身份、不碰 canonical SQLite 与 live 配置，
+    # 因此可以安全地在公共 runner 上跑。
+    name: UI flows (verify:ui-flows)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # 每个脚本都会自己找 Chrome，但公共 runner 上的路径与本机不同；
+      # 显式指过去，避免脚本回落到「找不到浏览器」然后静默退出。
+      - name: Resolve Chrome
+        run: echo "CHROME_PATH=$(which google-chrome || which chromium-browser)" >> "$GITHUB_ENV"
+
+      - name: Verify UI flows
+        run: npm run verify:ui-flows
+
   ios:
     name: iOS Simulator smoke build
     needs: frontend
