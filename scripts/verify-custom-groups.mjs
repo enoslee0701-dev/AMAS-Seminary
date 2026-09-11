@@ -134,10 +134,13 @@ try {
       set.call(inp, n); inp.dispatchEvent(new Event('input', { bubbles: true }));
     }, nm);
     await sleep(350);
+    // 成员行是 button[aria-pressed]（提交 22 之前是带 onClick 的 div）。
+    // 产品结构一改，按旧结构找的探针就会静默选不中成员 ——
+    // 提交键因此一直是 disabled，整段连环带红，红的是脚本不是产品。
     await page.evaluate(() => {
-      const rows = [...document.querySelectorAll('div,li,label')]
-        .filter(d => d.className && String(d.className).includes('cursor-pointer'));
-      rows[0]?.click();
+      const dlg = [...document.querySelectorAll('[role="dialog"]')]
+        .find(d => d.getAttribute('aria-label') === '发起群聊');
+      dlg?.querySelector('button[aria-pressed]')?.click();
     });
     await sleep(400);
     await page.evaluate(() => [...document.querySelectorAll('button')]
