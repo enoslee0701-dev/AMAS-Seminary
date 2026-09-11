@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect, useCallback, Suspense } from 'react';
 import Navigation from './components/Navigation';
 import Dashboard from './components/Dashboard';
 import AuthView from './components/AuthView';
@@ -162,6 +162,60 @@ const App: React.FC = () => {
   const [communityTab, setCommunityTab] = useState<'rooms' | 'feed' | 'directory' | 'prayer'>('rooms');
   const [favoriteCourseIds, setFavoriteCourseIds] = useState<string[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
+
+  /**
+   * 每个标签页各自的滚动位置。
+   *
+   * 打开一门课时整棵标签页子树连同 <main> 一起卸载（下面那个
+   * selectedCourseId 三元），返回时重新挂载，滚动位置回到顶端。
+   * 用户在课程列表往下翻了很久、点开一门课、返回，得从头再翻一遍；
+   * 切标签页再切回来同理。
+   *
+   * 实际在滚的容器**两种情况都有**：<main> 自己带 overflow-y-auto，但在
+   * 课程页上它撑到了内容全高（实测 scrollHeight === clientHeight === 1979），
+   * 真正在滚的是文档 —— Dashboard 的吸顶栏也是监听 window scroll 的。
+   * 所以两个来源都要管：只挂 <main> 的 onScroll 会一次都不触发，
+   * 恢复逻辑形同虚设（本轮第一版就是这样，测出来永远 0 → 0）。
+   */
+  const mainRef = useRef<HTMLElement | null>(null);
+  const scrollMemo = useRef<Partial<Record<ViewState, number>>>({});
+
+  /** 当前真正在滚的那个容器的偏移量。 */
+  const readScroll = useCallback(() => {
+    const el = mainRef.current;
+    if (el && el.scrollHeight > el.clientHeight + 4) return el.scrollTop;
+    return window.scrollY || document.documentElement.scrollTop || 0;
+  }, []);
+
+  useEffect(() => {
+    if (selectedCourseId) return;        // 课程详情自己管自己的滚动
+    const save = () => { scrollMemo.current[currentView] = readScroll(); };
+    const el = mainRef.current;
+    window.addEventListener('scroll', save, { passive: true });
+    el?.addEventListener('scroll', save, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', save);
+      el?.removeEventListener('scroll', save);
+    };
+  }, [currentView, selectedCourseId, readScroll]);
+
+  useLayoutEffect(() => {
+    if (selectedCourseId) return;
+    const want = scrollMemo.current[currentView] ?? 0;
+    // 内容是 lazy + Suspense 的：刚挂载时高度可能还不够，直接设会被夹到 0。
+    // 连着几帧重试，到位就停。
+    let tries = 0;
+    let raf = 0;
+    const apply = () => {
+      const el = mainRef.current;
+      if (el && el.scrollHeight > el.clientHeight + 4) el.scrollTop = want;
+      else window.scrollTo(0, want);
+      if (Math.abs(readScroll() - want) > 2 && tries++ < 15) raf = requestAnimationFrame(apply);
+    };
+    raf = requestAnimationFrame(apply);
+    return () => cancelAnimationFrame(raf);
+  }, [currentView, selectedCourseId, readScroll]);
+
 
   // --- Persistent News State ---
   const [newsItems, setNewsItems] = useState<NewsItem[]>(() => {
@@ -664,7 +718,7 @@ const App: React.FC = () => {
               /* Standard Dashboard/Tab Views — Navigation stays mounted; only
                  the inner <main> suspends so tab switches don't flash the bar */
               <div className="flex-1 flex flex-col overflow-hidden">
-                <main className="flex-1 overflow-y-auto scrollbar-hide">
+                <main ref={mainRef} className="flex-1 overflow-y-auto scrollbar-hide">
                   <Suspense fallback={<ViewLoadingFallback />}>
                     {currentView === ViewState.HOME && (
                       <Dashboard

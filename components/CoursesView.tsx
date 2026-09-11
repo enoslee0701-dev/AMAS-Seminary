@@ -6,6 +6,7 @@ import { putImageDataURI, useImageUrl } from '../services/imageStore';
 import { courseThumbnail } from '../services/imageFallback';
 import { STOCK_PHOTOS } from '../services/stockPhotos';
 import { canUploadCourses } from '../services/permissions';
+import { useStickyState } from '../services/stickyState';
 
 // Locally bundled photos (public/images/stock) — full fidelity, offline-safe.
 const CATEGORY_FALLBACK: Record<string, string> = {
@@ -109,13 +110,18 @@ interface CoursesViewProps {
 const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdateCourse, favoriteCourseIds = [], onToggleFavorite, onCourseClick, onOpenPocketTheology, userRole, onOpenCustomTheology }) => {
   // View Mode: 'selection' (landing) or 'list' (course list)
   const [viewMode, setViewMode] = useState<'selection' | 'list'>('selection');
-  
-  const [activeCategory, setActiveCategory] = useState<string>('全部');
-  const [activeLevel, setActiveLevel] = useState<string>('全部');
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [searchExpanded, setSearchExpanded] = useState<boolean>(false);
-  const [myCoursesOnly, setMyCoursesOnly] = useState<boolean>(false);
-  const [sortBy, setSortBy] = useState<string>('default');
+
+  /* 这六项是「用户刚刚做过的选择」。打开一门课会把整个标签页子树卸载
+     （App.tsx 用 selectedCourseId 三元切换），返回时重新挂载 ——
+     用普通 useState 的话筛选、排序、搜索词会全部被清空。
+     实测：筛「新约书卷」→ 进课 → 返回，选中色跳回「全部」。
+     useStickyState 只在本次运行期间记住，冷启动仍回默认值。 */
+  const [activeCategory, setActiveCategory] = useStickyState<string>('courses.activeCategory', '全部');
+  const [activeLevel, setActiveLevel] = useStickyState<string>('courses.activeLevel', '全部');
+  const [searchQuery, setSearchQuery] = useStickyState<string>('courses.searchQuery', '');
+  const [searchExpanded, setSearchExpanded] = useStickyState<boolean>('courses.searchExpanded', false);
+  const [myCoursesOnly, setMyCoursesOnly] = useStickyState<boolean>('courses.myCoursesOnly', false);
+  const [sortBy, setSortBy] = useStickyState<string>('courses.sortBy', 'default');
 
 
   // Enrollment Modal State
@@ -1224,10 +1230,24 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
                     const status = statusOf(course);
                     const tone = statusTone[status.kind];
                     return (
+                      /* 整行可点，但原本是个带 onClick 的 <div> —— 键盘用户和读屏
+                         用户根本够不到它，打不开任何一门课（行内那个「申请学习 /
+                         查看课程」按钮是唯一的键盘入口，而它对需报名的课走的是
+                         另一条分支）。加 role/tabIndex 与回车、空格键。
+                         内层按钮已经 stopPropagation，不会被这层重复触发。 */
                       <div
                         key={course.id}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`打开课程 ${course.title}`}
                         onClick={() => onCourseClick?.(course.id)}
-                        className="bg-white rounded-2xl border border-slate-100 active:scale-[0.99] transition cursor-pointer"
+                        onKeyDown={(e) => {
+                          if (e.key !== 'Enter' && e.key !== ' ') return;
+                          if (e.target !== e.currentTarget) return;  // 行内按钮自己处理
+                          e.preventDefault();
+                          onCourseClick?.(course.id);
+                        }}
+                        className="bg-white rounded-2xl border border-slate-100 active:scale-[0.99] transition cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-900"
                         style={{ boxShadow: '0 1px 4px rgba(16,24,40,0.04)', padding: 12 }}
                       >
                         <div className="flex" style={{ gap: 12 }}>

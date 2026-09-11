@@ -4,8 +4,9 @@ import {
   Building2, Globe2, MonitorPlay, Sparkles, ShieldCheck, Landmark, Megaphone,
   ClipboardList, Library, FilePen, PlayCircle, BarChart3, Headset, Church
 } from 'lucide-react';
-import { ViewState, NewsItem, Course } from '../types';
+import { ViewState, NewsItem, Course, TheologyCategory, AcademicLevel } from '../types';
 import { STOCK_PHOTOS } from '../services/stockPhotos';
+import { courseThumbnail } from '../services/imageFallback';
 import { readGrowthRole, archImg, ARCHETYPES_BASE } from '../services/growthArchetypes';
 import { CATALOG_TOTAL } from '../services/catalog';
 import type { ProgramTier } from './College/programData';
@@ -196,10 +197,39 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
     { title: '早期教父著作集', sub: '神学典籍 · 中英对照', tag: '经典' },
   ];
 
-  const featured = [
-    { id: 'f1', title: '新约导论', instructor: '张路加 教授', cover: FEATURED_1, badge: '新约书卷' },
-    { id: 'f2', title: '系统神学 I', instructor: '陈永信 教授', cover: FEATURED_2, badge: '神学与思想' },
-  ];
+  /**
+   * 精选免费公开课。
+   *
+   * 原本是两张写死的卡：'新约导论' / '系统神学 I'。这两门课**目录里并不存在**，
+   * 而且卡片的 onClick 是 `onViewChange(ViewState.COURSES)` —— 用户看见一门
+   * 具体的课、点下去却被丢进整份课程列表，还得自己再找一遍。
+   *
+   * 改为从真实目录里取，保留原本的编辑意图（一门新约书卷、一门神学与思想），
+   * 优先取学士（B.Th）这一档；目录还没加载出来时退回原来的静态卡，
+   * 那种情况下仍旧只能跳列表（没有真 id 可点）。
+   */
+  const featured = React.useMemo(() => {
+    const list = courses || [];
+    const pick = (cat: TheologyCategory) =>
+      list.find(c => c.category === cat && c.level === AcademicLevel.BTH)
+      || list.find(c => c.category === cat);
+    const real = [pick(TheologyCategory.NT), pick(TheologyCategory.THEOLOGY)]
+      .filter((c): c is Course => !!c);
+    if (real.length < 2) {
+      return [
+        { id: 'f1', title: '新约导论', instructor: '张路加 教授', cover: FEATURED_1, badge: '新约书卷', real: false },
+        { id: 'f2', title: '系统神学 I', instructor: '陈永信 教授', cover: FEATURED_2, badge: '神学与思想', real: false },
+      ];
+    }
+    return real.map((c, i) => ({
+      id: c.id,
+      title: c.title,
+      instructor: c.instructor,
+      cover: c.thumbnail || courseThumbnail(c.id, c.category) || (i === 0 ? FEATURED_1 : FEATURED_2),
+      badge: c.category as string,
+      real: true,
+    }));
+  }, [courses]);
 
   return (
     <div className="pb-24 animate-fade-in" style={{ backgroundColor: '#F7F6F3' }}>
@@ -635,10 +665,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
         <SectionHeader title="精选免费公开课" action="查看全部" onAction={() => onViewChange(ViewState.COURSES)} />
         <div className="grid grid-cols-2 gap-2.5">
           {featured.map((c) => (
-            <div
+            /* 原本是带 onClick 的 <div> —— 键盘和读屏都够不到它。改成 button。 */
+            <button
               key={c.id}
-              onClick={() => onViewChange(ViewState.COURSES)}
-              className="relative rounded-2xl overflow-hidden h-36 cursor-pointer shadow-sm active:scale-[0.98] transition-transform"
+              type="button"
+              onClick={() => (c.real && onCourseClick ? onCourseClick(c.id) : onViewChange(ViewState.COURSES))}
+              className="relative w-full text-left rounded-2xl overflow-hidden h-36 cursor-pointer shadow-sm active:scale-[0.98] transition-transform"
             >
               <img src={c.cover} alt={c.title} className="w-full h-full object-cover" />
               <div className="absolute inset-0 bg-gradient-to-t from-blue-950/90 via-blue-950/30 to-transparent"></div>
@@ -649,7 +681,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
                 <p className="text-[15px] font-extrabold leading-tight">{c.title}</p>
                 <p className="text-[10px] text-white/80 mt-0.5">{c.instructor}</p>
               </div>
-            </div>
+            </button>
           ))}
         </div>
       </section>
