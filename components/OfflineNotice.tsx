@@ -40,7 +40,9 @@ const OfflineNotice: React.FC = () => {
         <p className="text-[11px] leading-snug flex-1">
           当前为本地模式，云端同步未启用，上传 / 进度同步等功能暂不可用。
         </p>
-        <button onClick={dismiss} aria-label="知道了" className="ml-2 -mr-1 p-1 rounded-full text-white/60 hover:text-white hover:bg-white/10 transition">
+        {/* 23×23 —— 这条横幅浮在每一页上，关掉它是唯一的出路，热区补到 45×45。
+            伪元素向外扩的部分都落在横幅自己的内边距里。 */}
+        <button onClick={dismiss} aria-label="知道了" className="relative ml-2 -mr-1 p-1 rounded-full text-white/60 hover:text-white hover:bg-white/10 transition before:absolute before:-inset-[11px] before:content-['']">
           <X size={15} />
         </button>
       </div>

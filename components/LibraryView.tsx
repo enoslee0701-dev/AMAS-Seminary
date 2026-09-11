@@ -171,16 +171,24 @@ const LibraryView: React.FC = () => {
         <h2 className="text-lg font-bold mb-1">AMAS 电子图书馆</h2>
         <p className="text-blue-200 text-[10px] mb-4">访问超过 5,000 份神学学术资源</p>
         <div className="relative">
+          {/* placeholder 一开始打字就消失，读屏用户此后拿不到这个框是干什么的。 */}
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            aria-label="搜索图书馆资源"
             placeholder="搜索书名、作者或神学主题..."
             className="w-full h-10 pl-10 pr-10 rounded-xl bg-white/10 border border-white/20 placeholder-white/60 text-white text-xs focus:bg-white/20 focus:outline-none focus:border-white/40 transition-all"
           />
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-white/60" size={16} />
           {searchQuery && (
-            <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-white/10">
+            /* 22×22 且没有名称。伪元素把热区补到 46×46，视觉不变；
+               向外扩的部分落在输入框自己的 pr-10 预留区和上下留白里。 */
+            <button
+              onClick={() => setSearchQuery('')}
+              aria-label="清除搜索"
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-white/10 before:absolute before:-inset-[12px] before:content-['']"
+            >
               <X size={14} className="text-white/70" />
             </button>
           )}
@@ -269,7 +277,9 @@ const LibraryView: React.FC = () => {
                 <button
                   onClick={(e) => { e.stopPropagation(); handleToggleFavorite(book.id); }}
                   aria-label={isFav ? '取消收藏' : '收藏'}
-                  className="ml-2 p-2 rounded-full hover:bg-slate-100 transition active:scale-95"
+                  /* 34×34 → 44×44。这一行本来就有 56px 高的封面占位，
+                     所以撑高不改行高；撑宽只是让旁边的书名 truncate 早 10px。 */
+                  className="ml-2 p-2 rounded-full hover:bg-slate-100 transition active:scale-95 min-w-[44px] min-h-[44px] flex items-center justify-center shrink-0"
                 >
                   <Star
                     size={18}
@@ -320,7 +330,11 @@ const LibraryView: React.FC = () => {
 
       {/* AI Modal Overlay */}
       {isAiOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fade-in">
+        /* z-50 时这个弹窗和底部标签栏同层，而标签栏在 App.tsx 里渲染得更晚 ——
+           于是标签栏盖在弹窗上面。弹窗在手机上是 items-end + h-[85vh]，
+           提问框和发送键正好落在标签栏底下，实测完全点不到、也聚焦不了。
+           抬到 z-[60]（与本页书籍预览弹窗同层）。 */
+        <div className="fixed inset-0 z-[60] bg-slate-900/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fade-in">
           <div className="bg-white w-full sm:max-w-md h-[85vh] sm:h-[600px] rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-slide-up">
             <div className="bg-blue-900 p-4 flex justify-between items-center text-white">
               <div className="flex items-center space-x-3">
@@ -365,13 +379,15 @@ const LibraryView: React.FC = () => {
                 value={aiQuery}
                 onChange={(e) => setAiQuery(e.target.value)}
                 type="text"
+                aria-label="向神学 AI 助手提问"
                 className="flex-1 bg-slate-100 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900 focus:bg-white transition border border-slate-200"
                 placeholder="输入你的神学问题..."
               />
               <button
                 type="submit"
                 disabled={loading || !aiQuery.trim()}
-                className="bg-blue-900 text-white p-2.5 rounded-lg disabled:opacity-50 shadow-sm hover:bg-blue-800 transition-colors"
+                aria-label="发送"
+                className="bg-blue-900 text-white p-2.5 rounded-lg disabled:opacity-50 shadow-sm hover:bg-blue-800 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center shrink-0"
               >
                 <Send size={20} />
               </button>

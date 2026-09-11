@@ -334,7 +334,13 @@ const ProfileView: React.FC<ProfileViewProps> = ({ favoriteCourseIds = [], onLog
       <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl relative animate-scale-in">
          <div className="flex justify-between items-center mb-6">
            <h3 className="text-lg font-bold text-slate-900">编辑资料</h3>
-           <button onClick={() => setIsEditOpen(false)} className="p-2 bg-slate-50 rounded-full text-slate-400"><X size={18}/></button>
+           {/* 34×34 图标键：`before:` 透明伪元素把热区补到 46×46，视觉与布局都不变。
+               原本还没有可访问名称 —— 读屏念到的是一个没名字的按钮。 */}
+           <button
+             onClick={() => setIsEditOpen(false)}
+             aria-label="关闭"
+             className="relative p-2 bg-slate-50 rounded-full text-slate-400 before:absolute before:-inset-[6px] before:content-['']"
+           ><X size={18}/></button>
          </div>
          {/* Avatar picker: a circular preview with a camera icon overlay.
              Tapping anywhere on the circle opens the system file picker.
@@ -550,7 +556,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ favoriteCourseIds = [], onLog
 
         <button
           onClick={() => setIsSettingsOpen(true)}
-          className="absolute right-6 p-2 text-white/70 hover:text-white transition-colors z-10"
+          className="absolute right-6 p-2 text-white/70 hover:text-white transition-colors z-10 before:absolute before:-inset-1 before:content-['']"
           style={{ top: 'calc(var(--safe-top) + 4px)' }}
           aria-label="设置"
         >
@@ -562,9 +568,11 @@ const ProfileView: React.FC<ProfileViewProps> = ({ favoriteCourseIds = [], onLog
             <div className="w-20 h-20 rounded-full border-[3px] border-white/20 flex items-center justify-center p-1 bg-[#1E293B]">
               <img src={avatarSrc} className="w-full h-full rounded-full object-cover" alt="avatar" />
             </div>
+            {/* 28×28 的头像角标。伪元素的 inset 是按 padding box 量的，
+                border-2 那 4px 不算在内，所以要 11px 才够 24+22=46（9px 只到 42）。 */}
             <button
               onClick={() => setIsEditOpen(true)}
-              className="absolute bottom-0 right-0 bg-blue-600 text-white p-1.5 rounded-full border-2 border-[#0F172A] shadow-md hover:bg-blue-500 transition-transform active:scale-90"
+              className="absolute bottom-0 right-0 bg-blue-600 text-white p-1.5 rounded-full border-2 border-[#0F172A] shadow-md hover:bg-blue-500 transition-transform active:scale-90 before:absolute before:-inset-[11px] before:content-['']"
               aria-label="编辑资料"
             >
               <Edit2 size={12} />
@@ -620,7 +628,11 @@ const ProfileView: React.FC<ProfileViewProps> = ({ favoriteCourseIds = [], onLog
               <div className="w-1 h-4 bg-blue-900 rounded-full"></div>
               <h3 className="font-bold text-slate-800 text-sm">我的事奉倾向</h3>
             </div>
-            <button onClick={() => go(ViewState.CUSTOM_THEOLOGY)} className="text-[11px] font-bold text-blue-900 flex items-center active:opacity-60">
+            {/* 11px 纯文字入口实测只有 56×17。padding 撑到 44+，再用等量负 margin
+                把布局高度还原 —— 视觉一模一样，热区变成 56×45。
+                向上吃的是卡片自己的 p-5 内边距，向下只吃 8px（这一行 mb-3 有 12px），
+                所以扩出来的热区碰不到下面任何一个可点元素。 */}
+            <button onClick={() => go(ViewState.CUSTOM_THEOLOGY)} className="min-h-[44px] -mt-5 pt-5 -mb-2 pb-2 text-[11px] font-bold text-blue-900 flex items-center active:opacity-60">
               {growthRole ? '查看档案' : '开始评估'}<ChevronRight size={12} />
             </button>
           </div>
@@ -670,7 +682,9 @@ const ProfileView: React.FC<ProfileViewProps> = ({ favoriteCourseIds = [], onLog
               <div className="w-1 h-4 bg-blue-900 rounded-full"></div>
               <h3 className="font-bold text-slate-800 text-sm">我的学习</h3>
             </div>
-            <button onClick={() => go(ViewState.COURSES)} className="text-[11px] font-bold text-blue-900 flex items-center active:opacity-60">
+            {/* 同上。这一行 mb-1 只有 4px，向下扩出来的 8px 落在下面那行统计文字上，
+                那是纯文本、不可点，因此仍然不会抢走任何控件的热区。 */}
+            <button onClick={() => go(ViewState.COURSES)} className="min-h-[44px] -mt-5 pt-5 -mb-2 pb-2 text-[11px] font-bold text-blue-900 flex items-center active:opacity-60">
               全部课程<ChevronRight size={12} />
             </button>
           </div>
