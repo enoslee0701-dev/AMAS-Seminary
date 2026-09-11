@@ -354,9 +354,17 @@ export const UserProfileFeed: React.FC<{
 const CreateRoomModal: React.FC<{onClose: () => void, onCreate: (name: string, type: RoomType, password?: string) => void}> = ({ onClose, onCreate }) => {
     const [roomName, setRoomName] = useState("");
     const [selectedType, setSelectedType] = useState<RoomType>('fellowship');
-    const [password, setPassword] = useState("");
-    const [isPrivate, setIsPrivate] = useState(false);
-    return (<div className="absolute inset-0 z-[80] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 animate-fade-in" onClick={onClose}><div className="bg-white w-full max-sm rounded-[32px] p-6 animate-scale-in relative shadow-2xl" onClick={e => e.stopPropagation()}><button onClick={onClose} className="absolute top-5 right-5 text-slate-400 hover:text-slate-600"><X size={22}/></button><div className="flex items-center mb-6"><div className="w-10 h-10 rounded-squircle bg-blue-600 flex items-center justify-center text-white mr-3 shadow-md shadow-blue-200"><Plus size={20} strokeWidth={3} /></div><h3 className="text-xl font-bold text-slate-900 tracking-tight">开启新房间</h3></div><div className="space-y-5"><div><label className="block text-xs font-bold text-slate-500 mb-3 ml-1 uppercase tracking-wider">选择房间主题</label><div className="grid grid-cols-2 gap-3">{(Object.keys(THEME_CONFIGS) as RoomType[]).map((type) => { const cfg = THEME_CONFIGS[type]; const isSelected = selectedType === type; const isFullWidth = type === 'fellowship'; return (<button key={type} onClick={() => setSelectedType(type)} className={`relative rounded-2xl p-3 flex items-center transition-all duration-200 border-2 text-left ${isFullWidth ? 'col-span-2' : ''} ${isSelected ? 'bg-blue-50 border-blue-500 shadow-sm' : 'bg-white border-slate-100 hover:border-slate-200 hover:bg-slate-50'}`}><div className={`w-10 h-10 rounded-squircle flex items-center justify-center mr-3 shrink-0 ${isSelected ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-500'}`}><cfg.icon size={18} /></div><div><span className={`block text-sm font-bold ${isSelected ? 'text-blue-900' : 'text-slate-700'}`}>{cfg.label}</span></div></button>); })}</div></div><div><label className="block text-xs font-bold text-slate-500 mb-2 ml-1 uppercase tracking-wider">房间名称</label><div className="relative"><Edit3 size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" /><input type="text" value={roomName} onChange={(e) => setRoomName(e.target.value)} className="w-full bg-slate-50 border-none rounded-2xl pl-11 pr-4 py-4 text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500 transition-all outline-none" placeholder="给房间起个好听的名字..." /></div></div><button onClick={() => { if (!roomName.trim()) return; onCreate(roomName, selectedType, isPrivate ? password : undefined); }} disabled={!roomName.trim()} className="w-full bg-[#6366f1] hover:bg-[#4f46e5] text-white py-4 rounded-2xl font-bold text-base shadow-xl shadow-indigo-200 disabled:opacity-50 disabled:shadow-none transition-all active:scale-[0.98] mt-2 flex items-center justify-center">立即开启<ChevronRight size={18} className="ml-1 opacity-80" strokeWidth={3}/></button></div></div></div>);
+    /* 这里原本还有 `password` / `isPrivate` 两个 state，但**没有任何控件去设它们** ——
+       setIsPrivate 全仓没有调用点，isPrivate 恒为 false，提交时永远走
+       `onCreate(name, type, undefined)`。删掉是为了不让人误以为「私密房间」
+       已经接好了、顺手把它连上去。
+
+       不补这个开关是有产品依据的：docs/VOICE_ROOMS_INVENTORY.md §3.4 写明
+       进房校验在 not-registered / network 时会回落到客户端明文比对，密码就存在
+       localStorage 里，所以这个能力**不能对外宣称「私密房间」**。
+       真要做，得先把那条回落处理掉，那是产品决定，不是顺手改 UI。
+       房主建好房之后仍可以在房间设置里设密码（走 handleSavePassword）。 */
+    return (<div className="absolute inset-0 z-[80] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 animate-fade-in" onClick={onClose}><div className="bg-white w-full max-sm rounded-[32px] p-6 animate-scale-in relative shadow-2xl" onClick={e => e.stopPropagation()}><button onClick={onClose} className="absolute top-5 right-5 text-slate-400 hover:text-slate-600"><X size={22}/></button><div className="flex items-center mb-6"><div className="w-10 h-10 rounded-squircle bg-blue-600 flex items-center justify-center text-white mr-3 shadow-md shadow-blue-200"><Plus size={20} strokeWidth={3} /></div><h3 className="text-xl font-bold text-slate-900 tracking-tight">开启新房间</h3></div><div className="space-y-5"><div><label className="block text-xs font-bold text-slate-500 mb-3 ml-1 uppercase tracking-wider">选择房间主题</label><div className="grid grid-cols-2 gap-3">{(Object.keys(THEME_CONFIGS) as RoomType[]).map((type) => { const cfg = THEME_CONFIGS[type]; const isSelected = selectedType === type; const isFullWidth = type === 'fellowship'; return (<button key={type} onClick={() => setSelectedType(type)} className={`relative rounded-2xl p-3 flex items-center transition-all duration-200 border-2 text-left ${isFullWidth ? 'col-span-2' : ''} ${isSelected ? 'bg-blue-50 border-blue-500 shadow-sm' : 'bg-white border-slate-100 hover:border-slate-200 hover:bg-slate-50'}`}><div className={`w-10 h-10 rounded-squircle flex items-center justify-center mr-3 shrink-0 ${isSelected ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-500'}`}><cfg.icon size={18} /></div><div><span className={`block text-sm font-bold ${isSelected ? 'text-blue-900' : 'text-slate-700'}`}>{cfg.label}</span></div></button>); })}</div></div><div><label className="block text-xs font-bold text-slate-500 mb-2 ml-1 uppercase tracking-wider">房间名称</label><div className="relative"><Edit3 size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" /><input type="text" value={roomName} onChange={(e) => setRoomName(e.target.value)} className="w-full bg-slate-50 border-none rounded-2xl pl-11 pr-4 py-4 text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500 transition-all outline-none" placeholder="给房间起个好听的名字..." /></div></div><button onClick={() => { if (!roomName.trim()) return; onCreate(roomName, selectedType, undefined); }} disabled={!roomName.trim()} className="w-full bg-[#6366f1] hover:bg-[#4f46e5] text-white py-4 rounded-2xl font-bold text-base shadow-xl shadow-indigo-200 disabled:opacity-50 disabled:shadow-none transition-all active:scale-[0.98] mt-2 flex items-center justify-center">立即开启<ChevronRight size={18} className="ml-1 opacity-80" strokeWidth={3}/></button></div></div></div>);
 };
 
 /**
@@ -650,10 +658,23 @@ const CommunityView: React.FC<CommunityViewProps> = ({
     setActiveVoiceRoom(newRoom);
     setIsRoomMinimized(false);
     setShowCreateRoom(false);
-    // Best-effort backend registration (so the password is stored server-side
-    // and validated by /api/rooms/validate). No-op when VITE_API_BASE_URL unset.
+    /* 把房间登记到后端，密码才会存在服务端、由 /api/rooms/validate 校验。
+       没配 VITE_API_BASE_URL 时 registerRoom 直接返回 null —— 那是「本地模式」
+       而不是失败，所以不报错。
+
+       原来这里写的是 `result ? '房间创建成功！' : '房间创建成功！'`，
+       两个分支一模一样：登记失败也照样说创建成功。房间本身确实建好了
+       （它是本地对象），但带密码时「密码存到服务端了」这件事没成立，
+       得分开说。 */
+    if (!isBackendConfigured()) {
+      showToast('房间创建成功！');
+      return;
+    }
     registerRoom({ roomId: newRoom.id, hostId: 'me', password }).then(result => {
-      showToast(result ? '房间创建成功！' : '房间创建成功！');
+      if (result) { showToast('房间创建成功！'); return; }
+      showToast(password
+        ? '房间已创建，但密码没能同步到服务器（仅本机生效）'
+        : '房间已创建，但没能登记到服务器');
     });
   };
   const handleCreateGroupChat = (name: string, members: string[]) => { const newGroupId = `g-${Date.now()}`; const newGroup: Conversation = { id: newGroupId, userId: newGroupId, userName: name, userAvatar: initialAvatar(newGroupId, name), isOnline: false, lastMessage: '群组已创建，开始聊天吧', time: '刚刚', unread: 0, role: 'Group', isGroup: true }; setConversations([newGroup, ...conversations]); const saved = addCustomGroup(currentUserId, newGroup); setShowCreateGroup(false);

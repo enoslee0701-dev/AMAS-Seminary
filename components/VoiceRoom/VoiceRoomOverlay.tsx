@@ -7,6 +7,7 @@ import { useSharedReading } from './useSharedReading';
 import { formatLocation } from '../../services/roomReadingService';
 import SharedReadingBar from './SharedReadingBar';
 import { getCurrentUser } from '../../services/authService';
+import { registerRoom, isBackendConfigured } from '../../services/roomService';
 import { VARIANT, MODAL_WIDTH, type RoomVariant } from './prayerTheme';
 import {
   Heart, MessageCircle, Share2, MoreHorizontal,
@@ -704,10 +705,38 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
         setShowRoomInfo(false);
     };
 
-    const handleSavePassword = (newPass: string) => {
-        onUpdateRoom({ ...activeVoiceRoom, password: newPass ? newPass : undefined });
+    /* 房间密码。这里原本是「改本地 state → 弹一句『房间密码已设置』」，
+       中间**从来没有调过 registerRoom** —— 服务端那份记录（进房时
+       handleConfirmPassword 要查的 /api/rooms/validate 用的就是它）压根没动过。
+       roomService 顶上的注释写的是「创建房间时调用，房间设置里改密码时再调一次」，
+       第二次一直没兑现。
+
+       没配后端（VITE_API_BASE_URL 为空）时本地生效就是设计本身，那不叫失败；
+       配了后端却没推上去就必须说出来，不能拿「已设置」盖过去。
+
+       措辞上不说「私密房间已开启」之类的话：docs/VOICE_ROOMS_INVENTORY.md §3.4
+       写明进房校验在 not-registered / network 时会回落到客户端明文比对，
+       所以这个能力**不对外宣称私密**，只如实说服务端那份同步上没上去。 */
+    const handleSavePassword = async (newPass: string) => {
+        const next: Room = { ...activeVoiceRoom, password: newPass ? newPass : undefined };
+        onUpdateRoom(next);
         setShowPasswordSettings(false);
-        showToast(newPass ? "房间密码已设置" : "房间密码已取消");
+        if (!isBackendConfigured()) {
+            showToast(newPass ? "房间密码已设置（本机生效）" : "房间密码已取消（本机生效）");
+            return;
+        }
+        const synced = await registerRoom({
+            roomId: next.id,
+            hostId: next.hostId ?? 'me',
+            password: next.password,
+        });
+        if (synced) {
+            showToast(newPass ? "房间密码已设置" : "房间密码已取消");
+        } else {
+            showToast(newPass
+                ? "密码已在本机生效，但没能同步到服务器（服务端仍是原来的设置）"
+                : "密码已在本机取消，但没能同步到服务器（服务端仍是原来的设置）");
+        }
     };
 
     const RoomGuideModal = () => {

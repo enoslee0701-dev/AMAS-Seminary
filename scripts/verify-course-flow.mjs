@@ -815,6 +815,38 @@ try {
     check('★ 房主菜单里有打开房间密码设置的调用点（此前全仓没有）', opens);
     check('PasswordSettingsModal 仍挂在这个 state 上',
       src.includes('showPasswordSettings && (') && src.includes('<PasswordSettingsModal'));
+
+    /* 改密码要真正推到服务端，否则进房校验查的那份记录永远是旧的。
+       原来 handleSavePassword 只改本地 state 就弹「房间密码已设置」。 */
+    const save = src.slice(src.indexOf('const handleSavePassword'),
+                           src.indexOf('const RoomGuideModal'));
+    check('★ 房间设置里改密码会同步到服务端（此前只改本地就报「已设置」）',
+      save.includes('registerRoom('));
+    check('★ 同步失败要如实说，不能仍然只说「已设置」',
+      save.includes('没能同步到服务器'));
+    check('没配后端时不谎报失败（本地模式是设计，不是错误）',
+      save.includes('isBackendConfigured()'));
+
+    /* 建房的提示原本两个分支字面完全一样：登记失败也照说创建成功。 */
+    const com = readFileSync(path.join(ROOT, 'components/CommunityView.tsx'), 'utf8');
+    const create = com.slice(com.indexOf('const handleCreateRoom'),
+                             com.indexOf('const handleCreateGroupChat'));
+    /* 原来是 `result ? 'A' : 'A'` —— 三元的两个分支字面完全一样。
+       现在登记结果的分支要给出不同的话（没配后端那条提前返回不算，
+       那是本地模式，说「创建成功」本来就对）。 */
+    const then = create.slice(create.indexOf('.then(result'));
+    const branches = [...then.matchAll(/'([^']+)'/g)].map(m => m[1]);
+    check('★ 建房登记结果的各分支不再说同一句话',
+      branches.length >= 2 && new Set(branches).size === branches.length,
+      JSON.stringify(branches));
+    check('★ 登记失败时说清楚是「没能同步到服务器」',
+      create.includes('没能同步到服务器'));
+
+    /* 不补「私密房间」开关是有产品依据的，别让人顺手连回去。 */
+    check('★ 建房弹窗不再留着无人可设的 isPrivate 死状态',
+      !/const \[isPrivate/.test(com) && !/isPrivate \?/.test(com));
+    check('注明了不宣称私密房间的依据（客户端有明文回落）',
+      com.includes('VOICE_ROOMS_INVENTORY.md'));
   }
 
   check('全程无 JS 运行时错误', errors.length === 0, errors.slice(0, 3).join(' | '));
