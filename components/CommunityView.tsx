@@ -656,7 +656,10 @@ const CommunityView: React.FC<CommunityViewProps> = ({
       showToast(result ? '房间创建成功！' : '房间创建成功！');
     });
   };
-  const handleCreateGroupChat = (name: string, members: string[]) => { const newGroupId = `g-${Date.now()}`; const newGroup: Conversation = { id: newGroupId, userId: newGroupId, userName: name, userAvatar: initialAvatar(newGroupId, name), isOnline: false, lastMessage: '群组已创建，开始聊天吧', time: '刚刚', unread: 0, role: 'Group', isGroup: true }; setConversations([newGroup, ...conversations]); addCustomGroup(currentUserId, newGroup); setShowCreateGroup(false); showToast(`群组 "${name}" 创建成功`);
+  const handleCreateGroupChat = (name: string, members: string[]) => { const newGroupId = `g-${Date.now()}`; const newGroup: Conversation = { id: newGroupId, userId: newGroupId, userName: name, userAvatar: initialAvatar(newGroupId, name), isOnline: false, lastMessage: '群组已创建，开始聊天吧', time: '刚刚', unread: 0, role: 'Group', isGroup: true }; setConversations([newGroup, ...conversations]); const saved = addCustomGroup(currentUserId, newGroup); setShowCreateGroup(false);
+    /* 落盘失败（未登录没有归属、或配额满/隐私模式）就如实说出来，
+       不拿「创建成功」盖过去 —— 群在这一次运行里看得见，刷新后就没了。 */
+    showToast(saved.persisted ? `群组 "${name}" 创建成功` : `群组 "${name}" 已创建（仅本次使用，未能保存到本机）`);
     /* 原本建完跳到 'groups'，但那一栏列的是 OFFICIAL_GROUPS，新建的群是一条
        Conversation、只在「最近消息」里出现 —— 跳过去用户会以为没建成。
        改为留在/切到 'messages'，也就是新群真正出现的地方。 */

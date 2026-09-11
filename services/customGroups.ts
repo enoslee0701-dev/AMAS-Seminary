@@ -5,46 +5,43 @@ import type { Conversation } from '../components/community/data';
  *
  * ## 沿用既有设计，不改性质
  *
- * 这份数据本来就是**纯本地**的：`handleCreateGroupChat` 写 localStorage，
- * `App.tsx` 的 `conversations` 初始化时读回来并与 `INITIAL_CONVERSATIONS`
- * 按 id 去重合并。本模块只是把这套读写收到一处，补上原来缺的几件事，
- * **没有**引入任何服务端同步：自建群只存在于这台设备的这个浏览器里，
- * 不会同步给群里的其他人，也没有任何后端记录。别对外说成「多人群聊」。
+ * 这份数据本来就是**纯本地**的：只存在这台设备的这个浏览器里，不同步给群里
+ * 其他人，也没有任何后端记录。本模块只把读写收到一处并补上安全性，
+ * **没有**引入服务端同步、没有新增真实账号、没有任何后端映射。
+ * 别对外说成「多人群聊」。
  *
- * ## 原来缺的两件事（都是实测出来的）
+ * ## 身份隔离
  *
- * ### 1. 身份之间串数据
+ * 键按身份分：`amas_custom_groups:v2:<userId>`。未登录（无 id）时既不读也不写。
  *
- * 键是全局的 `amas_custom_groups`，不带任何身份。实测：
+ * ## 旧全局键怎么处理 —— 不归属给任何人
+ *
+ * 旧键 `amas_custom_groups` 是在身份隔离之前写下的，**没有记录归属**。
+ *
+ * 先前那一版把它「一次性归给当前身份」，理由是「这套数据通常只有一个人在用」。
+ * **那个理由不成立**：使用习惯不能当作身份归属的依据。真实后果是，只要乙先
+ * 登录一次，甲的旧群就会变成乙的 —— 这是数据泄露，不是便利。
+ *
+ * 现在的做法：
  *
  * ```
- * 甲登录 → 建群「A的群」→ 刷新 → 仍可见（这部分本来就是好的）
- * 换乙登录            → 乙的会话列表里看得见甲建的群   ← 缺陷
+ * 旧键里的内容原样搬到隔离位 amas_custom_groups:unclaimed:v1
+ * 不归给任何身份，不出现在任何人的会话列表里
+ * 只对外暴露「有没有、有几条」（getUnclaimedLegacyState），不读出群名
+ * 要认领给谁，需要一次明确的产品决定，不由本模块替代
  * ```
  *
- * 改为按 id 分键：`amas_custom_groups:v2:<userId>`。
+ * ## 迁移的铁律：先确认写成功，再动源；绝不删真实数据
  *
- * ### 2. 键被写成非数组时会把会话列表弄坏
- *
- * 原来只有一层 `try/catch`，挡得住语法坏掉的 JSON（`'{oops'`），
- * 挡不住**语法合法但类型不对**的值。实测把键写成 `'"not-an-array"'`：
- * `JSON.parse` 成功返回字符串，`[...INITIAL, ...'not-an-array']` 把字符串
- * 摊成一堆单字符，`item.id` 全是 undefined —— 会话列表打不开。
- *
- * 改为逐项校验：不是数组就整份丢弃；数组里每一项必须有非空字符串 `id`
- * 与 `userName`，不合格的单项丢掉而不是整份丢掉。
- *
- * ## 旧格式（全局键）怎么处理
- *
- * 旧键里的数据**没有记录归属** —— 谁建的无从得知。所以只能：读到旧键时，
- * 把它一次性归给**当前这个身份**，随后删除旧键。这意味着如果换了人再打开，
- * 旧数据会归给先读到它的那个身份；这是旧格式本身的信息缺失，不是这里的选择。
- * 实际影响很小：这套数据一直是本机本地的，通常只有一个人在用。
- * 迁移只做一次，之后各身份互不相见。
+ * 先前那一版是 `removeItem(旧键)` 在前、`write(新键)` 在后，而 `write` 还会
+ * 把异常吞掉 —— 配额满或隐私模式下写失败，旧数据就永久没了。
+ * 现在一律：**写隔离位 → 读回来逐字节核对 → 核对通过才删源**。
+ * 任何一步不成立就原地不动，旧键保持原样，下次再试。
  */
-
 const PREFIX = 'amas_custom_groups:v2:';
 const LEGACY_KEY = 'amas_custom_groups';
+/** 归属未知的旧数据的隔离位。不属于任何身份，不进任何人的列表。 */
+const UNCLAIMED_KEY = 'amas_custom_groups:unclaimed:v1';
 /** 上限：本地数据不设上限迟早会把 localStorage 撑爆。保留最近的若干条。 */
 const MAX_GROUPS = 200;
 
@@ -81,14 +78,36 @@ function dedupe(list: Conversation[]): Conversation[] {
   return Array.from(new Map(list.map(g => [g.id, g])).values());
 }
 
+const getRaw = (key: string): string | null => {
+  try { return localStorage.getItem(key); } catch { return null; }
+};
+
 /**
- * 读取并**自愈**：清理掉的东西要写回去，否则坏项/重复项会一直留在存储里，
- * 每次进来都要重新清一遍，而且下次谁直接读这个键仍会读到脏数据。
- * 只在真的清理掉了什么的时候才回写，避免每次加载都白写一次。
+ * 写入并**读回核对**。返回是否真的落盘了。
+ *
+ * 光看 `setItem` 没抛异常是不够的：配额策略与隐私模式下它可能静默不生效。
+ * 迁移要拿这个返回值当「能不能动源」的依据，所以必须逐字节核对。
+ */
+function writeVerified(key: string, payload: string): boolean {
+  try {
+    localStorage.setItem(key, payload);
+  } catch {
+    return false;                    // 配额满 / 隐私模式
+  }
+  return getRaw(key) === payload;    // 读回来一模一样才算数
+}
+
+function write(userId: string, list: Conversation[]): boolean {
+  return writeVerified(keyFor(userId), JSON.stringify(dedupe(list).slice(-MAX_GROUPS)));
+}
+
+/**
+ * 读取并**自愈**：清理掉的东西写回去，否则坏项/重复项会一直留在存储里。
+ * 只在真的清理掉了什么的时候才回写；回写失败也不影响本次返回的干净结果
+ * （这里不删任何源，最坏情况只是下次还要再清一遍）。
  */
 function read(userId: string): Conversation[] {
-  let raw: string | null = null;
-  try { raw = localStorage.getItem(keyFor(userId)); } catch { return []; }
+  const raw = getRaw(keyFor(userId));
   if (raw === null) return [];
   const clean = dedupe(parseList(raw)).slice(-MAX_GROUPS);
   let same = false;
@@ -97,57 +116,88 @@ function read(userId: string): Conversation[] {
   return clean;
 }
 
-function write(userId: string, list: Conversation[]): void {
-  try {
-    localStorage.setItem(keyFor(userId), JSON.stringify(dedupe(list).slice(-MAX_GROUPS)));
-  } catch { /* 配额满 / 隐私模式：本地保存失败不该打断建群这个动作 */ }
-}
-
-/** 同 id 去重后写回。read() 用它做自愈，addCustomGroup() 用它落盘。 */
-
 /**
- * 一次性把旧的全局键迁到当前身份名下，然后删掉旧键。
- * 见文件头「旧格式怎么处理」——旧数据没有归属信息，只能归给当前身份。
+ * 把归属未知的旧数据搬进隔离位。**不归给任何身份。**
+ *
+ * 顺序是铁律：写隔离位 → 读回核对 → 核对通过才删源。
+ * 任何一步不成立就原地不动（旧键保持原样，下次再试），绝不先删后写。
+ *
+ * 隔离位已有内容时**不覆盖也不删源** —— 那会把上一批未认领数据顶掉。
+ * 两批都留着，留待一次明确的产品决定。
  */
-function migrateLegacy(userId: string): Conversation[] {
-  let legacy: Conversation[] = [];
-  try {
-    const raw = localStorage.getItem(LEGACY_KEY);
-    if (raw === null) return [];
-    legacy = parseList(raw);
-    localStorage.removeItem(LEGACY_KEY);
-  } catch { return []; }
-  if (!legacy.length) return [];
-  const merged = dedupe([...read(userId), ...legacy]);
-  write(userId, merged);
-  return merged;
+function quarantineLegacy(): void {
+  const legacyRaw = getRaw(LEGACY_KEY);
+  if (legacyRaw === null) return;
+
+  // 旧键里没有一条可用记录：不是「真实数据」，直接清掉这个空壳。
+  if (parseList(legacyRaw).length === 0) {
+    try { localStorage.removeItem(LEGACY_KEY); } catch { /* 清不掉就下次再说 */ }
+    return;
+  }
+
+  // 隔离位已经有东西了：不覆盖、不删源，两批都保住。
+  if (getRaw(UNCLAIMED_KEY) !== null) return;
+
+  if (!writeVerified(UNCLAIMED_KEY, legacyRaw)) return;   // 写不成功 → 源原地不动
+  try { localStorage.removeItem(LEGACY_KEY); } catch { /* 删不掉也没关系，下次核对后再删 */ }
 }
 
 /**
  * 这个身份的自建群。未登录（无 id）时返回空数组 —— 不读别人的桶。
- * 顺带完成旧格式迁移。
+ *
+ * **不再读旧全局键。** 旧数据归属未知，只会被搬进隔离位，不进任何人的列表。
  */
 export function loadCustomGroups(userId?: string | null): Conversation[] {
+  quarantineLegacy();                // 与身份无关，任何一次加载都可以做
   const id = normalizeUserId(userId);
   if (!id) return [];
-  const migrated = migrateLegacy(id);
-  return migrated.length ? migrated : read(id);
+  return read(id);
+}
+
+/** 追加一条的结果。`persisted=false` 表示只在本次运行期间可见。 */
+export interface AddGroupResult {
+  list: Conversation[];
+  persisted: boolean;
 }
 
 /**
- * 追加一条。返回这个身份当前完整的自建群列表。
- * 未登录时**不落盘**，但仍把这一条回给调用方，会话列表照样能立刻显示 ——
- * 只是刷新后不在了，这与「没有身份可归属」是一致的。
+ * 追加一条。
+ *
+ * 未登录时不落盘（没有身份可归属），但仍把这一条回给调用方 ——
+ * 会话列表照样立刻显示，只是刷新后不在了。
+ * 配额满 / 隐私模式下写失败同理。两种情况都用 `persisted=false` 如实告诉调用方，
+ * 由它决定要不要提示用户；**不假装已经存好了**。
  */
-export function addCustomGroup(userId: string | null | undefined, group: Conversation): Conversation[] {
+export function addCustomGroup(
+  userId: string | null | undefined,
+  group: Conversation,
+): AddGroupResult {
   const id = normalizeUserId(userId);
-  if (!id) return [group];
+  if (!id) return { list: [group], persisted: false };
   const next = dedupe([...read(id), group]);
-  write(id, next);
-  return next;
+  return { list: next, persisted: write(id, next) };
 }
 
-/** 测试用：清掉某个身份的桶（不碰别人的）。 */
+/** 归属未知的旧数据的状态。**只给有没有、有几条，不读出群名。** */
+export interface UnclaimedLegacyState {
+  present: boolean;
+  /** 可用记录条数。内容（群名、成员、时间）一律不对外暴露。 */
+  count: number;
+}
+
+/**
+ * 隔离位里还躺着多少条归属未知的旧数据。
+ *
+ * 这是给「以后要不要做一个明确的认领入口」留的接口，**当前不在任何界面上显示**
+ * —— 向任意身份展示都可能泄露「另一个人有过 N 个群」这件事。
+ * 返回值刻意只有布尔与计数，不含任何群名。
+ */
+export function getUnclaimedLegacyState(): UnclaimedLegacyState {
+  const list = parseList(getRaw(UNCLAIMED_KEY));
+  return { present: list.length > 0, count: list.length };
+}
+
+/** 测试用：清掉某个身份的桶（不碰别人的，也不碰隔离位）。 */
 export function clearCustomGroups(userId: string): void {
   try { localStorage.removeItem(keyFor(userId)); } catch { /* ignore */ }
 }

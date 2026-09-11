@@ -211,20 +211,35 @@ try {
 
   /* ---------------- 4. 旧全局键一次性迁移 ---------------- */
   console.log('');
-  console.log('-- 4 · 旧格式（全局键）迁移 --');
+  console.log('-- 4 · 旧格式（全局键）不归属给任何身份 --');
+  /* 这一段此前断言的是「旧群仍看得见」，那个结论已被整合审查推翻并作废：
+     旧键是在身份隔离之前写下的，**没有记录归属**，自动归给第一个登录的身份
+     等于把甲的群送给乙。现在的正确语义是 —— 原样保住、不归属、不展示。 */
+  const LEGACY_ONE = '[{"id":"g-legacy","userName":"旧格式的群","userId":"g-legacy","isGroup":true}]';
+  const UNCLAIMED_KEY = 'amas_custom_groups:unclaimed:v1';
   await wipe();
-  await loadAs('userD', '丁同学', {
-    [LEGACY_KEY]: '[{"id":"g-legacy","userName":"旧格式的群","userId":"g-legacy","isGroup":true}]',
-  });
+  await loadAs('userD', '丁同学', { [LEGACY_KEY]: LEGACY_ONE });
   await openMessages();
-  check('★ 旧全局键里的群仍看得见（迁移后不丢数据）', await visible('旧格式的群'));
-  const afterMigrate = await storageKeys();
-  check('★ 旧全局键已删除，只剩按身份分桶的键',
-    !afterMigrate.includes(LEGACY_KEY) && afterMigrate.includes(keyFor('userD')),
-    JSON.stringify(afterMigrate));
+  check('★ 旧数据不出现在当前身份的会话列表里（此前会被自动归给他）',
+    !(await visible('旧格式的群')));
+  const afterQ = await storageKeys();
+  check('★ 旧键原样搬进隔离位，源在确认写成功后才删',
+    afterQ.includes(UNCLAIMED_KEY) && !afterQ.includes(LEGACY_KEY),
+    JSON.stringify(afterQ));
+  const quarantined = await page.evaluate(k => localStorage.getItem(k), UNCLAIMED_KEY);
+  check('★ 隔离位里的内容逐字节一致（没被改写、没被丢）',
+    quarantined === LEGACY_ONE, String(quarantined).slice(0, 60));
   await loadAs('userE', '戊同学');
   await openMessages();
-  check('★ 迁移之后别的身份看不到那份旧数据', !(await visible('旧格式的群')));
+  check('★ 换另一个身份同样看不到', !(await visible('旧格式的群')));
+  const stAfter = await page.evaluate(k => {
+    try { const v = JSON.parse(localStorage.getItem(k) || 'null');
+      return Array.isArray(v) ? { present: v.length > 0, count: v.length } : null; }
+    catch { return 'parse-error'; }
+  }, UNCLAIMED_KEY);
+  check('★ 恢复状态可查（有没有 / 有几条），但界面上不显示群名',
+    JSON.stringify(stAfter) === JSON.stringify({ present: true, count: 1 }),
+    JSON.stringify(stAfter));
 
   /* ---------------- 5. 重复项 ---------------- */
   console.log('');
