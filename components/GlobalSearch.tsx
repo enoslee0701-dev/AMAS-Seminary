@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Search, X, BookOpen, Megaphone, Landmark, ChevronRight,
@@ -45,6 +45,9 @@ const FEATURES: { name: string; sub: string; icon: React.ElementType; view: View
   { name: '学习档案', sub: '我的进度与设置', icon: User, view: ViewState.PROFILE, keywords: '我的 档案 进度 个人' },
 ];
 
+/** 面板根节点的稳定 id —— 卸载时用它区分 StrictMode 的假卸载与真卸载。 */
+const SEARCH_PANEL_ID = 'global-search-panel';
+
 const HOT_QUERIES = ['入学', '希腊语', '医治', '认证', '试听', '公告'];
 
 const GlobalSearch: React.FC<GlobalSearchProps> = ({
@@ -52,7 +55,86 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
 }) => {
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const q = query.trim().toLowerCase();
+
+  /*
+   * 这个面板在视觉上是全屏模态（fixed inset-0），但此前在语义与键盘上都不是：
+   * 没有 Escape、没有 role/aria-modal、背后的首页仍留在 tab 序里。
+   * 实测 Shift+Tab 会从输入框直接退到背后底部导航的「我的 / 图书馆 / 校友圈」——
+   * 焦点漏出模态之后，用户再也回不到搜索结果上。
+   *
+   * 这里补齐模态该有的三件事：Escape 关闭、焦点留在面板内、关闭后把焦点还回去。
+   * 不引入 focus-trap 依赖 —— 面板结构简单，自己圈一圈可聚焦元素就够了。
+   */
+  /*
+   * 打开它的那个控件，必须在**首次 render 期间**抓 —— 不能等到 effect 里。
+   * 输入框带 autoFocus，而 autoFocus 是在 commit 阶段生效的，早于 effect：
+   * 到 effect 跑的时候 document.activeElement 已经是输入框自己了，
+   * 于是「还给谁」抓成了面板内部的元素，卸载后焦点掉回 <body>。
+   * useState 的惰性初始化跑在 render 阶段，是唯一还来得及的时点。
+   */
+  const [opener] = useState<HTMLElement | null>(
+    () => (typeof document === 'undefined' ? null : (document.activeElement as HTMLElement | null)),
+  );
+
+  useEffect(() => {
+
+    const focusables = (): HTMLElement[] => {
+      const root = panelRef.current;
+      if (!root) return [];
+      return [...root.querySelectorAll<HTMLElement>(
+        'button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      )].filter(el => !el.hasAttribute('disabled') && el.tabIndex !== -1
+        && el.getBoundingClientRect().width > 0);
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.preventDefault(); onClose(); return; }
+      if (e.key !== 'Tab') return;
+      const items = focusables();
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      // 焦点已经在面板外（例如刚打开时还在触发按钮上）：拉回来。
+      if (!active || !panelRef.current?.contains(active)) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+        return;
+      }
+      if (e.shiftKey && active === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus(); }
+    };
+
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => document.removeEventListener('keydown', onKeyDown, true);
+  }, [onClose]);
+
+  /*
+   * 焦点归还必须单独一个 effect，依赖数组为空。
+   *
+   * 一开始我把它写在上面那个 effect 的 cleanup 里，结果是：父组件每次重渲染
+   * 都会让 onClose 换一个函数身份，effect 因此重跑 —— cleanup 把焦点从
+   * 刚刚 autoFocus 好的输入框抢回搜索按钮。表现为「输入框自动聚焦」这条断言
+   * 时红时绿。归还这件事只该在**真正卸载时**发生一次。
+   */
+  useEffect(() => () => {
+    if (!opener) return;
+    /*
+     * React StrictMode 在开发模式下会把 effect 跑成 mount → cleanup → mount。
+     * 那次 cleanup 是**假卸载**：面板还在屏幕上，此时归还焦点就等于把刚
+     * autoFocus 好的输入框上的焦点抢回搜索按钮。生产构建不双跑，所以这个坑
+     * 只在 dev 里现形 —— 本轮就是这么被测出来的。
+     *
+     * 用面板自己的 id 判真假：推迟一拍，DOM 更新完之后面板还在 = 假卸载，什么都不做。
+     */
+    setTimeout(() => {
+      if (document.getElementById(SEARCH_PANEL_ID)) return;
+      if (document.contains(opener)) opener.focus();
+    }, 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const results = useMemo(() => {
     if (!q) return null;
@@ -100,7 +182,14 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
     );
 
   return createPortal(
-    <div className="fixed inset-0 z-[120] max-w-md mx-auto flex flex-col bg-slate-50 animate-fade-in">
+    <div
+      ref={panelRef}
+      id={SEARCH_PANEL_ID}
+      role="dialog"
+      aria-modal="true"
+      aria-label="搜索"
+      className="fixed inset-0 z-[120] max-w-md mx-auto flex flex-col bg-slate-50 animate-fade-in"
+    >
       {/* Search bar */}
       <div
         className="flex items-center px-3 bg-white border-b border-slate-200"
@@ -112,6 +201,9 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
             ref={inputRef}
             autoFocus
             type="text"
+            /* placeholder 不是可访问名称：一开始输入它就消失了，
+               屏幕阅读器随后只会念「编辑框」。 */
+            aria-label="搜索课程、公告、学校页面"
             value={query}
             onChange={e => setQuery(e.target.value)}
             placeholder="搜索课程、公告、学校页面…"
