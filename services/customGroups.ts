@@ -27,9 +27,17 @@ import type { Conversation } from '../components/community/data';
  * ```
  * 旧键里的内容原样搬到隔离位 amas_custom_groups:unclaimed:v1
  * 不归给任何身份，不出现在任何人的会话列表里
- * 只对外暴露「有没有、有几条」（getUnclaimedLegacyState），不读出群名
+ * 只对外暴露「有没有、认得出几条」（getUnclaimedLegacyState），不读出群名
  * 要认领给谁，需要一次明确的产品决定，不由本模块替代
  * ```
+ *
+ * ## 未知 / 损坏 / 旧结构：一律原字节保留，不自动删除
+ *
+ * 隔离**不看内容**。曾经有一个分支是「`parseList` 解析不出条目就把旧键清掉」，
+ * 理由是「那不是真实数据」—— 那个判断不成立：`parseList` 只认识当前这一种
+ * 结构，读不出来可能是更早的结构（例如外面包了一层对象）、可能是可修复的损坏，
+ * 也可能只是一个合法的空数组。**解析器不认识 ≠ 不是真数据。**
+ * 现在一律原字节搬走、原字节保留；可以不显示、不解析，但不替用户做删除决定。
  *
  * ## 迁移的铁律：先确认写成功，再动源；绝不删真实数据
  *
@@ -129,11 +137,12 @@ function quarantineLegacy(): void {
   const legacyRaw = getRaw(LEGACY_KEY);
   if (legacyRaw === null) return;
 
-  // 旧键里没有一条可用记录：不是「真实数据」，直接清掉这个空壳。
-  if (parseList(legacyRaw).length === 0) {
-    try { localStorage.removeItem(LEGACY_KEY); } catch { /* 清不掉就下次再说 */ }
-    return;
-  }
+  /* 这里**不做任何基于解析结果的删除**。
+     曾经有一个分支是「parseList 长度为 0 就把旧键清掉」，理由是「那不是真实
+     数据」—— 那个判断不成立：`parseList` 只认识当前这一种结构，
+     解析不出来可能是更早的结构（比如外面包了一层对象）、可能是可修复的损坏，
+     也可能只是一个合法的空数组。**解析器不认识 ≠ 不是真数据。**
+     所以一律原字节保留，能不能解析是另一回事（可以不显示、不解析）。 */
 
   // 隔离位已经有东西了：不覆盖、不删源，两批都保住。
   if (getRaw(UNCLAIMED_KEY) !== null) return;
@@ -178,23 +187,35 @@ export function addCustomGroup(
   return { list: next, persisted: write(id, next) };
 }
 
-/** 归属未知的旧数据的状态。**只给有没有、有几条，不读出群名。** */
+/** 归属未知的旧数据的状态。**只给有没有、认得出几条，不读出群名。** */
 export interface UnclaimedLegacyState {
+  /** 隔离位里有没有原字节。与「能不能解析」无关。 */
   present: boolean;
-  /** 可用记录条数。内容（群名、成员、时间）一律不对外暴露。 */
+  /**
+   * 当前解析器认得出的条数。
+   * `present === true && count === 0` 是一个有意义的状态：
+   * 内容保住了，但这一版解析器读不懂它（更早的结构 / 损坏 / 空数组）。
+   */
   count: number;
+  /** 当前解析器是否读得懂。读不懂**不代表**可以删。 */
+  parsable: boolean;
 }
 
 /**
- * 隔离位里还躺着多少条归属未知的旧数据。
+ * 隔离位里躺着什么。
  *
  * 这是给「以后要不要做一个明确的认领入口」留的接口，**当前不在任何界面上显示**
  * —— 向任意身份展示都可能泄露「另一个人有过 N 个群」这件事。
- * 返回值刻意只有布尔与计数，不含任何群名。
+ * 返回值刻意只有布尔与计数，不含任何群名、成员或时间。
+ *
+ * `present` 看的是**原字节在不在**，不是能不能解析 —— 否则一份读不懂的旧数据
+ * 会被报成「没有」，而它其实还在那里等着被认领。
  */
 export function getUnclaimedLegacyState(): UnclaimedLegacyState {
-  const list = parseList(getRaw(UNCLAIMED_KEY));
-  return { present: list.length > 0, count: list.length };
+  const raw = getRaw(UNCLAIMED_KEY);
+  if (raw === null) return { present: false, count: 0, parsable: false };
+  const list = parseList(raw);
+  return { present: true, count: list.length, parsable: list.length > 0 };
 }
 
 /** 测试用：清掉某个身份的桶（不碰别人的，也不碰隔离位）。 */

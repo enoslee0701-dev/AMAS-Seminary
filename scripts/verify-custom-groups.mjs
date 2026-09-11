@@ -233,13 +233,32 @@ try {
   await openMessages();
   check('★ 换另一个身份同样看不到', !(await visible('旧格式的群')));
   const stAfter = await page.evaluate(k => {
-    try { const v = JSON.parse(localStorage.getItem(k) || 'null');
-      return Array.isArray(v) ? { present: v.length > 0, count: v.length } : null; }
-    catch { return 'parse-error'; }
+    const raw = localStorage.getItem(k);
+    if (raw === null) return { present: false, count: 0 };
+    try { const v = JSON.parse(raw);
+      return Array.isArray(v) ? { present: true, count: v.length } : { present: true, count: 0 }; }
+    catch { return { present: true, count: 0 }; }
   }, UNCLAIMED_KEY);
-  check('★ 恢复状态可查（有没有 / 有几条），但界面上不显示群名',
+  check('★ 恢复状态可查（有没有 / 认得出几条），但界面上不显示群名',
     JSON.stringify(stAfter) === JSON.stringify({ present: true, count: 1 }),
     JSON.stringify(stAfter));
+
+  /* 未知 / 损坏 / 旧结构：原字节保留，不因为「解析器不认识」就删。
+     最初的实现在这里会把旧键清掉，整合审查指出那是破坏性的。 */
+  for (const [label, raw] of [
+    ['更早的结构（外面包了一层对象）', '{"version":1,"groups":[{"id":"g-x","name":"旧结构的群"}]}'],
+    ['损坏的 JSON', '{"groups":[{"id":"g-x",'],
+    ['合法但是空的数组', '[]'],
+  ]) {
+    await wipe();
+    await loadAs('userF', '己同学', { [LEGACY_KEY]: raw });
+    await openMessages();
+    const kept = await page.evaluate(k => localStorage.getItem(k), UNCLAIMED_KEY);
+    const srcGone = await page.evaluate(k => localStorage.getItem(k) === null, LEGACY_KEY);
+    check(`★ ${label} —— 原字节保留在隔离位，源确认搬走后才删`,
+      kept === raw && srcGone, `隔离位=${String(kept).slice(0, 44)} 源已删=${srcGone}`);
+    check(`   ${label} —— 会话列表仍能打开，且不显示它`, await listOpens());
+  }
 
   /* ---------------- 5. 重复项 ---------------- */
   console.log('');

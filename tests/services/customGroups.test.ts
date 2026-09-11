@@ -18,7 +18,11 @@ import {
  * 2. **旧数据归属未知，不能自动分给第一个登录的身份。** 旧实现按「这套数据
  *    通常只有一个人在用」把它归给当前身份 —— 那不是身份依据，真实后果是
  *    乙先登录一次就拿到甲的旧群。现在一律不归属、不展示，只给非泄露的
- *    恢复状态（有没有、有几条，**不读出群名**）。
+ *    恢复状态（有没有、认得出几条，**不读出群名**）。
+ * 3. **不得根据「当前解析器认不认识」去删原始内容。** 最初还有一个分支是
+ *    「`parseList` 解析不出条目就把旧键清掉」—— 那是破坏性的：解析器只认识
+ *    当前这一种结构，读不出来可能是更早的结构、可能是可修复的损坏、也可能
+ *    只是合法的空数组。现在一律原字节保留（见 `describe.each` 那一组）。
  *
  * ## 用的都是 fixture，不碰真实数据
  *
@@ -129,20 +133,70 @@ describe('customGroups · 旧格式不归属给任何身份', () => {
     localStorage.setItem(LEGACY_KEY, LEGACY_FIXTURE);
     loadCustomGroups('userB');
     const st = getUnclaimedLegacyState();
-    expect(st).toEqual({ present: true, count: 2 });
+    expect(st).toEqual({ present: true, count: 2, parsable: true });
     expect(JSON.stringify(st)).not.toContain('旧群');   // 返回值里不得出现任何群名
   });
 
   it('没有旧数据时，恢复状态是「没有」', () => {
-    expect(getUnclaimedLegacyState()).toEqual({ present: false, count: 0 });
+    expect(getUnclaimedLegacyState()).toEqual({ present: false, count: 0, parsable: false });
   });
 
-  it('旧键里没有一条可用记录时，清掉空壳、不产生隔离位', () => {
-    localStorage.setItem(LEGACY_KEY, '"not-an-array"');
-    loadCustomGroups('userA');
-    expect(localStorage.getItem(LEGACY_KEY)).toBeNull();
-    expect(localStorage.getItem(UNCLAIMED_KEY)).toBeNull();
-    expect(getUnclaimedLegacyState().present).toBe(false);
+  /**
+   * 未知 / 损坏 / 旧结构一律原字节保留。
+   *
+   * 曾经有一个分支是「`parseList` 解析不出条目就把旧键清掉」，理由是「那不是
+   * 真实数据」。整合审查指出那个判断不成立：解析器只认识当前这一种结构，
+   * 读不出来可能是更早的结构、可能是可修复的损坏、也可能只是合法的空数组。
+   * **解析器不认识 ≠ 不是真数据。** 下面三组就是钉住这一点。
+   */
+  describe.each([
+    ['更早的结构：外面包了一层对象', '{"version":1,"groups":[{"id":"g-x","name":"旧结构的群"}]}'],
+    ['损坏的 JSON（可能还能人工修复）', '{"groups":[{"id":"g-x",'],
+    ['合法但是空的数组', '[]'],
+    ['非数组的标量', '"not-an-array"'],
+  ])('★ 原字节保留：%s', (_label, raw) => {
+    it('搬进隔离位且逐字节一致，源在确认写成功后才删', () => {
+      localStorage.setItem(LEGACY_KEY, raw);
+      loadCustomGroups('userA');
+      expect(localStorage.getItem(UNCLAIMED_KEY)).toBe(raw);   // 一个字节都没动
+      expect(localStorage.getItem(LEGACY_KEY)).toBeNull();     // 确认搬走后才删源
+    });
+
+    it('不进任何身份的列表，也不落到任何身份名下', () => {
+      localStorage.setItem(LEGACY_KEY, raw);
+      expect(loadCustomGroups('userA')).toEqual([]);
+      expect(loadCustomGroups('userB')).toEqual([]);
+      expect(localStorage.getItem(keyFor('userA'))).toBeNull();
+      expect(localStorage.getItem(keyFor('userB'))).toBeNull();
+    });
+
+    it('恢复状态说「有」，且说清当前解析器读不读得懂', () => {
+      localStorage.setItem(LEGACY_KEY, raw);
+      loadCustomGroups('userA');
+      const st = getUnclaimedLegacyState();
+      expect(st.present).toBe(true);        // 原字节在 → 必须报「有」
+      expect(st.parsable).toBe(false);      // 但这一版读不懂
+      expect(st.count).toBe(0);
+      expect(JSON.stringify(st)).not.toContain('群');   // 仍然不读出任何名字
+    });
+
+    it('写失败时源原地不动（读不懂也照样守这条铁律）', () => {
+      const f = useFakeStorage({ [LEGACY_KEY]: raw });
+      f.mode = 'throw';
+      loadCustomGroups('userA');
+      f.mode = 'ok';
+      expect(localStorage.getItem(LEGACY_KEY)).toBe(raw);
+      expect(localStorage.getItem(UNCLAIMED_KEY)).toBeNull();
+    });
+
+    it('重复加载不会把它删掉、也不会被改写', () => {
+      localStorage.setItem(LEGACY_KEY, raw);
+      loadCustomGroups('userA');
+      loadCustomGroups('userB');
+      loadCustomGroups(null);
+      expect(localStorage.getItem(UNCLAIMED_KEY)).toBe(raw);
+      expect(getUnclaimedLegacyState().present).toBe(true);
+    });
   });
 
   it('隔离位已有内容时不覆盖、也不删源 —— 两批都保住', () => {
@@ -268,7 +322,7 @@ describe('customGroups · 重复读取幂等', () => {
     loadCustomGroups('userA');
     loadCustomGroups('userB');
     expect(localStorage.getItem(UNCLAIMED_KEY)).toBe(LEGACY_FIXTURE);
-    expect(getUnclaimedLegacyState()).toEqual({ present: true, count: 2 });
+    expect(getUnclaimedLegacyState()).toEqual({ present: true, count: 2, parsable: true });
   });
 });
 
