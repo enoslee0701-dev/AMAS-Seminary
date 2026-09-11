@@ -488,10 +488,161 @@ try {
       await page.evaluate(n => document.body.innerText.includes(n), NAME), NAME);
   }
 
+  /* ---------------- 8a. 课程列表直接收藏 ---------------- */
+  console.log('');
+  console.log('-- 课程列表 · 直接收藏 --');
+  if (!await fresh()) throw new Error('启动超时');
+  await tab('课程');
+  {
+    /** 列表第一行的收藏键与所属课程。 */
+    const favBtn = () => page.evaluate(() => {
+      const row = [...document.querySelectorAll('[role="button"]')]
+        .find(x => /打开课程/.test(x.getAttribute('aria-label') || ''));
+      if (!row) return null;
+      const b = row.querySelector('button[aria-pressed]');
+      if (!b) return null;
+      const r = b.getBoundingClientRect();
+      return {
+        title: (row.getAttribute('aria-label') || '').replace('打开课程 ', ''),
+        label: b.getAttribute('aria-label'),
+        pressed: b.getAttribute('aria-pressed'),
+        focusable: b.tabIndex >= 0,
+        vis: Math.round(r.width) + 'x' + Math.round(r.height),
+      };
+    });
+    /** 真实热区：可视只有 28×28，靠伪元素扩出来，必须按 hit-testing 量。 */
+    const favHit = async () => {
+      // 先滚进视口再量：这一行默认在首屏之外，中心落在视口外会被算成「被遮挡」，
+      // 那是探针自己的问题，不是热区问题（第一版就这么假红过一次）。
+      await page.evaluate(() => {
+        const row = [...document.querySelectorAll('[role="button"]')]
+          .find(x => /打开课程/.test(x.getAttribute('aria-label') || ''));
+        row?.scrollIntoView({ block: 'center' });
+      });
+      await sleep(400);
+      return page.evaluate(() => {
+      const row = [...document.querySelectorAll('[role="button"]')]
+        .find(x => /打开课程/.test(x.getAttribute('aria-label') || ''));
+      const el = row?.querySelector('button[aria-pressed]');
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      const cx = Math.round(r.left + r.width / 2), cy = Math.round(r.top + r.height / 2);
+      const owns = p => { let n = p; while (n) { if (n === el) return true; n = n.parentElement; } return false; };
+      const at = (x, y) => x >= 0 && y >= 0 && x < innerWidth && y < innerHeight && owns(document.elementFromPoint(x, y));
+      if (!at(cx, cy)) return { blocked: true };
+      const grow = (dx, dy) => { let k = 0; while (k < 40 && at(cx + dx * (k + 1), cy + dy * (k + 1))) k++; return k; };
+      return { w: grow(-1, 0) + grow(1, 0) + 1, h: grow(0, -1) + grow(0, 1) + 1 };
+      });
+    };
+    const clickFav = () => page.evaluate(() => {
+      const row = [...document.querySelectorAll('[role="button"]')]
+        .find(x => /打开课程/.test(x.getAttribute('aria-label') || ''));
+      row?.querySelector('button[aria-pressed]')?.click();
+    });
+
+    let f = await favBtn();
+    check('★ 课程列表每行都有收藏键（favoriteCourseIds / onToggleFavorite 此前从未被用）',
+      !!f, JSON.stringify(f));
+    if (!f) throw new Error('列表里没有收藏键');
+    const courseTitle = f.title;
+
+    check('★ 收藏键可聚焦，名称里带课程名（读屏能分清是哪一门）',
+      f.focusable && /^收藏课程 /.test(f.label || ''), `${f.label} · tabIndex 可聚焦=${f.focusable}`);
+    check('初始为未收藏', f.pressed === 'false', String(f.pressed));
+
+    const hit = await favHit();
+    check('★ 收藏键热区 ≥ 44×44（可视 28×28，伪元素扩的）',
+      !!hit && !hit.blocked && hit.w >= 44 && hit.h >= 44, JSON.stringify({ ...hit, vis: f.vis }));
+
+    // ★ 点收藏不能把课程详情打开
+    await clickFav();
+    await sleep(800);
+    check('★ 点收藏键不会误触打开课程详情', !(await inDetail()));
+    f = await favBtn();
+    check('★ 点一下就变成已收藏，名称同步',
+      f.pressed === 'true' && /^取消收藏课程 /.test(f.label || ''), `${f.label} pressed=${f.pressed}`);
+
+    // 键盘：聚焦后按回车切换，同样不能穿透到行
+    const kb = await page.evaluate(() => {
+      const row = [...document.querySelectorAll('[role="button"]')]
+        .find(x => /打开课程/.test(x.getAttribute('aria-label') || ''));
+      const b = row?.querySelector('button[aria-pressed]');
+      if (!b) return 'missing';
+      b.focus();
+      return document.activeElement === b ? 'focused' : 'focus-failed';
+    });
+    check('收藏键能被聚焦', kb === 'focused', kb);
+    if (kb === 'focused') {
+      await page.keyboard.press('Enter');
+      await sleep(800);
+      check('★ 在收藏键上按回车不会穿透去打开课程', !(await inDetail()));
+      f = await favBtn();
+      check('★ 回车把它切回未收藏', f.pressed === 'false', String(f.pressed));
+      // 再收一次，留给后面的跨页核对
+      await page.keyboard.press('Enter');
+      await sleep(600);
+      f = await favBtn();
+      check('前提：再次收藏成功', f.pressed === 'true', String(f.pressed));
+    }
+
+    /* 跨页一致：用的是 App 里那一份 favoriteCourseIds，所以
+       「我的」页的收藏课程计数与详情页菜单文案都应跟着变。 */
+    await tab('我的');
+    const profileCount = await page.evaluate(() => {
+      for (const b of document.querySelectorAll('button')) {
+        const m = /^(\d+)\s*收藏课程$/.exec((b.innerText || '').replace(/[ \n\t]+/g, ' ').trim());
+        if (m) return Number(m[1]);
+      }
+      return -1;
+    });
+    check('★「我的」页的「收藏课程」计数跟着变成 1（同一套状态，不是第二份数据）',
+      profileCount === 1, `我的页=${profileCount}`);
+    const inMyLearning = await page.evaluate(t => document.body.innerText.includes(t), courseTitle);
+    check('★ 该课出现在「我的」页的「我的学习」里', inMyLearning, courseTitle);
+
+    await tab('课程');
+    f = await favBtn();
+    check('★ 切页回来仍是已收藏', f.pressed === 'true', String(f.pressed));
+
+    // 详情页的「更多操作」菜单文案应显示「取消收藏」
+    await page.evaluate(() => [...document.querySelectorAll('[role="button"]')]
+      .find(x => /打开课程/.test(x.getAttribute('aria-label') || ''))?.click());
+    await sleep(1800);
+    check('前提：进到课程详情', await inDetail());
+    await page.evaluate(() => [...document.querySelectorAll('button')]
+      .find(x => (x.getAttribute('aria-label') || '') === '更多操作')?.click());
+    await sleep(700);
+    const menuText = await page.evaluate(() => {
+      const b = [...document.querySelectorAll('button')].find(x => /收藏课程|取消收藏/.test(x.innerText || ''));
+      return b ? b.innerText.replace(/[ \n\t]+/g, ' ').trim() : null;
+    });
+    check('★ 详情页菜单显示「取消收藏」—— 与列表同一状态',
+      menuText === '取消收藏', String(menuText));
+
+    // 在详情页取消，回列表应同步
+    await page.evaluate(() => [...document.querySelectorAll('button')]
+      .find(x => /取消收藏/.test(x.innerText || ''))?.click());
+    await sleep(900);
+    await back();
+    f = await favBtn();
+    check('★ 在详情页取消收藏，列表那一行同步变回未收藏',
+      f.pressed === 'false', String(f.pressed));
+  }
+
   /* ---------------- 8b. 发起群聊弹窗的完整使用流程 ---------------- */
   console.log('');
   console.log('-- 发起群聊弹窗 · 完整使用流程 --');
   {
+    // 上一段收藏流程结束时停在课程页，这里要先自己走回通讯录的「最近消息」。
+    // 段与段之间不能假定上一段把页面留在哪儿（第一版就因此假红了一次）。
+    await tab('校友圈');
+    await page.evaluate(() => [...document.querySelectorAll('button')]
+      .find(x => (x.innerText || '').trim() === '通讯录')?.click());
+    await sleep(1100);
+    await page.evaluate(() => [...document.querySelectorAll('button')]
+      .find(x => (x.innerText || '').trim() === '最近消息')?.click());
+    await sleep(900);
+
     const openModal = async () => {
       await page.evaluate(() => [...document.querySelectorAll('button')]
         .find(x => (x.getAttribute('aria-label') || '') === '发起群聊')?.click());

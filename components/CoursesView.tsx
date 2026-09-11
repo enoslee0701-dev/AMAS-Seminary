@@ -1255,13 +1255,43 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
                           <ThumbnailTile course={course} fallbackUrl={thumbFor(course)} tintCss={tintFor(course)} size={88} />
                           {/* Right column */}
                           <div className="flex-1 min-w-0 flex flex-col" style={{ gap: 6 }}>
-                            {/* Title */}
-                            <h4
-                              className="font-bold text-slate-900 line-clamp-1 tracking-tight"
-                              style={{ fontSize: 15, lineHeight: '18px' }}
-                            >
-                              {course.title}
-                            </h4>
+                            {/* Title + 收藏 */}
+                            <div className="flex items-start" style={{ gap: 8 }}>
+                              <h4
+                                className="font-bold text-slate-900 line-clamp-1 tracking-tight flex-1 min-w-0"
+                                style={{ fontSize: 15, lineHeight: '18px' }}
+                              >
+                                {course.title}
+                              </h4>
+                              {/* 列表直接收藏。
+                                  `favoriteCourseIds` / `onToggleFavorite` 这两个 prop 本来就
+                                  传进来了，却一直没人用 —— 收藏课程此前只能在详情页的
+                                  「更多操作」下拉里点到，列表上没有入口。这里接的是**同一套
+                                  状态**（App 的 favoriteCourseIds），不新建第二份数据，
+                                  所以列表、详情页菜单、「我的」页的收藏课程计数天然一致。
+
+                                  整行是可点的 role=button，所以这个按钮要挡住冒泡：
+                                  onClick 里 stopPropagation 防止误触打开课程；
+                                  行的 onKeyDown 已经有 `e.target !== e.currentTarget` 的判断，
+                                  按钮上的回车/空格不会穿透，这里再显式 stopPropagation 兜一层。 */}
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); onToggleFavorite?.(course.id); }}
+                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}
+                                aria-pressed={favoriteCourseIds.includes(course.id)}
+                                aria-label={`${favoriteCourseIds.includes(course.id) ? '取消收藏' : '收藏'}课程 ${course.title}`}
+                                className="relative shrink-0 -mt-1 -mr-1 flex items-center justify-center rounded-full transition active:scale-90 before:absolute before:-inset-2 before:content-['']"
+                                style={{ width: 28, height: 28 }}
+                              >
+                                <Heart
+                                  size={17}
+                                  strokeWidth={2.2}
+                                  className={favoriteCourseIds.includes(course.id)
+                                    ? 'text-rose-500 fill-rose-500'
+                                    : 'text-slate-300'}
+                                />
+                              </button>
+                            </div>
 
                             {/* Tag row */}
                             <div className="flex items-center flex-wrap" style={{ gap: 5 }}>

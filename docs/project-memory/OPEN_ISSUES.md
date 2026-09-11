@@ -1749,3 +1749,50 @@ scripts/verify-custom-groups.mjs      27/27  浏览器级（19 → 21 → 27）
 里**根本拦不到**，`not.toHaveBeenCalled()` 因此变成空跑假绿；改挂实例又还原不
 干净，一个用例把 `setItem` 打坏后面全部连环带红。最后整块换成自己实现的假
 storage（`mode` 控制写入行为），并在「未被调用」类断言前先自证计数真的在动。
+
+
+---
+
+## #33 课程列表补直接收藏入口 — `CLOSED`（2026-09-11）
+
+```
+status:    CLOSED
+severity:  low-medium（功能缺口：收藏课程只能在详情页下拉里点到）
+owner:     unassigned
+phase:     产品完善（2026-09-11）
+```
+
+**产品决定**：课程列表每行补一个直接收藏 / 取消收藏的入口。
+
+`CoursesView` 一直收着 `favoriteCourseIds` 与 `onToggleFavorite` 两个 prop，
+却**一次都没用过** —— 收藏课程此前只能进详情页、打开「更多操作」下拉才点得到。
+而「我的」页的「我的学习」只列收藏过的课，入口这么深意味着那一栏基本是空的。
+
+**接的是同一套状态，没有第二份数据**：按钮直接调 `onToggleFavorite(course.id)`，
+读 `favoriteCourseIds.includes(...)`，也就是 `App.tsx` 里那一份
+`favoriteCourseIds`（`handleToggleFavorite`）。详情页菜单、列表、
+「我的」页的收藏课程计数天然一致，不需要任何同步逻辑。
+
+**不误触打开课程**：整行是可点的 `role="button"`，所以按钮的 `onClick` 里
+`stopPropagation`；行的 `onKeyDown` 本来就有 `e.target !== e.currentTarget` 判断，
+按钮上的回车/空格不会穿透，按钮上再显式 `stopPropagation` 兜一层。
+两条都有实测断言。
+
+**可访问性**：`aria-pressed` 反映当前状态，`aria-label` 带课程名
+（「收藏课程 马太福音」/「取消收藏课程 马太福音」），读屏能分清是哪一门。
+可视 28×28 保持紧凑，热区用 `before:` 伪元素扩到 44×45。
+
+### 回归
+
+`scripts/verify-course-flow.mjs` 44 → 60，新增一段 16 条：
+
+```
+每行都有收藏键 · 可聚焦且名称带课程名 · 热区 44×45（可视 28×28）
+点收藏不会误触打开详情 · 回车不会穿透去打开详情 · 点一下状态与名称同步
+「我的」页收藏课程计数变 1 且该课出现在「我的学习」里
+切页回来仍是已收藏 · 详情页菜单显示「取消收藏」
+在详情页取消，列表那一行同步变回未收藏
+```
+
+`verify-touch-targets` 100/100：课程页受检控件从 28 涨到 44 个
+（新增 16 个收藏键），全部达标且都有名称。
