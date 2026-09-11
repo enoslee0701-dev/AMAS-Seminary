@@ -1796,3 +1796,100 @@ phase:     产品完善（2026-09-11）
 
 `verify-touch-targets` 100/100：课程页受检控件从 28 涨到 44 个
 （新增 16 个收藏键），全部达标且都有名称。
+
+---
+
+## #34 课程收藏根本不落盘，刷新即空 — `CLOSED`（2026-09-12）
+
+```
+status:    CLOSED
+severity:  medium（用户可见：收藏过的课刷新就没了）
+owner:     unassigned
+phase:     产品完善（2026-09-12）
+```
+
+`App.tsx` 里 `favoriteCourseIds` 一直是 `useState<string[]>([])` —— 既不落盘，
+也不往任何地方同步。#33 把入口做到列表每一行之后这条更显眼：顺手收几门课，
+刷新回来「我的学习」又是空的。
+
+**为什么这里写本地是对的，而图书馆收藏刻意不写**（不是双标）：
+
+```
+图书馆收藏   后端有 /api/library/favorites（GET + POST）
+             写本地会造出一份被服务端覆盖的影子副本，让人误以为已经存好了
+课程收藏     后端**没有任何对应端点**（backend/src/routes 里只有 library 那两条）
+             本地不是影子副本，而是**唯一的存储**；不写就等于这个功能不存在
+```
+
+理由写在 `services/courseFavorites.ts` 顶部，将来真有端点了改成
+「服务端说了算、空列表不覆盖本地」即可。
+
+沿用 `services/customGroups.ts` 那套已经过审的纪律：按身份分键
+`amas_course_favorites:v1:<userId>`、未登录既不读也不写、写入后读回逐字节核对、
+落盘失败如实返回 `persisted=false`、解析逐项校验（不是数组整份丢弃，数组里的
+坏项只丢那一项）、读取自愈只动自己那个桶、上限 500 条。
+
+**没有引入服务端同步、没有新增真实账号、没有任何后端映射。**
+
+### 回归
+
+```
+tests/services/courseFavorites.test.ts  33/33（fixture，假 storage）
+verify-course-flow 60 → 67：刷新后还在 · 落在带身份的键上 · 没有全局键
+  换身份看不到上一个人的收藏 · 新身份不覆盖旧桶 · 切回原身份原样恢复
+```
+
+探针那一节起步前会先清 `amas_course_favorites:*` —— 第 6 节在详情页收过一门课，
+收藏现在是真落盘的，不清就不是从「还没收藏」起步。
+
+---
+
+## #35 房间密码改了从不推给服务端，提示却说「已设置」 — `CLOSED`（2026-09-12）
+
+```
+status:    CLOSED
+severity:  medium（诚实性：界面说的和服务端的实际状态不一致）
+owner:     unassigned
+phase:     产品完善（2026-09-12）
+```
+
+三处，都是源码里直接看得见的：
+
+```
+1  VoiceRoomOverlay.handleSavePassword 只改本地 room 对象就弹「房间密码已设置」，
+   中间**从来没有调过 registerRoom**。进房校验查的是服务端那份记录
+   （/api/rooms/validate），那份记录压根没被更新过。
+   services/roomService.ts 顶上的注释写的是「创建房间时调用，房间设置里改密码时
+   再调一次」—— 第二次一直没兑现。
+2  CommunityView.handleCreateRoom 里是 `result ? '房间创建成功！' : '房间创建成功！'`，
+   三元的两个分支字面完全一样：登记失败也照样说创建成功。
+3  CreateRoomModal 留着 password / isPrivate 两个 state，但**没有任何控件去设**，
+   `setIsPrivate` 全仓没有调用点，提交时永远是 onCreate(name, type, undefined)。
+```
+
+改法：改密码与建房都按三种情形分开说 —— 没配 `VITE_API_BASE_URL` 时本地模式
+是设计本身、不报错（`roomService` 明写 best-effort）；登记成功照常说成功；
+登记失败如实说「没能同步到服务器（服务端仍是原来的设置）」。
+
+### 为什么删掉死开关而不是补上「私密房间」
+
+产品依据就在仓里：`docs/VOICE_ROOMS_INVENTORY.md` §3.4 —— 进房校验在
+`not-registered / network` 时会**回落到客户端明文比对**，密码存在 localStorage，
+所以这个能力**不能对外宣称「私密房间」**。补开关等于把一个保证不了的能力
+摆到台面上。真要做，得先处理掉那条回落，那是产品决定，不是顺手改 UI。
+房主建完房仍可在房间设置里设密码。措辞上也只说「同步上没上去」，
+不说「私密已开启」。
+
+### 回归与边界
+
+`verify-course-flow` 67 → 74，新增 7 条，**明确标注为源码级断言**：
+
+```
+改密码调了 registerRoom · 同步失败如实说 · 没配后端不谎报失败
+建房各分支不再说同一句话 · 登记失败说清是「没能同步到服务器」
+不再留 isPrivate 死状态 · 注明了不宣称私密房间的依据
+```
+
+拦得住的是「入口或诚实措辞又被改掉」这类回归。**拦不住真实后端往返** ——
+`/api/rooms` 的写入与校验、以及房间里的实际使用，都仍未验证，
+需要可用后端与真机。这三段各管各的，不把任何一段说成另一段。
