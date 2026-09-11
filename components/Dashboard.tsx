@@ -39,10 +39,20 @@ const SectionHeader: React.FC<{ title: string; action?: string; onAction?: () =>
       {title}
     </h3>
     {action && (
+      /* 13px 纯文字入口实测只有 66×20。padding 撑到 44，再用等量负 margin
+         把布局高度还原 —— 视觉一模一样。上下不对称是量过的：
+         向上 16px 落在各 section 之间 22px 的间距里，
+         向下 8px 落在本行自己 10px 的 marginBottom 里，都碰不到可点元素。
+         一处改动覆盖首页全部六个「查看全部 / 了解更多 / 全部服务 / 进入图书馆」。 */
       <button
         onClick={onAction}
         className="flex items-center hover:text-blue-700 transition-colors active:scale-95"
-        style={{ fontFamily: '"PingFang SC", -apple-system, sans-serif', fontSize: 13, fontWeight: 400, color: '#98A2B3' }}
+        style={{
+          fontFamily: '"PingFang SC", -apple-system, sans-serif', fontSize: 13, fontWeight: 400, color: '#98A2B3',
+          minHeight: 44,
+          marginTop: -16, paddingTop: 16,
+          marginBottom: -8, paddingBottom: 8,
+        }}
       >
         {action} <ChevronRight size={14} strokeWidth={2} />
       </button>
@@ -255,7 +265,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
                把 tab 序和这条栏自己的可见性绑在一起。 */
             tabIndex={scrolled ? 0 : -1}
             onClick={() => setShowSearch(true)}
-            className="flex items-center justify-center active:scale-95 transition"
+            /* 34×34 的吸顶搜索圈。伪元素把热区补到 46×46，视觉尺寸不动 ——
+               这条栏很窄，真把圆圈画成 44 会顶掉院名。 */
+            className="relative flex items-center justify-center active:scale-95 transition before:absolute before:-inset-[7px] before:content-['']"
             style={{
               width: 34, height: 34, borderRadius: '50%',
               backgroundColor: 'rgba(255,255,255,0.08)',
@@ -278,7 +290,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
           tabIndex={scrolled ? -1 : 0}
           aria-hidden={scrolled}
           onClick={() => setShowSearch(true)}
-          className="absolute flex items-center justify-center active:scale-95"
+          /* 36×36 → 热区 46×46。伪元素继承 button 的 pointer-events，
+             所以滚动后这个按钮 pointerEvents:none 时热区一并失效，不会留幽灵。 */
+          className="absolute flex items-center justify-center active:scale-95 before:absolute before:-inset-[6px] before:content-['']"
           style={{
             right: 14,
             width: 36, height: 36, borderRadius: '50%',
@@ -404,6 +418,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
                         color: '#04285F',
                         fontSize: 12,
                         padding: '8px 14px',
+                        /* 实测 34px 高。这里是轮播里唯一的主行动点，
+                           药丸直接长到 44 —— 轮播高度由 aspectRatio 定死，
+                           内容块是 justify-center，长高只是重新居中，不撑破。 */
+                        minHeight: 44,
                         borderRadius: 999,
                         gap: 4,
                       }}

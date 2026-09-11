@@ -132,6 +132,10 @@ window.__tt = {
       const r = el.getBoundingClientRect();
       if (r.width < 2 || r.height < 2) return false;
       if (r.bottom <= 0 || r.top >= window.innerHeight) return false;
+      /* 横向滚出屏幕的（轮播的非当前页、横滚 chip 条的后半截）现在压根
+         没呈现给用户，此刻量不出热区也不该判它红。轮播的 CTA 另有
+         专门一段把每张幻灯片切出来单独量。 */
+      if (r.right <= 0 || r.left >= window.innerWidth) return false;
       const cs = getComputedStyle(el);
       return cs.opacity !== '0' && cs.visibility !== 'hidden' && cs.pointerEvents !== 'none';
     });
@@ -180,6 +184,44 @@ window.__tt = {
       return r.width >= window.innerWidth - 2 && r.height >= window.innerHeight - 2;
     });
     return hits.length ? hits[hits.length - 1] : null;
+  },
+
+  /** 真正在滚的那个容器：本 App 滚的是 <main class="overflow-y-auto">，不是 window。 */
+  scroller() {
+    const m = document.querySelector('main');
+    if (m && m.scrollHeight > m.clientHeight + 4) return m;
+    return document.scrollingElement || document.documentElement;
+  },
+
+  /** 跨滚动位置认元素用的路径签名。 */
+  sig(el) {
+    const parts = [];
+    let n = el;
+    while (n && n.tagName !== 'BODY' && parts.length < 6) {
+      const p = n.parentElement;
+      parts.unshift(n.tagName + ':' + (p ? [...p.children].indexOf(n) : 0));
+      n = p;
+    }
+    return parts.join('/');
+  },
+
+  /** 当前滚动位置下每个可交互元素的热区。 */
+  sweepOnce() {
+    const out = [];
+    for (const el of window.__tt.interactives()) {
+      const h = window.__tt.hit(el);
+      out.push({
+        sig: window.__tt.sig(el),
+        name: (window.__tt.name(el) || el.tagName).slice(0, 20),
+        w: h.blocked ? 0 : h.w,
+        h: h.blocked ? 0 : h.h,
+        vw: h.visualW, vh: h.visualH,
+        box: 'x' + Math.round(el.getBoundingClientRect().left)
+           + '..' + Math.round(el.getBoundingClientRect().right),
+        cls: (typeof el.className === 'string' ? el.className : '').split(/\s+/).slice(0, 3).join('.'),
+      });
+    }
+    return out;
   },
 
   byLabel(label) {
@@ -244,9 +286,13 @@ try {
     return stolen;
   }, inModal);
 
+  /* 只在底部标签栏里找，别在整页里找：页面上还有别的按钮文字以「课程」结尾，
+     整页 find 会点中它们并跳到另一个视图（本轮就因此把一个别处的返回键
+     算到了课程页头上）。 */
   const gotoTab = async (label) => {
     await page.evaluate(l => {
-      const b = [...document.querySelectorAll('button')]
+      const bar = window.__tt.bottomBar();
+      const b = [...(bar ? bar.el : document).querySelectorAll('button')]
         .find(x => (x.innerText || '').trim().endsWith(l));
       b?.click();
     }, label);
@@ -270,6 +316,37 @@ try {
     if (!await waitForApp()) return false;
     await gotoTab(tab);
     return true;
+  };
+
+  /**
+   * 把一页从头滚到底，记录每个可交互元素在**任一**滚动位置上是否完整可点。
+   *
+   * 判据是「存在某个滚动位置能完整点到」，不是「每个位置都能点到」。
+   * 吸顶栏、底部标签栏、右下角客服浮标在某一刻压住某个按钮**不是缺陷** ——
+   * 往下滚一点就露出来了，页面也为此留了 pb-24。
+   * 从头滚到尾都点不到，才是真的点不到。
+   */
+  const sweepTab = async (tab) => {
+    if (!await openPage(tab)) return null;
+    const max = await page.evaluate(() => {
+      const s = window.__tt.scroller();
+      return Math.max(0, s.scrollHeight - s.clientHeight);
+    });
+    const best = new Map();
+    for (let y = 0; y <= max + 160; y += 160) {
+      await page.evaluate(v => { window.__tt.scroller().scrollTop = v; }, Math.min(y, max));
+      await sleep(340);
+      for (const r of await page.evaluate(() => window.__tt.sweepOnce())) {
+        const prev = best.get(r.sig);
+        const okNow = r.w >= MIN && r.h >= MIN;
+        if (!prev) { best.set(r.sig, { ...r, ok: okNow }); continue; }
+        if (prev.ok) continue;
+        if (okNow) { best.set(r.sig, { ...r, ok: true }); continue; }
+        // 都没达标时留下最接近的那次，报告里好定位。
+        if (Math.min(r.w, r.h) > Math.min(prev.w, prev.h)) best.set(r.sig, { ...r, ok: false });
+      }
+    }
+    return { max, seen: best.size, bad: [...best.values()].filter(r => !r.ok) };
   };
 
   const size = m => m.missing ? '缺失'
@@ -491,6 +568,51 @@ try {
       const s3 = await centerOwnership(true);
       check('图书馆 · AI 弹窗内没有控件中心被抢走', s3.length === 0,
         s3.length ? s3.map(s => `${s.me}←${s.thief}`).join(' · ') : '弹窗内全部自持');
+    }
+
+    /* ---------- 首页 · 招生轮播每一张的行动键 ---------- */
+    console.log('\n-- 首页 · 招生轮播 --');
+    if (!await openPage('首页')) { anyFatal = true; break; }
+    const slideCount = await page.evaluate(() => {
+      const h = document.querySelector('[aria-roledescription="carousel"]');
+      const m = h && /\/\s*(\d+)\s*页/.exec(h.getAttribute('aria-label') || '');
+      return m ? Number(m[1]) : 0;
+    });
+    check('前提：找得到招生轮播并知道页数', slideCount > 1, `${slideCount} 页`);
+    if (slideCount > 1) {
+      await page.evaluate(() => document.querySelector('[aria-roledescription="carousel"]')?.focus());
+      const seenCta = [];
+      for (let i = 0; i < slideCount; i++) {
+        // 每张幻灯片切出来单独量；只有当前这张在屏幕上，量的才是真的。
+        const cta = await page.evaluate(() => {
+          const region = document.querySelector('[aria-roledescription="carousel"]');
+          if (!region) return null;
+          // 轮播容器自己 tabIndex=0，也在 interactives 里 —— 要的是它里面的按钮。
+          const el = window.__tt.interactives()
+            .find(x => x !== region && region.contains(x) && x.tagName === 'BUTTON');
+          if (!el) return null; // 这一张是纯图片页，本来就没有行动键
+          return { name: window.__tt.name(el).slice(0, 12), hit: window.__tt.hit(el) };
+        });
+        if (cta) seenCta.push(cta);
+        await page.keyboard.press('ArrowRight');
+        await sleep(800);
+      }
+      check(`首页 · 轮播里每一张的行动键热区 ≥ ${MIN}×${MIN}`,
+        seenCta.length > 0 && seenCta.every(c => big(c)),
+        seenCta.length
+          ? seenCta.map(c => `${c.name} ${size(c)}`).join(' · ')
+          : '轮播里没有可交互控件');
+    }
+
+    /* ---------- 首页 / 课程 / 校友圈：整页扫掠 ---------- */
+    for (const tab of ['首页', '课程', '校友圈']) {
+      const r = await sweepTab(tab);
+      if (!r) { check(`${tab} · 能进入该页`, false, '导航失败'); anyFatal = true; continue; }
+      check(`${tab} · 每个可交互控件都有一个滚动位置能完整点到（≥${MIN}×${MIN}）`,
+        r.bad.length === 0,
+        r.bad.length
+          ? r.bad.map(b => `「${b.name}」${b.w}×${b.h}（可视 ${b.vw}×${b.vh} ${b.box} ${b.cls}）`).join(' · ')
+          : `扫掠 ${r.max}px，共 ${r.seen} 个控件全部达标`);
     }
   }
 } finally {
