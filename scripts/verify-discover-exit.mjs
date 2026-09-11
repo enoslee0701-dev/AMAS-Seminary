@@ -178,13 +178,17 @@ try {
   {
     const page = await newPage(1280, 800);
     await page.goto(`${base}/discover.html`, { waitUntil: 'domcontentloaded' });
-    let reached = false;
-    for (let i = 0; i < 12 && !reached; i++) {
+    /* 预算别卡太死：同源移植把原型条的 12 项从不可聚焦的 <img> 改成真 button 之后，
+       首屏的 tab 序合理地变长了，原来 12 步的预算会把这条断言变成假红。
+       要断言的是「出口键盘到得了」，不是「第几步到」，所以放宽并把实际步数报出来。 */
+    let reached = false, steps = 0;
+    for (let i = 0; i < 40 && !reached; i++) {
       await page.keyboard.press('Tab');
+      steps = i + 1;
       reached = await page.evaluate(() =>
         document.activeElement?.classList?.contains('back-link') === true);
     }
-    check('Tab 可聚焦到出口', reached);
+    check('Tab 可聚焦到出口', reached, `第 ${steps} 次 Tab 命中`);
     if (reached) {
       const outline = await page.evaluate(() => {
         const cs = getComputedStyle(document.activeElement);
@@ -362,6 +366,172 @@ try {
     check('落在 App SPA 入口而不是官网',
       landed.includes('APP_SPA_ROOT_MARKER'),
       '占位首页标记命中');
+    await page.close();
+  }
+
+  /* ================================================================
+     同源移植验收：官网隔离分支 3faa1da / 16d893e 的焦点接管与进度语义
+
+     这两个提交改的是官网副本；App 仓 public/discover.html 是同源副本，
+     不移植就会带着旧版本（1ee9288 起就留着这条待办）。
+     移植时只搬无障碍行为，App 专属的跳转与文案一律保留 ——
+     上面那几段静态断言就是钉住这一点的。
+
+     判定必须用**真实输入**：Puppeteer 的 page.click()/keyboard 走 CDP，
+     是真的鼠标与键盘事件；页面内 element.click() 不会让按钮获得焦点，
+     那样量到的是探针自己造出来的状态（官网那一轮在这件事上吃过亏）。
+     ================================================================ */
+  console.log('');
+  console.log('-- ★ 移植验收：测验换题/换视图的焦点接管 --');
+  {
+    const page = await newPage();
+    await page.goto(`${base}/discover.html`, { waitUntil: 'domcontentloaded' });
+
+    /** 当前焦点落在哪个视图里（landing / quiz / result / detail），以及标签。 */
+    const focusWhere = () => page.evaluate(() => {
+      const a = document.activeElement;
+      if (!a || a === document.body) return { view: '(body)', tag: 'BODY', label: '' };
+      const screen = a.closest('#landing, #quiz, #result, #detail');
+      return {
+        view: screen ? screen.id : '(不在任何视图里)',
+        tag: a.tagName + (a.id ? '#' + a.id : ''),
+        label: (a.getAttribute('aria-label') || a.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 22),
+      };
+    });
+    const progressState = () => page.evaluate(() => {
+      const bar = document.querySelector('#quiz .bar');
+      if (!bar) return null;
+      return {
+        role: bar.getAttribute('role'),
+        now: bar.getAttribute('aria-valuenow'),
+        max: bar.getAttribute('aria-valuemax'),
+        text: bar.getAttribute('aria-valuetext'),
+      };
+    });
+    /** 真键盘：Tab 到「开始快速探索」再按回车。 */
+    const startByKeyboard = async () => {
+      await page.evaluate(() => { document.activeElement?.blur(); });
+      for (let i = 0; i < 12; i++) {
+        await page.keyboard.press('Tab');
+        const hit = await page.evaluate(() =>
+          document.activeElement === document.querySelector('#landing .gold-btn'));
+        if (hit) return true;
+      }
+      return false;
+    };
+
+    check('键盘能 Tab 到「开始快速探索」', await startByKeyboard());
+    await page.keyboard.press('Enter');
+    await sleep(400);
+    let f = await focusWhere();
+    check('★ 回车开始后焦点进入测验（不是掉回 body）',
+      f.view === 'quiz', `${f.view} · ${f.tag}`);
+
+    let pr = await progressState();
+    check('★ 进度条有 progressbar 语义与「第几题」文字',
+      !!pr && pr.role === 'progressbar' && pr.now === '0' && /第 1 题，共 \d+ 题/.test(pr.text || ''),
+      JSON.stringify(pr));
+
+    // 真键盘答一题：Tab 进选项再回车
+    await page.keyboard.press('Tab');
+    const onOption = await page.evaluate(() =>
+      !!document.activeElement?.classList?.contains('opt'));
+    check('从题卡 Tab 一次就落到选项按钮上', onOption);
+    await page.keyboard.press('Enter');
+    await sleep(400);
+    f = await focusWhere();
+    check('★ 键盘答一题后焦点仍在测验里（此前掉回 body）',
+      f.view === 'quiz', `${f.view} · ${f.tag}`);
+    pr = await progressState();
+    check('★ 换题后进度语义同步到第 2 题',
+      !!pr && pr.now === '1' && /第 2 题/.test(pr.text || ''), JSON.stringify(pr));
+
+    // 真鼠标点「上一题」
+    await page.click('#undoBtn');
+    await sleep(400);
+    f = await focusWhere();
+    check('★ 点「上一题」后焦点仍在测验里', f.view === 'quiz', `${f.view} · ${f.tag}`);
+
+    // 答完出结果
+    const total = await page.evaluate(() => QS.length);
+    for (let i = 0; i < total; i++) {
+      const ok = await page.evaluate(() => {
+        const b = document.querySelector('#opts .opt');
+        if (!b) return false;
+        b.click();       // 这里只为推进流程，焦点断言在下面用视图判定，不依赖点击是否移焦
+        return true;
+      });
+      if (!ok) break;
+      await sleep(120);
+    }
+    await sleep(500);
+    f = await focusWhere();
+    check('★ 答完出结果后焦点进入结果页（此前掉回 body）',
+      f.view === 'result', `${f.view} · ${f.tag}`);
+
+    await page.close();
+  }
+
+  console.log('');
+  console.log('-- ★ 移植验收：12 个原型的键盘入口与详情焦点 --');
+  {
+    const page = await newPage();
+    await page.goto(`${base}/discover.html`, { waitUntil: 'domcontentloaded' });
+
+    const stripShape = await page.evaluate(() => {
+      const strip = document.getElementById('strip');
+      const kids = [...strip.children];
+      return {
+        n: kids.length,
+        tags: [...new Set(kids.map(k => k.tagName))],
+        focusable: kids.filter(k => k.tabIndex >= 0).length,
+        named: kids.filter(k => (k.getAttribute('aria-label') || '').includes('查看倾向说明')).length,
+      };
+    });
+    check('★ 原型条每一项都是可聚焦的 button 且有可访问名称',
+      stripShape.n === 12 && stripShape.tags.length === 1 && stripShape.tags[0] === 'BUTTON'
+      && stripShape.focusable === 12 && stripShape.named === 12,
+      JSON.stringify(stripShape));
+
+    // 真键盘：Tab 进原型条，焦点必须落在某一项上，而不是可滚动的容器
+    await page.evaluate(() => {
+      document.activeElement?.blur();
+      document.getElementById('strip').scrollIntoView({ block: 'center' });
+    });
+    let onItem = false;
+    for (let i = 0; i < 20; i++) {
+      await page.keyboard.press('Tab');
+      onItem = await page.evaluate(() => {
+        const a = document.activeElement;
+        return !!a && a.tagName === 'BUTTON' && a.parentElement?.id === 'strip';
+      });
+      if (onItem) break;
+    }
+    check('★ Tab 能停在原型条的某一项上（此前只能停在可滚动容器 .strip 上）',
+      onItem);
+
+    if (onItem) {
+      await page.keyboard.press('Enter');
+      await sleep(500);
+      const f = await page.evaluate(() => {
+        const a = document.activeElement;
+        const screen = a?.closest('#landing, #quiz, #result, #detail');
+        return { view: screen ? screen.id : '(body)', tag: a ? a.tagName + (a.id ? '#' + a.id : '') : 'BODY' };
+      });
+      check('★ 回车打开倾向说明，且焦点进入详情页',
+        f.view === 'detail', `${f.view} · ${f.tag}`);
+
+      // 关闭详情：从首屏进来的，焦点该回「开始快速探索」
+      await page.click('#detail .topbar .x');
+      await sleep(500);
+      const back = await page.evaluate(() => ({
+        onLanding: !document.getElementById('landing').classList.contains('hidden'),
+        isStart: document.activeElement === document.querySelector('#landing .gold-btn'),
+      }));
+      check('★ 关闭详情回到首屏，焦点交回「开始快速探索」',
+        back.onLanding && back.isStart, JSON.stringify(back));
+    }
+
     await page.close();
   }
 
