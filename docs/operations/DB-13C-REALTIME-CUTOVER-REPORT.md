@@ -31,7 +31,7 @@ PERSONAS CREATED:                       NO
 0027 TOUCHED:                           NO
 DB-4 TOUCHED:                           NO
 
-BACKEND TESTS:                          264/264
+BACKEND TESTS:                          272/272
 FRONTEND TESTS:                         187/187  (21 files)
 VERIFY LOCAL RELEASE:                   PASS (exit 0)
 GITHUB CI:                              NOT RUN — 未推送（见「交付边界」）
@@ -39,6 +39,10 @@ FINAL COMMIT:                           分支 worktree-db-13c-realtime 的尖�
                                         自引用 sha 无法写进它自己所在的提交，故以分支指代
 ORIGIN/MAIN == LOCAL HEAD:              N/A — 交付在隔离分支，origin/main 仍为 099f59b
 SAFE TO CLOSE DB-13C:                   YES（代码与门禁层面；main 推送待 Codex 评审）
+
+EVENT DELIVERY LOSSLESS:                NO —— 不得如此声称（见「契约限制」一节）
+CURSOR/DEDUPE RACE FIXES:               4 项，各有修复前失败的负对照
+RETENTION COUNT UNDERCOUNT:             已修（count=exact，不受行数上限截断）
 ```
 
 ---
@@ -125,9 +129,104 @@ live 行数 = 0
 **一处刻意的行为决定**：`emitRoomEvent` 失败时**记日志并返回 `null`，不抛**。
 理由是调用点都在业务写成功**之后**——让一次通知失败把 200 变成 500，
 会让客户端以为操作没成功而重试，比「少收到一次变更提示」糟得多。
-少收到的那次由客户端 3s 轮询与带 `since` 重连的续传兜底。
-读路径同理：续传失败返回空数组、取游标失败返回 0（退化成「从头补」），
+⚠️ **更正（Codex 复核指出）**：初版把兜底写成「由续传补回」，那是错的。
+**INSERT 失败的事件是不存在的事件，续传读的是表里的行，没写进去就没有行。**
+唯一的兜底是客户端侧的周期性 REST 刷新（客户端本来就在轮询 canonical state）。
+注释与文档都已改正，不再声称 replay 可恢复。
+
+读路径同理降级：续传失败返回空数组、取游标失败返回 0（退化成「从头补」），
 而不是让 SSE 建连彻底失败。这四条都有注入故障的断言覆盖。
+
+---
+
+## Codex 复核修复：游标与去重竞态（4 项，皆为本轮引入或暴露）
+
+Codex 对 `c5d1c5c` 的复核指出一个**真 bug**，以及三类相邻竞态。四条都已修，
+且每条都做了**负对照**：把修复逐条撤回后，对应测试确实失败。
+
+### 1. 远端较小 id 被永久跳过（真 bug，本轮引入）
+
+初版 `emitRoomEvent` 里有一行 `lastPolled = Math.max(lastPolled, e.eventId)` ——
+直接从 SQLite 时期搬过来的。SQLite 时期只有本进程一个写入方，那行是安全的；
+**共享日志下不成立**：
+
+```
+远端实例提交 event#10（已可见，本地游标还停在 9）
+本地 emit → 拿到 #11 → 把游标抬到 11
+下一轮查 id > 11 → #10 被永久跳过，本地订阅者再也收不到
+```
+
+这是**丢失**，不是延迟。修法是把「游标」和「去重」拆成两件独立的事：
+游标只由轮询器推进，`emitRoomEvent` 绝不碰它；去重改由**已投递 id 的环形集合**
+负责（容量 2000，必须大于回看窗口）。
+
+### 2. 插入响应慢于轮询 → 重复投递
+
+轮询器先读到本地刚写的行并投递，随后 INSERT 的响应才返回，`emitRoomEvent`
+再投递一次，客户端收到两条同 id 事件。由同一个去重集合解决。
+测试用 harness 新增的 `delayTable()` **只延迟响应、不延迟处理**，
+确定性复现这个时序（延迟整个处理就测不到这个竞态了）。
+
+### 3. 启动期游标未就绪 → 历史全量重放
+
+起始游标是异步取的。加了 `ready` 门：未就绪时轮询空转。
+另外引入**投递基线** `dispatchFloor`（= 启动时的最大 id）：回看窗口会把
+窗口内的历史行重新读回来，没有基线就会在启动时把它们当新事件重发一遍。
+「≤ 基线」视为本进程启动前就存在，不由它投递 —— SSE 客户端是启动后才连上来的，
+且各自带 `since` 走续传。
+
+### 4. stop 之后在途轮询仍投递 / 污染重启后的游标
+
+加了 `generation` 计数：stop/start 时自增，在途的初始化与轮询结果据此作废，
+既不会在停止后继续分发，也不会用上一代结果覆盖重启后的新游标。
+
+### 负对照记录
+
+| 撤回的修复 | 失败的测试 |
+|---|---|
+| 还原 `emit` 抬高全局游标 | ★1 远端较小 id 被永久跳过 |
+| 去掉 `dispatch` 去重 | ★2 重复投递 · 回看窗口重复 |
+| 去掉 `ready` 门与 `generation` 作废 | ★3 启动期重放 · ★4 stop 后仍投递 |
+| 还原「先 select 再数长度」的计数 | ★ 保留期计数少报 |
+
+---
+
+## ⚠️ 契约限制（必须如实声明，不得 over-claim）
+
+### 事件投递**不是无损的**
+
+Postgres 的 IDENTITY **分配顺序不等于提交顺序**：拿到 id 10 的事务完全可能在
+id 11 已经可见之后才提交。任何「`id > cursor`」的轮询都可能永久跳过这种
+迟到的较小 id。
+
+本轮用一个**有界回看窗口**（`POLL_OVERLAP = 50`）缓解：每轮从
+`lastPolled - 50` 开始扫，重复的由去重集合滤掉。**落在窗口内的迟到提交能补上，
+超出窗口的仍会丢。** 测试里有一条**专门断言这个限制存在**
+（`★ 超出回看窗口的迟到提交会丢`）—— 它的作用是：日后若有人改动窗口或投递机制，
+会立刻被提醒「无损」这个说法的边界在哪，而不是让文档和实现悄悄分叉。
+
+同样的限制适用于客户端续传 `eventsSince(roomId, since)`。
+**真正的兜底在客户端侧**：SSE 只是「有东西变了」的提示，客户端收到后回 REST
+拿 canonical state，断线重连时还会做一次 full refresh（§8）。
+少收到一条提示，最坏后果是多等一个轮询周期，不会产生错误状态。
+
+### INSERT 失败的事件不可能靠 replay 恢复
+
+初版文档把兜底写成「由续传补回」，**那是错的**：续传读的是表里的行，
+没写进去就没有行。唯一兜底是客户端的周期性 REST 刷新。已改正。
+
+### 保留期计数是「至少删除的条数」
+
+`countRows` 用 `count=exact` 取真实总数（不受 max-rows 截断），但计数与 DELETE
+是两次请求。若两者之间又有事件过期，DELETE 会一并删掉而计数里没有它 ——
+方向是**少报而非多报**，不会造成误导性的乐观。这对一行启动日志足够。
+
+### 250ms 轮询打的是 Supabase pooler
+
+原注释「250ms 一条查询，成本可忽略」成立于本地 SQLite 文件。现在是持续
+4 次/秒打 pooler，且每轮多读回看窗口内的行。轮询间隔按裁定保持 250ms 未改，
+**但这一项的成本影响应在公开 staging 之前重新评估**（website 复核报告风险 4
+也点到同一件事）。
 
 ---
 
@@ -191,9 +290,17 @@ db.ts 里加了注释说明它已停止运行时读写。
 | **SQLite `room_realtime_events` 运行时读写 = 0**（文件未被创建） | PASS |
 | canonical `amas.sqlite` 全程未改动 | PASS |
 
+另新增 `backend/src/test/db13c-realtime-cursor.test.ts`（8 项，已并入 `test:local`）——
+即上面「Codex 复核修复」一节的四条竞态 + 回看窗口的正反两面 + 房间隔离在轮询路径
++ 保留期计数不得少报。
+
 **harness 扩展（仍是唯一那套，未建第二套）**：
-- 模拟 `GENERATED ALWAYS AS IDENTITY`（只对 `app_room_realtime_events` 生效）
-- 新增 `failTable(table, times)` 注入持久层故障，用来验证「通知失败不拖垮业务」
+- 模拟 `GENERATED ALWAYS AS IDENTITY`（只对 `app_room_realtime_events` 生效），
+  并让 `seedTable` 同步推进序列 —— 真实序列不可能再发出一个已存在的 id
+- `failTable(table, times)` 注入持久层故障，验证「通知失败不拖垮业务」
+- `delayTable(table, ms, times)` **只延迟响应不延迟处理**，确定性复现时序竞态
+- GET 支持 `Prefer: count=exact`，在 `Content-Range` 回传**过滤后的真实总数**
+  （必须在 limit 截断之前算，否则复刻不了 `countRows` 依赖的语义）
 
 **既有回归未回退**：ROOM / PRAYER 的 54 / 44 / 51 / 24 / 26 全部照常通过。
 
@@ -217,7 +324,7 @@ LIVE WRITE:        NO
 ## 验证汇总
 
 ```
-backend tests            264/264
+backend tests            272/272
 frontend tests           187/187  (21 files)
 backend tsc              clean
 frontend tsc             clean

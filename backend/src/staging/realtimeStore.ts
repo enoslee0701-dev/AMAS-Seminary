@@ -28,7 +28,7 @@
  *    两个方向都显式转换，客户端协议一个字节不变。
  */
 import {
-  deleteRows, insertRow, selectRows, toEpochMs, fromEpochMs,
+  countRows, deleteRows, insertRow, selectRows, toEpochMs, fromEpochMs,
 } from './pgData.js';
 
 const TABLE = 'app_room_realtime_events';
@@ -145,16 +145,25 @@ export async function maxEventId(): Promise<number> {
 /**
  * 保留期裁剪：删掉 `before` 之前创建的事件，返回删除条数。
  *
- * PostgREST 的 DELETE 默认不回传被删的行，所以先查出待删集合再删 ——
- * 调用方（启动日志）要的就是这个条数。两步之间新插入的事件不会被误删：
- * 删除条件用的是同一个时间上界，不是「删掉刚才查到的那些 id」。
+ * ── 为什么用 count=exact 而不是「先 SELECT 再数长度」──────────────
+ * PostgREST 的 DELETE 默认不回传被删的行，所以条数要单独取。
+ * 但**不能**先 `select=id` 再数数组长度：那个查询受 max-rows 限制
+ * （Supabase 默认 1000），过期事件多于上限时会**少报**，
+ * 启动日志里的「swept N」就成了一个偏小的假数字。
+ * `countRows` 走 `limit=0` + `Prefer: count=exact`，总数取自
+ * `Content-Range`，不受该上限影响。
+ *
+ * 两步之间新插入的事件不会被误删：删除条件用的是同一个时间上界，
+ * 不是「删掉刚才查到的那些 id」。反过来，若在这个间隙里恰好又有事件
+ * 过期，DELETE 会把它一并删掉而计数里没有它 —— 计数因此是
+ * 「本次至少删除的条数」，不是强一致的精确值。这对一行启动日志足够，
+ * 且方向是**少报而非多报**，不会造成误导性的乐观。
  */
 export async function sweepBefore(before: number): Promise<number> {
   const cutoff = encodeURIComponent(fromEpochMs(before));
-  const doomed = await selectRows<{ id: number | string }>(
-    TABLE, `select=id&created_at=lt.${cutoff}`,
-  );
-  if (!doomed.length) return 0;
-  await deleteRows(TABLE, `created_at=lt.${cutoff}`);
-  return doomed.length;
+  const filter = `created_at=lt.${cutoff}`;
+  const n = await countRows(TABLE, `select=id&${filter}`);
+  if (n === 0) return 0;
+  await deleteRows(TABLE, filter);
+  return n;
 }

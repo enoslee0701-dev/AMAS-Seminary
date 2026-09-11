@@ -33,6 +33,13 @@ export interface FakeSupabase {
    */
   failTable(table: string, times?: number): void;
   /**
+   * 让接下来对某张表的 `times` 次请求延迟 `ms` 再响应。
+   *
+   * 用于确定性复现「插入响应比轮询慢」这类竞态：没有它就只能靠
+   * 真实时序碰运气，而竞态测试靠运气等于没测。
+   */
+  delayTable(table: string, ms: number, times?: number): void;
+  /**
    * 签一张**故意不合格**的 token，用于否定式断言：
    *   issuer   换成别的签发者（验证 iss 校验没被绕过）
    *   expired  已过期
@@ -218,6 +225,8 @@ export async function startFakeSupabase(): Promise<FakeSupabase> {
 
   /** 按表计数的注入故障：>0 时该表的下一次请求返回 500。 */
   const injectedFailures: Record<string, number> = {};
+  /** 按表注入的响应延迟：{ ms, 剩余次数 }。 */
+  const injectedDelays: Record<string, { ms: number; times: number }> = {};
 
   const server = http.createServer((req, res) => {
     const u = new URL(req.url ?? '/', 'http://127.0.0.1');
@@ -300,127 +309,171 @@ export async function startFakeSupabase(): Promise<FakeSupabase> {
         res.end('{"message":"injected failure"}');
         return;
       }
-      const rows = tables[table] ?? (tables[table] = []);
-      const RESERVED = ['select', 'order', 'limit', 'offset'];
+      // 注入的响应延迟：把整段表处理推迟执行。
+      // 用来确定性复现「插入响应比轮询慢」这类竞态 —— 靠真实时序碰运气
+      // 的竞态测试等于没测。
+      const runTableRequest = (): void => {
+        const rows = tables[table] ?? (tables[table] = []);
+        const RESERVED = ['select', 'order', 'limit', 'offset'];
 
-      if (req.method === 'GET') {
-        let out = rows.filter(r => matchesQuery(r, u.searchParams));
-        const order = u.searchParams.get('order');
-        if (order) {
-          // 多键排序：`created_at.asc,id.asc`
-          const keys = order.split(',').map(seg => {
-            const [col, dir] = seg.split('.');
-            return { col: col!, desc: dir === 'desc' };
-          });
-          out = [...out].sort((a, b) => {
-            for (const k of keys) {
-              const c = cmpValues(a[k.col], b[k.col]);
-              if (c !== 0) return k.desc ? -c : c;
-            }
-            return 0;
-          });
+        if (req.method === 'GET') {
+          let out = rows.filter(r => matchesQuery(r, u.searchParams));
+          // `Prefer: count=exact` → 在 Content-Range 里回传**过滤后的真实总数**。
+          // 它必须在 limit 截断**之前**算，否则就复刻不了真实 PostgREST 的
+          // 语义（正是 `countRows` 依赖的那条：总数不受 max-rows 影响）。
+          const wantsCount = String(req.headers['prefer'] ?? '').includes('count=exact');
+          const total = out.length;
+          const order = u.searchParams.get('order');
+          if (order) {
+            // 多键排序：`created_at.asc,id.asc`
+            const keys = order.split(',').map(seg => {
+              const [col, dir] = seg.split('.');
+              return { col: col!, desc: dir === 'desc' };
+            });
+            out = [...out].sort((a, b) => {
+              for (const k of keys) {
+                const c = cmpValues(a[k.col], b[k.col]);
+                if (c !== 0) return k.desc ? -c : c;
+              }
+              return 0;
+            });
+          }
+          const limitRaw = u.searchParams.get('limit');
+          const limit = Number(limitRaw ?? '0');
+          // limit=0 是「只要计数、不要行」，与 limit 缺省（不限制）不同。
+          if (limitRaw !== null && limit === 0) out = [];
+          else if (limit > 0) out = out.slice(0, limit);
+          const head: Record<string, string> = { 'content-type': 'application/json' };
+          if (wantsCount) {
+            head['content-range'] = out.length
+              ? `0-${out.length - 1}/${total}`
+              : `*/${total}`;
+          }
+          res.writeHead(200, head);
+          res.end(JSON.stringify(out));
+          return;
         }
-        const limit = Number(u.searchParams.get('limit') ?? '0');
-        if (limit > 0) out = out.slice(0, limit);
-        res.writeHead(200, { 'content-type': 'application/json' });
-        res.end(JSON.stringify(out));
-        return;
-      }
 
-      if (req.method === 'POST' || req.method === 'PATCH' || req.method === 'DELETE') {
-        let body = '';
-        req.on('data', c => { body += c; });
-        req.on('end', () => {
-          // 与真实实现一致：DELETE / PATCH 必须带过滤条件，拒绝全表操作。
-          const hasFilter = [...u.searchParams].some(([k]) => !RESERVED.includes(k));
+        if (req.method === 'POST' || req.method === 'PATCH' || req.method === 'DELETE') {
+          let body = '';
+          req.on('data', c => { body += c; });
+          req.on('end', () => {
+            // 与真实实现一致：DELETE / PATCH 必须带过滤条件，拒绝全表操作。
+            const hasFilter = [...u.searchParams].some(([k]) => !RESERVED.includes(k));
 
-          if (req.method === 'DELETE') {
-            if (!hasFilter) { res.writeHead(400).end('{"message":"delete requires filter"}'); return; }
-            tables[table] = rows.filter(r => !matchesQuery(r, u.searchParams));
-            res.writeHead(204).end();
-            return;
-          }
-
-          let parsed: unknown;
-          try { parsed = JSON.parse(body || '{}'); } catch {
-            res.writeHead(400).end('{"message":"bad json"}'); return;
-          }
-          const prefer = String(req.headers['prefer'] ?? '');
-
-          if (req.method === 'PATCH') {
-            if (!hasFilter) { res.writeHead(400).end('{"message":"update requires filter"}'); return; }
-            const patch = parsed as Record<string, unknown>;
-            const touched: Record<string, unknown>[] = [];
-            for (let i = 0; i < rows.length; i++) {
-              if (!matchesQuery(rows[i]!, u.searchParams)) continue;
-              rows[i] = { ...rows[i], ...patch };
-              touched.push(rows[i]!);
+            if (req.method === 'DELETE') {
+              if (!hasFilter) { res.writeHead(400).end('{"message":"delete requires filter"}'); return; }
+              tables[table] = rows.filter(r => !matchesQuery(r, u.searchParams));
+              res.writeHead(204).end();
+              return;
             }
-            // 返回**实际被更新的行**。空数组即「影响 0 行」——
-            // 乐观并发的冲突判定就靠它（见 pgData.updateRows）。
-            res.writeHead(200, { 'content-type': 'application/json' });
-            res.end(JSON.stringify(touched));
-            return;
-          }
 
-          const incoming = Array.isArray(parsed)
-            ? parsed as Record<string, unknown>[]
-            : [parsed as Record<string, unknown>];
+            let parsed: unknown;
+            try { parsed = JSON.parse(body || '{}'); } catch {
+              res.writeHead(400).end('{"message":"bad json"}'); return;
+            }
+            const prefer = String(req.headers['prefer'] ?? '');
 
-          // DB-13C：模拟 `GENERATED ALWAYS AS IDENTITY`。
-          //
-          // `app_room_realtime_events.id` 是 bigint IDENTITY —— 调用方**不传**
-          // 这一列，由 Postgres 分配。不模拟的话插入的行根本没有 id，
-          // 于是 eventId 恒为 0，续传游标彻底失效，而测试会以一个
-          // 很难定位的「id 不递增」失败。
-          //
-          // 只对确实是 IDENTITY 的表生效；其它表的 id 仍由调用方给
-          // （app_posts / app_prayer_shares 等都是自带 id 的）。
-          if (IDENTITY_TABLES.has(table)) {
-            for (const row of incoming) {
-              if (row.id === undefined || row.id === null) {
-                nextIdentity[table] = (nextIdentity[table] ?? 0) + 1;
-                row.id = nextIdentity[table];
-              } else {
-                // 显式带 id 的（测试里塞历史行）要把序列推到它之后，
-                // 否则后续自增会撞上已存在的 id。
-                const given = Number(row.id);
-                if (Number.isFinite(given)) {
-                  nextIdentity[table] = Math.max(nextIdentity[table] ?? 0, given);
+            if (req.method === 'PATCH') {
+              if (!hasFilter) { res.writeHead(400).end('{"message":"update requires filter"}'); return; }
+              const patch = parsed as Record<string, unknown>;
+              const touched: Record<string, unknown>[] = [];
+              for (let i = 0; i < rows.length; i++) {
+                if (!matchesQuery(rows[i]!, u.searchParams)) continue;
+                rows[i] = { ...rows[i], ...patch };
+                touched.push(rows[i]!);
+              }
+              // 返回**实际被更新的行**。空数组即「影响 0 行」——
+              // 乐观并发的冲突判定就靠它（见 pgData.updateRows）。
+              res.writeHead(200, { 'content-type': 'application/json' });
+              res.end(JSON.stringify(touched));
+              return;
+            }
+
+            const incoming = Array.isArray(parsed)
+              ? parsed as Record<string, unknown>[]
+              : [parsed as Record<string, unknown>];
+
+            // DB-13C：模拟 `GENERATED ALWAYS AS IDENTITY`。
+            //
+            // `app_room_realtime_events.id` 是 bigint IDENTITY —— 调用方**不传**
+            // 这一列，由 Postgres 分配。不模拟的话插入的行根本没有 id，
+            // 于是 eventId 恒为 0，续传游标彻底失效，而测试会以一个
+            // 很难定位的「id 不递增」失败。
+            //
+            // 只对确实是 IDENTITY 的表生效；其它表的 id 仍由调用方给
+            // （app_posts / app_prayer_shares 等都是自带 id 的）。
+            if (IDENTITY_TABLES.has(table)) {
+              for (const row of incoming) {
+                if (row.id === undefined || row.id === null) {
+                  nextIdentity[table] = (nextIdentity[table] ?? 0) + 1;
+                  row.id = nextIdentity[table];
+                } else {
+                  // 显式带 id 的（测试里塞历史行）要把序列推到它之后，
+                  // 否则后续自增会撞上已存在的 id。
+                  const given = Number(row.id);
+                  if (Number.isFinite(given)) {
+                    nextIdentity[table] = Math.max(nextIdentity[table] ?? 0, given);
+                  }
                 }
               }
             }
-          }
-          // 冲突键必须按表而定：app_rooms / app_course_files 等以 `id` 为主键，
-          // 而 app_room_members / app_room_presence 的主键是 (room_id, user_id)、
-          // 根本没有 `id` 列。若一律拿 `id` 比对，两边都是 undefined 会恒等，
-          // 于是每次 upsert 都覆盖第一行 —— presence 人数会永远停在 1。
-          const keyCols = (r: Record<string, unknown>): string[] => {
-            if ('id' in r) return ['id'];
-            for (const pair of [
-              ['room_id', 'user_id'], ['post_id', 'user_id'],
-              ['user_id', 'book_id'], ['user_id', 'course_code'],
-              ['share_id', 'user_id'], ['user_id', 'token'],
-              ['user_a', 'user_b'],
-            ]) {
-              if (pair.every(k => k in r)) return pair;
+            // 冲突键必须按表而定：app_rooms / app_course_files 等以 `id` 为主键，
+            // 而 app_room_members / app_room_presence 的主键是 (room_id, user_id)、
+            // 根本没有 `id` 列。若一律拿 `id` 比对，两边都是 undefined 会恒等，
+            // 于是每次 upsert 都覆盖第一行 —— presence 人数会永远停在 1。
+            const keyCols = (r: Record<string, unknown>): string[] => {
+              if ('id' in r) return ['id'];
+              for (const pair of [
+                ['room_id', 'user_id'], ['post_id', 'user_id'],
+                ['user_id', 'book_id'], ['user_id', 'course_code'],
+                ['share_id', 'user_id'], ['user_id', 'token'],
+                ['user_a', 'user_b'],
+              ]) {
+                if (pair.every(k => k in r)) return pair;
+              }
+              // 单列主键（room_id 的 reading state、user_id 的状态表）
+              for (const k of ['room_id', 'user_id', 'code']) if (k in r) return [k];
+              return Object.keys(r);
+            };
+            const sameKey = (a: Record<string, unknown>, b: Record<string, unknown>): boolean =>
+              keyCols(b).every(k => a[k] === b[k]);
+            for (const row of incoming) {
+              const i = prefer.includes('merge-duplicates')
+                ? rows.findIndex(r => sameKey(r, row)) : -1;
+              if (i >= 0) rows[i] = { ...rows[i], ...row }; else rows.push(row);
             }
-            // 单列主键（room_id 的 reading state、user_id 的状态表）
-            for (const k of ['room_id', 'user_id', 'code']) if (k in r) return [k];
-            return Object.keys(r);
-          };
-          const sameKey = (a: Record<string, unknown>, b: Record<string, unknown>): boolean =>
-            keyCols(b).every(k => a[k] === b[k]);
-          for (const row of incoming) {
-            const i = prefer.includes('merge-duplicates')
-              ? rows.findIndex(r => sameKey(r, row)) : -1;
-            if (i >= 0) rows[i] = { ...rows[i], ...row }; else rows.push(row);
-          }
-          res.writeHead(201, { 'content-type': 'application/json' });
-          res.end(prefer.includes('return=representation') ? JSON.stringify(incoming) : '[]');
-        });
-        return;
+            res.writeHead(201, { 'content-type': 'application/json' });
+            res.end(prefer.includes('return=representation') ? JSON.stringify(incoming) : '[]');
+          });
+          return;
+        }
+    
+      };
+      const delay = injectedDelays[table];
+      if (delay && delay.times > 0) {
+        delay.times -= 1;
+        // ★ 只延迟**响应**，不延迟处理本身。
+        //   真实竞态就是这个形状：行已经写进库并且对别人可见了，
+        //   只是这次请求的响应还没回到调用方。若把处理一起推迟，
+        //   轮询器在窗口里根本看不到那一行，测的就不是这个竞态了。
+        const writeHead = res.writeHead.bind(res);
+        const end = res.end.bind(res);
+        let head: [number, Record<string, string>?] | null = null;
+        res.writeHead = ((code: number, hdrs?: Record<string, string>) => {
+          head = [code, hdrs];
+          return res;
+        }) as typeof res.writeHead;
+        res.end = ((chunk?: unknown) => {
+          setTimeout(() => {
+            if (head) writeHead(head[0], head[1]);
+            (end as (c?: unknown) => void)(chunk);
+          }, delay.ms);
+          return res;
+        }) as typeof res.end;
       }
+      runTableRequest();
+      return;
     }
     res.writeHead(404).end('{}');
   });
@@ -463,6 +516,9 @@ export async function startFakeSupabase(): Promise<FakeSupabase> {
     failTable(table, times = 1) {
       injectedFailures[table] = (injectedFailures[table] ?? 0) + times;
     },
+    delayTable(table, ms, times = 1) {
+      injectedDelays[table] = { ms, times };
+    },
     setRoles(supabaseUserId, roles) {
       rolesByUserId[supabaseUserId] = roles;
     },
@@ -477,6 +533,19 @@ export async function startFakeSupabase(): Promise<FakeSupabase> {
     },
     seedTable(table, rows) {
       tables[table] = rows.map(r => ({ ...r }));
+      // IDENTITY 表：播种直接绕过了 POST 路径，序列不会自己知道这些 id。
+      // 真实的 Postgres 序列同样不可能再发出一个已经存在的 id，
+      // 所以这里把序列推到已播种的最大值之后 —— 否则测试里
+      // 「远端先写了 #10」之后本地 emit 可能拿到比它小的 id，
+      // 整个游标场景就失真了。
+      if (IDENTITY_TABLES.has(table)) {
+        for (const r of tables[table]!) {
+          const given = Number(r.id);
+          if (Number.isFinite(given)) {
+            nextIdentity[table] = Math.max(nextIdentity[table] ?? 0, given);
+          }
+        }
+      }
     },
     tableRows(table) {
       return (tables[table] ?? []).map(r => ({ ...r }));

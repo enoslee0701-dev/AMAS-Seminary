@@ -122,6 +122,24 @@ export function isUniqueViolation(e: unknown): boolean {
   return e instanceof StagingRequestError && e.status === 409;
 }
 
+/**
+ * 精确计数，**不受 PostgREST 返回行数上限影响**。
+ *
+ * 用 `limit=0` + `Prefer: count=exact`，真实总数从 `Content-Range`
+ * 的 `/<total>` 部分取。这与「先 SELECT 再数数组长度」有本质区别：
+ * 后者会被 max-rows（Supabase 默认 1000）截断，超过上限时**少报**。
+ */
+export async function countRows(table: string, query: string): Promise<number> {
+  const r = await call(`/${table}?${query}&limit=0`, {
+    method: 'GET',
+    headers: headers({ Prefer: 'count=exact' }),
+  });
+  const range = r.headers.get('content-range') ?? '';
+  const m = /\/(\d+)\s*$/.exec(range);
+  if (!m) throw new StagingRequestError(r.status, `count=exact 未返回总数: "${range}"`);
+  return Number(m[1]);
+}
+
 /** DELETE。`query` 必须带过滤条件——不接受无条件删除。 */
 export async function deleteRows(table: string, query: string): Promise<void> {
   if (!query.trim()) throw new Error('deleteRows 需要过滤条件，拒绝无条件删除');
