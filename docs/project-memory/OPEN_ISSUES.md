@@ -1088,14 +1088,47 @@ ${stderr}`);
 
 ---
 
-## #22 `rateLimit.ts` 的自定义 keyGenerator 未做 IPv6 归一
+## #22 `rateLimit.ts` 的自定义 keyGenerator 未做 IPv6 归一 — `CLOSED`（2026-09-11）
+
+```
+status:    CLOSED
+severity:  P2 SECURITY HARDENING（Supervisor 定级，2026-09-07）
+gate:      本项不再阻塞 PUBLIC STAGING EXPOSURE
+owner:     —
+phase:     DB-13C 之后的 release hardening
+```
+
+**修复**：`middleware/rateLimit.ts` 的 `byUser()` 在未认证回落分支改用
+`ipKeyGenerator(req.ip)`（已安装 express-rate-limit **8.5.2** 导出的官方 helper，
+用法取自其 `ERR_ERL_KEY_GEN_IPV6` 文档页）。
+
+**本轮实测的归一行为**（非记忆）：
+
+```
+203.0.113.9            -> 203.0.113.9              IPv4 原样
+::ffff:203.0.113.9     -> 203.0.113.9              IPv4-mapped 还原
+2001:db8:abcd:12::1    -> 2001:db8:abcd::/56
+2001:db8:abcd:ff::1    -> 2001:db8:abcd::/56       同 /56 → 同一个桶
+2001:db8:abcd:100::1   -> 2001:db8:abcd:100::/56   不同 /56 → 各自计数
+```
+
+**绕过已确定性复现**：修复前同一 /56 内换地址会拿到两个不同的 key
+＝ 两份独立配额；`backend/src/test/issue22-ipv6-ratelimit.test.ts`
+（8 项，已并入 `test:local`）中有 3 条在修复前失败、修复后通过。
+
+**未改动的语义**：认证用户仍按 canonical userId 计数（换网络不换桶）；
+缺 `req.ip` 时仍回落 `'anon'`；不同动作仍各自计数；Layer A 的 IP 限流未动。
+其余 limiter 用的是默认 keyGenerator，它内部本来就调用 `ipKeyGenerator`。
+
+**可观察结果**：`ERR_ERL_KEY_GEN_IPV6` 校验警告消失 ——
+修复前它在每次 `test:local` 与 CI 日志里持续刷屏，修复后计数为 0。
+
+<details><summary>历史原文</summary>
 
 ```
 status:    OPEN
-severity:  P2 SECURITY HARDENING（Supervisor 定级，2026-09-07）
+severity:  P2 SECURITY HARDENING
 gate:      BLOCKS PUBLIC STAGING EXPOSURE
-owner:     unassigned
-phase:     公开 staging smoke 之前修复
 ```
 
 **Supervisor 裁定**：Layer A 的 IP 限流仍在，影响面受限，因此**不是 P0/P1**；
@@ -1128,16 +1161,33 @@ const id = p && p.kind === 'user' && p.user ? p.user.id : (req.ip ?? 'anon');
 
 **证据**：STAGING-1A 报告 §1
 
+</details>
+
 
 ---
 
-## #23 `verify-rooms-render.mjs` 的 presence 提示断言在 CI 上间歇失败
+## #23 `verify-rooms-render.mjs` 的 presence 提示断言在 CI 上间歇失败 — `CLOSED`（2026-09-10）
+
+```
+status:    CLOSED
+severity:  medium（使 Release gate 偶发红灯，会掩盖真实回归）
+owner:     —
+phase:     DB-13B 收尾时修复
+```
+
+**修复**（commit `099f59b`）：该用例杀掉 backend 后用固定 `sleep(13000)` 等一次
+presence 轮询失败，而轮询周期是 10s —— 只有 3s 余量。DB-13B 之后每次请求都要走
+一趟 Postgres，启动与首轮轮询都变慢，这 3s 在 CI 的慢机上不够。
+固定 sleep 改成**有界轮询**（等到降级提示出现或压根没有人数显示，最多 30s）。
+
+判定依据：`1e36ec5` 的 CI 首次红在这一条、重跑即绿，而本地稳定通过 ——
+是时序余量问题，不是行为变化。修复后 `099f59b` / `f50dc40` 的 CI 均一次通过。
+
+<details><summary>历史原文</summary>
 
 ```
 status:    OPEN
-severity:  medium（使 Release gate 偶发红灯，会掩盖真实回归）
-owner:     unassigned
-phase:     STAGING-1A 续 发现
+severity:  medium
 ```
 
 `e2b801e` 的 CI 整体 failure，失败 job 是 **`Release gate (verify:local-release)`**
@@ -1182,6 +1232,8 @@ and must not show fake user count
 
 **证据**：STAGING-1A CONTINUATION 报告 §2
 
+
+</details>
 
 ---
 

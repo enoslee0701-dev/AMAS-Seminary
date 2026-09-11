@@ -1,4 +1,4 @@
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import type { Request } from 'express';
 
 /**
@@ -90,10 +90,27 @@ export function _resetWsConnections(): void {
  * 未认证请求回落到 IP（此时 Layer A 才是主要防线）。
  *
  * 刻意保持轻量：复用 express-rate-limit 的 keyGenerator，不引入新框架。
+ *
+ * ── OPEN_ISSUES #22：IP 回落分支必须做 IPv6 归一化 ────────────────────
+ * 这里曾经直接用裸 `req.ip`。IPv6 用户手里通常握着**整段**地址
+ * （家宽常见 /64 甚至 /56），裸 IP 当 key 意味着换个地址就换个计数桶 ——
+ * 这一层限流形同虚设。`express-rate-limit` 的校验器据此持续报
+ * `ERR_ERL_KEY_GEN_IPV6`，那条警告在 CI 日志里一直刷屏。
+ *
+ * 改用官方 helper `ipKeyGenerator()`（已安装版本 8.5.2 导出）。
+ * 实测行为：IPv4 与 IPv4-mapped 原样/还原为 IPv4；IPv6 收敛到 /56。
+ * 因此同一段家宽内换地址落在同一个桶，不同 /56 仍各自计数。
+ *
+ * **只影响未认证的 IP 回落分支** —— 认证用户仍按 canonical userId 计数，
+ * 与 IP 无关，换网络也不会换桶。
  */
-const byUser = (suffix: string) => (req: Request): string => {
+export const byUser = (suffix: string) => (req: Request): string => {
   const p = (req as { principal?: { kind: string; user?: { id: string } } }).principal;
-  const id = p && p.kind === 'user' && p.user ? p.user.id : (req.ip ?? 'anon');
+  const id = p && p.kind === 'user' && p.user
+    ? p.user.id
+    // req.ip 可能是 undefined（例如 trust proxy 配置下取不到）——
+    // 保持原有的 'anon' 回落，不要把 undefined 交给 ipKeyGenerator。
+    : (req.ip ? ipKeyGenerator(req.ip) : 'anon');
   return `${id}:${suffix}`;
 };
 

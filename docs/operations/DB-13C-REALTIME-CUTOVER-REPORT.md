@@ -2,7 +2,8 @@
 
 > 执行者：AMAS App Claude（本仓唯一执行者，未启动第二个 writer）
 > 日期：2026-09-11 · 基线：`origin/main = 099f59b`
-> 交付位置：**隔离 worktree 分支 `worktree-db-13c-realtime`**，未推 main（按授权，main 推送由 Codex 另行评审）
+> 交付位置：隔离 worktree 分支 `worktree-db-13c-realtime`（2 个提交）。
+> **main 推送由 Codex 执行**（本会话未推 main）：`f50dc40` 已 fast-forward 进 origin/main。
 
 ---
 
@@ -34,10 +35,13 @@ DB-4 TOUCHED:                           NO
 BACKEND TESTS:                          272/272
 FRONTEND TESTS:                         187/187  (21 files)
 VERIFY LOCAL RELEASE:                   PASS (exit 0)
-GITHUB CI:                              NOT RUN — 未推送（见「交付边界」）
-FINAL COMMIT:                           分支 worktree-db-13c-realtime 的尖端（单个提交，基于 099f59b）
-                                        自引用 sha 无法写进它自己所在的提交，故以分支指代
-ORIGIN/MAIN == LOCAL HEAD:              N/A — 交付在隔离分支，origin/main 仍为 099f59b
+GITHUB CI:                              SUCCESS —— 精确 sha
+                                        f50dc4020720a32a60721836da32e0a853eca9f7
+FINAL COMMIT:                           f50dc4020720a32a60721836da32e0a853eca9f7
+                                        分支 worktree-db-13c-realtime 上共 **2 个提交**：
+                                          c5d1c5c  切换实现 + 首轮测试
+                                          f50dc40  Codex 复核后的游标/去重竞态修复
+ORIGIN/MAIN == LOCAL HEAD:              YES —— Codex 已 fast-forward 推送 f50dc40
 SAFE TO CLOSE DB-13C:                   YES（代码与门禁层面；main 推送待 Codex 评审）
 
 EVENT DELIVERY LOSSLESS:                NO —— 不得如此声称（见「契约限制」一节）
@@ -273,7 +277,8 @@ db.ts 里加了注释说明它已停止运行时读写。
 
 ## TASK 6 — 测试
 
-新增 `backend/src/test/db13c-realtime-cutover.test.ts`（15 项，已并入 `test:local`）：
+新增 `backend/src/test/db13c-realtime-cutover.test.ts`（15 项，已并入 `test:local`）——
+与下方 cursor 竞态套件（8 项）合计 **23 项 DB-13C 专属测试**：
 
 | 断言 | 结果 |
 |---|---|
@@ -368,14 +373,56 @@ NON-BLOCKING FOR INTERNAL STAGING`，并写明「不得为了消灭 501 而猜�
 
 ---
 
+## CI 验证结论（严格限定范围）
+
+```
+COMMIT:  f50dc4020720a32a60721836da32e0a853eca9f7
+CI:      SUCCESS
+状态:    DB-13C = CI-VERIFIED
+```
+
+**这一行只覆盖 DB-13C 本身**。它**不**意味着，也不得被引用为：
+
+```
+✗ 整个产品已验证         ✗ 后端已支持多实例
+✗ 真实 persona 验收通过   ✗ 事件投递无损
+✗ 可以公开 staging        ✗ 可以上生产
+```
+
+多实例仍然只对**事件日志**这一层成立（legacy 身份仍在本地 SQLite）；
+真实多用户 realtime 验收仍是 EXTERNAL TEST IDENTITY BLOCKED；
+投递限制见「契约限制」一节。
+
+---
+
+## website 复核报告的核对结果
+
+已按绝对路径读取 `C:/Users/enosl/Documents/Codex/2026-09-11/bang/work/website-review-report.md`（165 行）。
+逐条对照其风险清单：
+
+| 风险 | 本轮处置 |
+|---|---|
+| 1 `emitRoomEvent` 变 async 后 9 个裸调用 + **去重前提被破坏导致重复投递** | 9 处全部加 `void` 显式 fire-and-forget；重复投递正是 Codex 复核的第 2 条，已由去重集合修掉并有负对照 |
+| 2 新增 `room_id` 外键会把「事件失败」升级为「业务写失败」 | 已显式决定：**吞错并记日志**，业务请求不受牵连。理由与代价写在 `emitRoomEvent` 注释与本报告中；该报告要求「必须是选择，不能是默认继承」，本轮即是明确选择 |
+| 3 首个事件 id 是 3 不是 1（序列 last_value=2） | 本轮测试**不依赖** id 起始值，只断言唯一 / 单调 / 由库分配，因此不受影响 |
+| 4 250ms 轮询改打 pooler 的成本 | 间隔按裁定保持 250ms 未改；成本影响已写入「契约限制」，建议公开 staging 前重新评估 |
+| 5 模块顶层副作用（DB-13A 事故同源） | 新模块**不在 import 期建立任何数据库连接**（`pgData` 是每次调用 `fetch`），已复核 |
+
+该报告 §6 建议「先逐点确认 9 个调用点是否处于显式事务边界内」。
+实测结论：DB-13B 之后祷告域已全部走 PostgREST，**调用点不在任何
+`db.transaction(...)` 边界内**（那个 API 属 SQLite），因此风险 2 的答案是
+「emit 可以安全吞错」—— 与本轮采取的处置一致。
+
+---
+
 ## 交付边界与剩余阻塞（如实）
 
 | 项 | 状态 |
 |---|---|
 | 代码 + 测试 + 记忆更新 | 已完成，提交在隔离分支 `worktree-db-13c-realtime` |
 | push App main | **未执行** —— 按授权，main 推送由 Codex 另行评审 |
-| GitHub CI | **NOT RUN** —— 未推送，CI 只在 push 时触发 |
-| `website-review-report.md` | **未读到** —— 本机 `AMAS Seminar App/` 及 Desktop 三层内均未找到该文件；Codex 说的是「when available」，届时可补读 |
+| GitHub CI | **SUCCESS** —— 精确 sha `f50dc4020720a32a60721836da32e0a853eca9f7` |
+| `website-review-report.md` | **已读** —— 绝对路径 `C:/Users/enosl/Documents/Codex/2026-09-11/bang/work/website-review-report.md`（165 行）。首版报告写的「未读到」成立于当时：该文件那时尚未生成，本机也搜不到；Codex 给出绝对路径后已补读，结论见下 |
 | 真实 staging 多用户 realtime 验收 | 仍 EXTERNAL TEST IDENTITY BLOCKED（未创建 persona） |
 | `.gitignore` | 保持未提交，原 checkout 未受影响 |
 
@@ -387,8 +434,15 @@ NON-BLOCKING FOR INTERNAL STAGING`，并写明「不得为了消灭 501 而猜�
 
 ## 最终提交
 
-分支 `worktree-db-13c-realtime` 上的**单个提交**，基于 `099f59b`。
-（sha 不写死在正文里 —— 它无法写进它自己所在的那个提交。）提交只含：
+分支 `worktree-db-13c-realtime` 上共 **2 个提交**，基于 `099f59b`：
+
+```
+c5d1c5c  feat(db-13c): realtime 事件日志切到 Postgres —— SQLite 活动写表降到 1
+f50dc40  fix(db-13c): 修正 realtime 游标/去重竞态，并撤回「投递无损」的说法
+```
+
+`f50dc40` 已由 Codex fast-forward 推入 `origin/main`，CI SUCCESS。
+两个提交合计涉及：
 
 ```
 backend/src/staging/realtimeStore.ts          （新增）
@@ -399,6 +453,8 @@ backend/src/routes/roomStream.ts              （SSE handler 改 async）
 backend/src/server.ts                         （sweep 改 async，不阻塞启动）
 backend/src/db.ts                             （注释：该表已停止运行时读写）
 backend/src/test/db13c-realtime-cutover.test.ts（新增，15 项）
+backend/src/test/db13c-realtime-cursor.test.ts  （新增，8 项 —— 竞态回归）
+backend/src/staging/pgData.ts                   （countRows：count=exact 精确计数）
 backend/src/test/helpers/supabaseHarness.ts   （IDENTITY 模拟 + failTable）
 backend/package.json                          （新测试并入 test:local）
 docs/project-memory/{CURRENT_STATE,AI_HANDOFF_RULES,DECISION_LOG}.md

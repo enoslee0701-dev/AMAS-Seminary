@@ -9,7 +9,7 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "test": "npm run test:local",
-    "test:local": "tsx --test --test-concurrency=1 src/test/smoke.test.ts src/test/startup-guard.test.ts src/test/auth-m7-identity.test.ts src/test/auth-adapter-presence.test.ts src/test/auth-post-legacy-audit.test.ts src/test/auth-migration-cutover.test.ts src/test/staging-identity-env.test.ts src/test/db12-staging-dal.test.ts src/test/db12-sqlite-compat.test.ts src/test/db13a-canonical-db-guard.test.ts src/test/db13b-dal-cutover.test.ts src/test/db13c-realtime-cutover.test.ts src/test/db13c-realtime-cursor.test.ts",
+    "test:local": "tsx --test --test-concurrency=1 src/test/smoke.test.ts src/test/startup-guard.test.ts src/test/auth-m7-identity.test.ts src/test/auth-adapter-presence.test.ts src/test/auth-post-legacy-audit.test.ts src/test/auth-migration-cutover.test.ts src/test/staging-identity-env.test.ts src/test/db12-staging-dal.test.ts src/test/db12-sqlite-compat.test.ts src/test/db13a-canonical-db-guard.test.ts src/test/db13b-dal-cutover.test.ts src/test/db13c-realtime-cutover.test.ts src/test/db13c-realtime-cursor.test.ts src/test/issue22-ipv6-ratelimit.test.ts",
     "test:external": "tsx --test src/test/supabase-auth.test.ts src/test/identity-migration.test.ts src/test/credential-recovery.test.ts src/test/credential-recovery-expiry.test.ts src/test/password-change-reauth.test.ts src/test/redirect-matrix.test.ts"
   },
   "dependencies": {

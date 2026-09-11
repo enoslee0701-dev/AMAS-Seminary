@@ -111,6 +111,17 @@
 > `NODE_TEST_CONTEXT`。只看 `NODE_ENV==='test'` 的守卫一个测试都拦不到。
 > 详见 OPEN_ISSUES #26（P2 RELEASE HARDENING，阻塞 PUBLIC STAGING / PRODUCTION）。
 >
+> ### 公开 staging 的阻塞项进度
+>
+> ```
+> #22 IPv6 rate-limit 归一化   ✅ CLOSED（2026-09-11）—— 不再阻塞
+> #23 rooms-render 间歇红灯    ✅ CLOSED（2026-09-10，commit 099f59b）
+> #26 canonical SQLite 写入围堵  🔵 OPEN —— 仍阻塞 PUBLIC STAGING / PRODUCTION
+> ```
+>
+> **注意**：#22 关闭只解除**它自己**那一条闸门。PUBLIC STAGING 仍
+> `NOT AUTHORIZED` —— #26 仍在，且真实多用户验收仍缺合法身份。
+>
 > ### DB-13A 清点结论（当轮实测）
 >
 > ```
