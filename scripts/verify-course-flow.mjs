@@ -471,10 +471,11 @@ try {
       set.call(inp, n); inp.dispatchEvent(new Event('input', { bubbles: true }));
     }, NAME);
     await sleep(400);
+    // 成员行现在是 button[aria-pressed]（原本是带 onClick 的 div）
     await page.evaluate(() => {
-      const rows = [...document.querySelectorAll('div,li,label')]
-        .filter(d => d.className && String(d.className).includes('cursor-pointer'));
-      rows[0]?.click();
+      const dlg = [...document.querySelectorAll('[role="dialog"]')]
+        .find(d => d.getAttribute('aria-label') === '发起群聊');
+      dlg?.querySelector('button[aria-pressed]')?.click();
     });
     await sleep(500);
     await page.evaluate(() => {
@@ -485,6 +486,110 @@ try {
     await sleep(1600);
     check('★ 建好的群出现在「最近消息」里（原本会被送到列官方群组的那一栏）',
       await page.evaluate(n => document.body.innerText.includes(n), NAME), NAME);
+  }
+
+  /* ---------------- 8b. 发起群聊弹窗的完整使用流程 ---------------- */
+  console.log('');
+  console.log('-- 发起群聊弹窗 · 完整使用流程 --');
+  {
+    const openModal = async () => {
+      await page.evaluate(() => [...document.querySelectorAll('button')]
+        .find(x => (x.getAttribute('aria-label') || '') === '发起群聊')?.click());
+      await sleep(1000);
+    };
+    const modalInfo = () => page.evaluate(() => {
+      const dlg = [...document.querySelectorAll('[role="dialog"]')]
+        .find(d => d.getAttribute('aria-label') === '发起群聊');
+      if (!dlg) return null;
+      const close = dlg.querySelector('button[aria-label="关闭"]');
+      const cr = close?.getBoundingClientRect();
+      const submit = [...dlg.querySelectorAll('button')]
+        .find(b => (b.textContent || '').trim() === '创建群组');
+      const hintEl = dlg.querySelector('#create-group-hint');
+      return {
+        hasClose: !!close,
+        closeBox: cr ? Math.round(cr.width) + 'x' + Math.round(cr.height) : null,
+        submitDisabled: submit ? submit.disabled : null,
+        describedBy: submit ? submit.getAttribute('aria-describedby') : null,
+        hint: hintEl ? (hintEl.textContent || '').trim() : null,
+        focusInside: dlg.contains(document.activeElement),
+      };
+    });
+
+    // 上一段建完群后停在「最近消息」，这里重新确认入口在位再打开
+    const entryHere = await page.evaluate(() => !![...document.querySelectorAll('button')]
+      .find(x => (x.getAttribute('aria-label') || '') === '发起群聊'));
+    await openModal();
+    let m = await modalInfo();
+    check('发起群聊弹窗有 dialog 语义', !!m,
+      m ? JSON.stringify(m) : ('入口在位=' + entryHere + ' 页面=' + (await page.evaluate(() => document.body.innerText.trim().slice(0, 70)))));
+    if (m) {
+      check('★ 关闭键有可访问名称', m.hasClose);
+      // 可视仍是 20×20（视觉不动），热区靠 before: 伪元素扩出来 ——
+      // 所以要按 hit-testing 量，不能量 rect。
+      const closeHit = await page.evaluate(() => {
+        const dlg = [...document.querySelectorAll('[role="dialog"]')]
+          .find(d => d.getAttribute('aria-label') === '发起群聊');
+        const el = dlg?.querySelector('button[aria-label="关闭"]');
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        const cx = Math.round(r.left + r.width / 2), cy = Math.round(r.top + r.height / 2);
+        const owns = p => { let n = p; while (n) { if (n === el) return true; n = n.parentElement; } return false; };
+        const at = (x, y) => x >= 0 && y >= 0 && x < innerWidth && y < innerHeight && owns(document.elementFromPoint(x, y));
+        if (!at(cx, cy)) return { blocked: true };
+        const grow = (dx, dy) => { let k = 0; while (k < 40 && at(cx + dx * (k + 1), cy + dy * (k + 1))) k++; return k; };
+        return { w: grow(-1, 0) + grow(1, 0) + 1, h: grow(0, -1) + grow(0, 1) + 1,
+                 vis: Math.round(r.width) + 'x' + Math.round(r.height) };
+      });
+      check('★ 关闭键热区 ≥ 44×44（可视仍是 20×20，伪元素扩的）',
+        !!closeHit && !closeHit.blocked && closeHit.w >= 44 && closeHit.h >= 44,
+        JSON.stringify(closeHit));
+      check('★ 打开后焦点进到弹窗里（此前落在 body）', m.focusInside === true, String(m.focusInside));
+      check('★ 空表单时说清为什么不能提交（此前只有一个灰按钮）',
+        m.submitDisabled === true && !!m.hint && /群名称/.test(m.hint) && /成员/.test(m.hint),
+        `disabled=${m.submitDisabled} hint=「${m.hint}」`);
+      check('提交键把原因关联给读屏', m.describedBy === 'create-group-hint', String(m.describedBy));
+
+      // 只填名字：原因要跟着变
+      await page.evaluate(() => {
+        const i = document.querySelector('#create-group-name');
+        const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+        set.call(i, '只有名字'); i.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      await sleep(400);
+      m = await modalInfo();
+      check('★ 只填了名字时，原因变成「请至少选择一位成员」',
+        m.submitDisabled === true && /至少选择一位成员/.test(m.hint || ''), `「${m.hint}」`);
+
+      // 选一个成员：变成可提交，并预告将要创建什么
+      await page.evaluate(() => {
+        const dlg = [...document.querySelectorAll('[role="dialog"]')]
+          .find(d => d.getAttribute('aria-label') === '发起群聊');
+        [...dlg.querySelectorAll('button[aria-pressed]')][0]?.click();
+      });
+      await sleep(400);
+      m = await modalInfo();
+      check('★ 补齐成员后可以提交，且预告将创建什么',
+        m.submitDisabled === false && /只有名字/.test(m.hint || '') && /成员 1 人/.test(m.hint || ''),
+        `disabled=${m.submitDisabled} hint=「${m.hint}」`);
+
+      // 成员项要能被键盘按到
+      const memberKb = await page.evaluate(() => {
+        const dlg = [...document.querySelectorAll('[role="dialog"]')]
+          .find(d => d.getAttribute('aria-label') === '发起群聊');
+        const b = dlg.querySelector('button[aria-pressed]');
+        if (!b) return 'missing';
+        b.focus();
+        return document.activeElement === b ? 'focusable' : 'not-focusable';
+      });
+      check('成员项是可聚焦的按钮（此前是带 onClick 的 div）', memberKb === 'focusable', memberKb);
+
+      // Esc 关闭
+      await page.keyboard.press('Escape');
+      await sleep(700);
+      check('★ 按 Esc 能关掉（此前只能点叉或点背景）',
+        (await modalInfo()) === null);
+    }
   }
 
   /* ---------------- 9. 语音房主的房间密码入口（源码级） ---------------- */
