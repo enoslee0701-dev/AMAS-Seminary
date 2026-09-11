@@ -303,6 +303,85 @@ try {
   check('★ 切走再切回图书馆，收藏还在',
     fav2.faved === fav1.faved, `${fav1.faved} → ${fav2.faved}`);
 
+  /* ---------------- 6. 课程进度跨页一致 ---------------- */
+  console.log('\n-- 课程进度：详情页 / 课程列表 / 我的页 --');
+  if (!await fresh()) throw new Error('启动超时');
+  await tab('课程');
+  const withLessons = await page.evaluate(() => {
+    for (const r of [...document.querySelectorAll('[role="button"]')]) {
+      if (!/打开课程/.test(r.getAttribute('aria-label') || '')) continue;
+      const m = /(\d+)\s*课时/.exec(r.innerText || '');
+      if (m && Number(m[1]) > 2) return r.querySelector('h4')?.innerText?.trim() || null;
+    }
+    return null;
+  });
+  check('前提：找得到一门有多个课时的课', !!withLessons, withLessons ?? '没有');
+  if (withLessons) {
+    const openByTitle = (t) => page.evaluate(x => {
+      [...document.querySelectorAll('[role="button"]')]
+        .find(r => (r.getAttribute('aria-label') || '').includes(x))?.click();
+    }, t);
+    const lessonCount = () => page.evaluate(() => {
+      const m = /(\d+)\/(\d+)\s*课时/.exec(document.body.innerText);
+      return m ? { done: Number(m[1]), total: Number(m[2]) } : null;
+    });
+
+    await openByTitle(withLessons);
+    await sleep(1800);
+    const before = await lessonCount();
+    check('前提：详情页显示 x/y 课时', !!before, JSON.stringify(before));
+
+    await page.evaluate(() => [...document.querySelectorAll('button')]
+      .find(x => (x.getAttribute('aria-label') || '') === '标记为已完成')?.click());
+    await sleep(900);
+    const after = await lessonCount();
+    check('标记一课完成，详情页的计数 +1',
+      !!after && !!before && after.done === before.done + 1,
+      `${before?.done}/${before?.total} → ${after?.done}/${after?.total}`);
+
+    // 在「更多操作」里收藏，这门课才会进「我的」页的我的学习
+    await page.evaluate(() => [...document.querySelectorAll('button')]
+      .find(x => (x.getAttribute('aria-label') || '') === '更多操作')?.click());
+    await sleep(700);
+    const favedInDetail = await page.evaluate(() => {
+      const b = [...document.querySelectorAll('button')].find(x => /收藏课程/.test(x.innerText || ''));
+      b?.click(); return !!b;
+    });
+    check('详情页的「更多操作」里能收藏这门课', favedInDetail);
+    await sleep(900);
+    await back();
+
+    const expectPct = after && after.total ? Math.round((after.done / after.total) * 100) : -1;
+    const rowPct = await page.evaluate(x => {
+      const r = [...document.querySelectorAll('[role="button"]')]
+        .find(q => (q.getAttribute('aria-label') || '').includes(x));
+      if (!r) return null;
+      const bar = r.querySelector('[role="progressbar"]');
+      return bar ? Number(bar.getAttribute('aria-valuenow')) : null;
+    }, withLessons);
+    check('★ 课程列表那一行显示学习进度，且与详情页一致',
+      rowPct === expectPct, `列表 ${rowPct}% · 详情 ${after?.done}/${after?.total}=${expectPct}%`);
+
+    await tab('我的');
+    const profilePct = await page.evaluate(x => {
+      const txt = document.body.innerText.replace(/\s+/g, ' ');
+      const i = txt.indexOf(x);
+      if (i < 0) return null;
+      const m = /(\d+)%/.exec(txt.slice(i, i + 40));
+      return m ? Number(m[1]) : null;
+    }, withLessons);
+    check('★「我的」页的收藏课程进度与详情页一致',
+      profilePct === expectPct, `我的页 ${profilePct}% · 详情 ${expectPct}%`);
+
+    await tab('课程');
+    await openByTitle(withLessons);
+    await sleep(1800);
+    const again = await lessonCount();
+    check('★ 切页再进详情页，已完成的课时还在',
+      !!again && !!after && again.done === after.done,
+      `${after?.done} → ${again?.done}`);
+  }
+
   check('全程无 JS 运行时错误', errors.length === 0, errors.slice(0, 3).join(' | '));
 } finally {
   await browser.close();

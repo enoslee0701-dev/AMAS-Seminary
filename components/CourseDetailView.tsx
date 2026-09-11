@@ -165,14 +165,18 @@ const CourseDetailView: React.FC<CourseDetailViewProps> = ({ course, onUpdateCou
   const toggleComplete = (lesson: any, idx: number, e: React.MouseEvent) => {
     e.stopPropagation(); // don't trigger play
     if (statusOf(lesson, idx) === 'locked') return;
-    setCompletedIds((prev) => {
-      const next = new Set(prev);
-      next.has(lesson.id) ? next.delete(lesson.id) : next.add(lesson.id);
-      const count = next.size;
-      const pct = totalLessons ? Math.round((count / totalLessons) * 100) : 0;
-      onProgressChange?.(course.id, pct, count);
-      return next;
-    });
+    /* onProgressChange 原本写在 setCompletedIds 的 updater 里面。
+       updater 是在渲染/协调阶段跑的，在那里调用父组件的 setState 会触发
+       React 的「Cannot update a component while rendering a different
+       component」警告 —— 实测确实报了。而且 updater 在并发渲染下可能被
+       调用多次，进度就会被重复上报。
+       改为在事件处理里先算出下一份集合，再分别 setState 和上报。 */
+    const next = new Set(completedIds);
+    if (next.has(lesson.id)) next.delete(lesson.id); else next.add(lesson.id);
+    setCompletedIds(next);
+    const count = next.size;
+    const pct = totalLessons ? Math.round((count / totalLessons) * 100) : 0;
+    onProgressChange?.(course.id, pct, count);
   };
 
   const handleLessonClick = (lesson: any, idx: number) => {

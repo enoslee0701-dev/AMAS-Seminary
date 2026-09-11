@@ -1306,6 +1306,38 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
                               </span>
                             </div>
 
+                            {/* 学习进度。
+                                原本这一行完全不显示进度：一门已经学到 3/26 的课，
+                                在列表里只写着「已解锁 · 继续学习」，看不出学到哪了 ——
+                                要逐门点进详情页才知道。「我的」页的收藏课程早就有进度条，
+                                两处口径不一致。这里补上同一个数（App 的 allCourses.progress，
+                                与详情页、我的页同源）。 */}
+                            {course.progress > 0 && (
+                              <div className="flex items-center" style={{ gap: 6, marginTop: 2 }}>
+                                <div
+                                  className="flex-1 overflow-hidden"
+                                  style={{ height: 4, borderRadius: 999, background: '#EEF1F6' }}
+                                  role="progressbar"
+                                  aria-label={`${course.title} 学习进度`}
+                                  aria-valuenow={Math.round(course.progress)}
+                                  aria-valuemin={0}
+                                  aria-valuemax={100}
+                                >
+                                  <div
+                                    style={{
+                                      height: '100%', borderRadius: 999,
+                                      width: `${Math.min(100, Math.max(0, course.progress))}%`,
+                                      background: 'linear-gradient(90deg,#0A3878,#04285F)',
+                                      transition: 'width .5s ease',
+                                    }}
+                                  />
+                                </div>
+                                <span className="shrink-0 font-bold" style={{ fontSize: 10, color: '#5C6573' }}>
+                                  {Math.round(course.progress)}%
+                                </span>
+                              </div>
+                            )}
+
                             {/* Action row */}
                             <div className="flex items-center justify-end mt-auto" style={{ paddingTop: 2 }}>
                               <button
