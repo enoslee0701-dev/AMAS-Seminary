@@ -35,6 +35,7 @@ const CHROME = process.env.CHROME_PATH
     .find(p => existsSync(p));
 if (!CHROME) { console.error('找不到 Chrome'); process.exit(1); }
 
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 let pass = 0, fail = 0;
 const check = (name, ok, detail = '') => {
   if (ok) { pass++; console.log(`  PASS  ${name}${detail ? ' — ' + detail : ''}`); }
@@ -193,6 +194,116 @@ try {
         outline.style !== 'none' && parseFloat(outline.width) >= 2,
         `${outline.style} ${outline.width}`);
     }
+    await page.close();
+  }
+
+  console.log('\n-- ★ 结果页固定底栏下的键盘 / 查找滚动（官网 1ee9288 同步）--');
+  {
+    // 上面「结果页固定底栏不遮挡出口」那组只证明了**手动滚到文档底部**不被遮挡。
+    // 但 Tab 聚焦、Ctrl+F 页内查找、#锚点跳转走的是浏览器自己发起的 scrollIntoView：
+    // 它把元素边缘对齐到视口边缘，受 scroll-margin 约束，**与 padding 无关**，
+    // 会直接越过 .site-exit 那段 84px 内边距。这条路径真人可达，必须单独证明。
+    const page = await newPage(375, 720);
+    await page.goto(`${base}/discover.html`, { waitUntil: 'domcontentloaded' });
+    await page.evaluate(() => window.show('result'));
+    await sleep(250);
+
+    /** 一次性取回焦点状态与几何，避免多次往返造成状态漂移。 */
+    const probe = () => page.evaluate(() => {
+      const a = document.querySelector('.back-link');
+      const s = document.querySelector('.sticky-cta');
+      const sHidden = !s || s.classList.contains('hidden')
+        || getComputedStyle(s).display === 'none';
+      const r = a.getBoundingClientRect();
+      return {
+        focused: document.activeElement === a,
+        bottom: r.bottom,
+        stickyTop: sHidden ? null : s.getBoundingClientRect().top,
+        screen: !document.getElementById('result').classList.contains('hidden') ? 'result' : 'other',
+      };
+    });
+    const unobscured = r => r.stickyTop === null || r.bottom <= r.stickyTop + 0.5;
+    const geo = r => `link.bottom=${Math.round(r.bottom)} sticky.top=${Math.round(r.stickyTop)}`;
+
+    const r0 = await probe();
+    check('R0 前置：确实在结果页且固定底栏可见',
+      r0.screen === 'result' && r0.stickyTop !== null,
+      `screen=${r0.screen} stickyTop=${r0.stickyTop === null ? 'hidden' : Math.round(r0.stickyTop)}`);
+
+    // R1/R2 —— 从页顶按 Tab，让浏览器自己决定滚到哪里
+    await page.evaluate(() => { document.activeElement?.blur(); window.scrollTo(0, 0); });
+    await sleep(250);
+    let presses = 0, reached = false;
+    for (let i = 1; i <= 80 && !reached; i++) {
+      await page.keyboard.press('Tab');
+      presses = i;
+      reached = await page.evaluate(() =>
+        document.activeElement?.classList?.contains('back-link') === true);
+    }
+    await sleep(300);
+    const r1 = await probe();
+    check('R1 结果页上 Tab 可达出口', reached && r1.focused, `按了 ${presses} 次`);
+    check('R2 Tab 聚焦后不被固定底栏遮挡', unobscured(r1), geo(r1));
+
+    // R3 —— 反向再正向的键盘往返。
+    // 不能写成「按 Tab 离开再 Shift+Tab 回来」：出口是文档最后一个可聚焦元素，
+    // 一次 Tab 就把焦点交给浏览器 UI，Shift+Tab 回来的是地址栏而不是页面。
+    // 真实反向路径是：从出口 Shift+Tab 退到上一个控件，再 Tab 前进回来。
+    await page.keyboard.down('Shift');
+    await page.keyboard.press('Tab');
+    await page.keyboard.up('Shift');
+    await sleep(250);
+    const back = await page.evaluate(() => {
+      const a = document.activeElement;
+      return {
+        isLink: !!a && a.classList.contains('back-link'),
+        tag: a ? a.tagName : 'none',
+        inPage: !!a && a !== document.body,
+      };
+    });
+    check('R3 Shift+Tab 反向退到页内上一个控件',
+      !back.isLink && back.inPage, `now=${back.tag} isLink=${back.isLink}`);
+    await page.keyboard.press('Tab');
+    await sleep(300);
+    const r3 = await probe();
+    check('R3b Tab 正向回到出口', r3.focused, `focused=${r3.focused}`);
+    check('R3c 键盘往返回来后仍不被遮挡', unobscured(r3), geo(r3));
+
+    // R4 —— 页内查找的滚动代理：边缘对齐是最坏情况
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await sleep(200);
+    await page.evaluate(() =>
+      document.querySelector('.back-link').scrollIntoView({ block: 'end' }));
+    await sleep(300);
+    const r4 = await probe();
+    check('R4 边缘对齐 scrollIntoView（查找代理）不被遮挡', unobscured(r4), geo(r4));
+
+    // 同时断言**产生这个结果的机制**，而不只是几何数字 ——
+    // 否则哪天规则被误删、数字恰好仍然合格时，测试会沉默地放行。
+    const sm = await page.evaluate(() =>
+      parseFloat(getComputedStyle(document.querySelector('.back-link')).scrollMarginBottom));
+    check('R4b 余量来自 scroll-margin-bottom（机制断言，非仅几何）',
+      sm >= 60, `scroll-margin-bottom=${Math.round(sm)}px`);
+
+    // 非结果页不该留这段余量（底栏藏起来时无需让位）
+    await page.evaluate(() => window.show('landing'));
+    await sleep(150);
+    const smLanding = await page.evaluate(() =>
+      parseFloat(getComputedStyle(document.querySelector('.back-link')).scrollMarginBottom));
+    check('R4c 非结果页不保留该余量', smLanding < 60, `${Math.round(smLanding)}px`);
+
+    // R5 —— 键盘用户拿到焦点之后必须真的能走
+    await page.evaluate(() => window.show('result'));
+    await sleep(150);
+    await page.focus('.back-link');
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
+      page.keyboard.press('Enter'),
+    ]);
+    const landedText = await page.evaluate(() => document.body.innerText);
+    check('R5 聚焦后按 Enter 真的激活并导航到 App 根',
+      page.url() === `${base}/` && landedText.includes('APP_SPA_ROOT_MARKER'),
+      page.url());
     await page.close();
   }
 
