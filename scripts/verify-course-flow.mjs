@@ -382,6 +382,61 @@ try {
       `${after?.done} → ${again?.done}`);
   }
 
+  /* ---------------- 7. 校友圈发帖 → 动态流 ---------------- */
+  console.log('\n-- 校友圈 · 发帖 → 动态流 --');
+  if (!await fresh()) throw new Error('启动超时');
+  await tab('校友圈');
+  await page.evaluate(() => [...document.querySelectorAll('button')]
+    .find(x => (x.innerText || '').replace(/\s+/g, ' ').trim() === '校友动态')?.click());
+  await sleep(1300);
+
+  const composeEntry = await page.evaluate(() => {
+    const b = [...document.querySelectorAll('button')]
+      .find(x => (x.getAttribute('aria-label') || '') === '发布动态');
+    if (!b) return null;
+    const r = b.getBoundingClientRect();
+    return { w: Math.round(r.width), h: Math.round(r.height), focusable: b.tabIndex >= 0 };
+  });
+  check('★ 动态流上有发帖入口（CreateMomentModal 此前没有任何调用点）',
+    !!composeEntry && composeEntry.h >= 44 && composeEntry.focusable,
+    JSON.stringify(composeEntry));
+
+  if (composeEntry) {
+    await page.evaluate(() => [...document.querySelectorAll('button')]
+      .find(x => (x.getAttribute('aria-label') || '') === '发布动态')?.click());
+    await sleep(1200);
+    const hasComposer = await page.evaluate(() => !!document.querySelector('textarea'));
+    check('点发帖入口能打开撰写页', hasComposer);
+
+    if (hasComposer) {
+      const MARK = `本地验证帖-${Date.now()}`;
+      await page.evaluate(t => {
+        const ta = document.querySelector('textarea');
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+        setter.call(ta, t);
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+      }, MARK);
+      await sleep(600);
+      const posted = await page.evaluate(() => {
+        const b = [...document.querySelectorAll('button')]
+          .find(x => (x.innerText || '').trim() === '发布');
+        b?.click(); return !!b;
+      });
+      check('撰写页有「发布」且能点', posted);
+      await sleep(1800);
+      check('★ 发布后帖子出现在动态流',
+        await page.evaluate(t => document.body.innerText.includes(t), MARK), MARK);
+
+      await tab('首页');
+      await tab('校友圈');
+      await page.evaluate(() => [...document.querySelectorAll('button')]
+        .find(x => (x.innerText || '').replace(/\s+/g, ' ').trim() === '校友动态')?.click());
+      await sleep(1300);
+      check('★ 切走再回来，刚发的帖子还在',
+        await page.evaluate(t => document.body.innerText.includes(t), MARK), MARK);
+    }
+  }
+
   check('全程无 JS 运行时错误', errors.length === 0, errors.slice(0, 3).join(' | '));
 } finally {
   await browser.close();

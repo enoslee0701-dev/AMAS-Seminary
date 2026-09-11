@@ -1122,7 +1122,29 @@ const CommunityView: React.FC<CommunityViewProps> = ({
                         </div>
                     </div>
 
-                    <div className="px-4 space-y-8 mt-12 pb-10">
+                    {/* 发帖入口。
+                        CreateMomentModal 与 handleCreatePost 早就写好了（正文、
+                        最多 9 张图、关联课程、乐观插入 + 失败提示），但全仓
+                        **没有任何一处调用 setShowCreateMoment(true)** ——
+                        弹窗挂在一个永远为 false 的 state 上，用户根本打不开它，
+                        「校友圈发帖」这条流程实际是走不通的。
+                        这里把入口接上：动态流列表顶部一行，点了直接开写。 */}
+                    <div className="px-4 mt-12">
+                        <button
+                            type="button"
+                            onClick={() => setShowCreateMoment(true)}
+                            aria-label="发布动态"
+                            className="w-full flex items-center bg-white border border-slate-200 rounded-2xl shadow-sm px-4 active:scale-[0.99] transition min-h-[56px] text-left"
+                        >
+                            <img src={MOCK_USER.avatar} className="w-9 h-9 rounded-full object-cover border border-slate-100 shrink-0" alt="" />
+                            <span className="ml-3 flex-1 text-sm text-slate-400">分享这一刻的想法…</span>
+                            <span className="shrink-0 flex items-center justify-center w-9 h-9 rounded-full bg-blue-900 text-white">
+                                <Plus size={18} strokeWidth={2.6} />
+                            </span>
+                        </button>
+                    </div>
+
+                    <div className="px-4 space-y-8 mt-6 pb-10">
                         {posts.map(post => (
                             <div key={post.id} className="flex items-start animate-fade-in-up">
                                 <div 
