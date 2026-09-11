@@ -248,6 +248,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
           <div style={{ flex: 1 }} />
           <button
             aria-label="搜索"
+            /* 未滚动时这整条栏被 translateY(-100%) 移到屏幕外、并且 aria-hidden。
+               但那两样都**不会**把按钮移出 tab 序：aria-hidden 只摘无障碍树，
+               translate 只是视觉位移。结果是键盘用户 Tab 会落进一个看不见、
+               屏幕阅读器又不念的按钮（WAI-ARIA 禁止 aria-hidden 子树含可聚焦元素）。
+               把 tab 序和这条栏自己的可见性绑在一起。 */
+            tabIndex={scrolled ? 0 : -1}
             onClick={() => setShowSearch(true)}
             className="flex items-center justify-center active:scale-95 transition"
             style={{
@@ -266,6 +272,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
       <div className="fixed left-0 right-0 max-w-md mx-auto pointer-events-none" style={{ top: 'calc(var(--safe-top) + 10px)', zIndex: 55 }}>
         <button
           aria-label="搜索"
+          /* 同上的另一半：滚动后这个按钮 opacity:0 淡出，但 pointer-events:none
+             只挡指针、不挡键盘 —— 焦点照样落得上去，按 Enter 还会真的打开搜索。
+             与吸顶栏那个对称处理：淡出时同时退出 tab 序与无障碍树。 */
+          tabIndex={scrolled ? -1 : 0}
+          aria-hidden={scrolled}
           onClick={() => setShowSearch(true)}
           className="absolute flex items-center justify-center active:scale-95"
           style={{

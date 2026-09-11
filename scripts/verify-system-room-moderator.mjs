@@ -82,6 +82,17 @@ for (let i = 0; i < 120; i++) {
   await sleep(300);
 }
 
+// 诊断是 fire-and-forget 的异步任务（DB-12 后数据源是 Postgres，见
+// server.ts 的 `void reportSystemRoomModerators()`），它在 listen 回调里发起，
+// 因此**晚于** /api/health 变得可用。上面的等待循环一拿到 health 就跳出，
+// 直接断言会间歇性地抓空 —— 与 OPEN_ISSUES #23 同一类竞态。
+// 这里再有界地等诊断真的落进日志，最多 20 秒。
+for (let i = 0; i < 100; i++) {
+  if (SYSTEM_ROOMS.every(r => startupLog.includes(`SYSTEM_ROOM_HAS_NO_MODERATOR room=${r}`))) break;
+  await sleep(200);
+}
+
+
 // §1c 启动诊断：五个房间此刻一个 moderator 都没有，必须报出来
 check('启动诊断报出 SYSTEM_ROOM_HAS_NO_MODERATOR',
   SYSTEM_ROOMS.every(r => startupLog.includes(`SYSTEM_ROOM_HAS_NO_MODERATOR room=${r}`)),
