@@ -9,6 +9,7 @@ import {
   Building2, Handshake, BookOpen, Library as LibraryIcon,
 } from 'lucide-react';
 import { initialAvatar } from '../services/imageFallback';
+import { MODAL_LAYER } from '../services/layers';
 import { readGrowthRole, archImg } from '../services/growthArchetypes';
 import { listFavorites as libListFavorites } from '../services/libraryService';
 import { listFriends } from '../services/friendsService';
@@ -330,7 +331,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ favoriteCourseIds = [], onLog
   // keystroke (new function identity each render), which drops input focus.
   // As JSX values they reconcile in place, so typing keeps focus.
   const editProfileModal = (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+    <div className={`fixed inset-0 ${MODAL_LAYER} bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in`}>
       <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl relative animate-scale-in">
          <div className="flex justify-between items-center mb-6">
            <h3 className="text-lg font-bold text-slate-900">编辑资料</h3>
@@ -416,7 +417,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ favoriteCourseIds = [], onLog
   );
 
   const settingsModal = (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+    <div className={`fixed inset-0 ${MODAL_LAYER} bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in`}>
       <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl relative animate-scale-in max-h-[85vh] overflow-y-auto">
          <div className="flex justify-between items-center mb-6">
            <div className="flex items-center">

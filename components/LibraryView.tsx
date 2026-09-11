@@ -2,6 +2,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Search, BookOpen, Bot, Send, X, FileText, Headphones, Download, Star } from 'lucide-react';
 import { generateTheologicalResponse } from '../services/geminiService';
+import { MODAL_LAYER } from '../services/layers';
 import {
   listBooks as apiListBooks,
   listFavorites as apiListFavorites,
@@ -302,7 +303,7 @@ const LibraryView: React.FC = () => {
 
       {/* Book preview modal */}
       {previewBook && (
-        <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 animate-fade-in" onClick={() => setPreviewBook(null)}>
+        <div className={`fixed inset-0 ${MODAL_LAYER} bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 animate-fade-in`} onClick={() => setPreviewBook(null)}>
           <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl animate-scale-in" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-between items-start mb-4">
               <div className="flex items-center flex-1 min-w-0">
@@ -334,7 +335,7 @@ const LibraryView: React.FC = () => {
            于是标签栏盖在弹窗上面。弹窗在手机上是 items-end + h-[85vh]，
            提问框和发送键正好落在标签栏底下，实测完全点不到、也聚焦不了。
            抬到 z-[60]（与本页书籍预览弹窗同层）。 */
-        <div className="fixed inset-0 z-[60] bg-slate-900/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fade-in">
+        <div className={`fixed inset-0 ${MODAL_LAYER} bg-slate-900/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fade-in`}>
           <div className="bg-white w-full sm:max-w-md h-[85vh] sm:h-[600px] rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-slide-up">
             <div className="bg-blue-900 p-4 flex justify-between items-center text-white">
               <div className="flex items-center space-x-3">
