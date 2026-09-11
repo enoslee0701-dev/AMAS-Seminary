@@ -1515,3 +1515,87 @@ phase:     触控目标巡检（2026-09-11）
 **未纳入本条的同类**：`CourseDetailView` 与 `College/AdmissionsSection` 里也有
 `z-50` / `z-40` 的全屏浮层，但那两个视图渲染时常驻标签栏不在场（App.tsx 的
 标签分支之外），当前不构成遮挡，本轮不动。
+
+---
+
+## #29 七个 UI / 流程回归脚本未并入 CI，仅有本地聚合入口
+
+```
+status:    PENDING_DECISION（是否进 CI 由监督裁定）
+severity:  low（不影响运行时；影响的是这些断言会不会随时间失效）
+owner:     unassigned
+phase:     触控目标 / 核心流程巡检（2026-09-11）
+```
+
+**事实**：本阶段陆续新增了七个用真实浏览器跑的回归脚本，覆盖触控目标、弹窗
+层级、核心用户流程与 discover 同源副本。它们都不写真实数据（只写浏览器
+localStorage 里各自用到的键，用例间自行清理），也不需要后端、真实身份或
+live 配置，但**都没有并入 `test:regression`**，此前只能逐个手敲。
+
+为避免永久游离，`package.json` 新增本地聚合入口：
+
+```bash
+npm run verify:ui-flows
+```
+
+串起来的七个（各自会自起 vite 或极小静态服务器 + Chrome headless）：
+
+```
+verify-discover-exit          47/47   discover 同源副本：App 返航路径 + 焦点/进度语义
+verify-dashboard-search-a11y  16/16   首页两个搜索键的 tab 序
+verify-global-search-modal    15/15   全局搜索浮层的模态语义
+verify-touch-targets         100/100  九个视图的触控目标与可访问名称（320 / 375px）
+verify-modal-layering         60/60   五个弹窗的层级 / 滚动 / 焦点 / 底栏遮挡
+verify-course-flow            29/29   首页进课 → 返回状态保留 → 收藏 → 进度跨页 → 发帖
+verify-assessment-resume      18/18   30 题评估的退出续答（按 CHRISTIAN_PROFILE_SPEC 铁律）
+```
+
+`CHROME_PATH` 可覆盖 Chrome 路径。全套单跑约 10–15 分钟 —— 这也是没有直接塞进
+`test:regression` 的原因：那条链子目前是 CI 里跑的，多出十几分钟需要监督先裁定。
+
+**待决**：并入 `test:regression`（CI 变长）、单独开一个 CI job、还是保持本地入口。
+
+---
+
+## #30 「写好了却没人调用」的功能开关清点
+
+```
+status:    部分 CLOSED（三处已接上入口），其余按产品规则刻意不接
+severity:  medium（用户侧表现为「文档说有、界面里没有」）
+owner:     unassigned
+phase:     核心流程巡检（2026-09-11）
+```
+
+走核心流程时先撞上一处（校友圈发帖），随后做了一次针对性清点：找出所有
+`useState(false)` 且**全仓没有任何一处置为 true**、也没有作为 prop 传下去的
+布尔开关。粗扫会有大量假阳性（`setX(v => !v)`、经由 prop 传给子组件的
+`setIsRoomMinimized` 等），逐个核实后剩下四处。
+
+### 已接上入口（按产品原始规则判定应当可达）
+
+| 开关 | 已实现但打不开的东西 | 依据 |
+|---|---|---|
+| `CommunityView.showCreateMoment` | 发帖撰写页（正文 / 最多 9 图 / 关联课程 / 乐观插入） | README 把校友圈列为「✅ 动态流」 |
+| `VoiceRoomOverlay.showPasswordSettings` | 房间密码设置弹窗 | README 把「房间密码（scrypt + timingSafeEqual）」列为已完成能力 |
+| `CommunityView.showCreateGroup` | 发起群聊（挑联系人 / 建会话 / toast） | 通讯录本就有会话列表与 GROUP 角标 |
+
+发起群聊连带修掉一处落点错误：原本建完把用户送到「官方群组」栏，
+而那一栏列的是 `OFFICIAL_GROUPS`，新建的群是一条 `Conversation`、
+只在「最近消息」里出现 —— 跳过去用户会以为没建成。改为落在「最近消息」。
+
+### 刻意不接
+
+**`CoursesView.showAddModal`（新增课程）** —— 不是遗漏，是被上游挡住了。
+课程目录的 admin 写路径已按 **D-43** 停用（后端返回 501
+`CATALOG_MUTATION_UNSUPPORTED`），产品口径待定。现在把入口放出来，等于给
+管理员一个按下去必然失败的按钮。**等 D-43 有结论再说。**
+
+### 顺带查出、未处理的两处
+
+1. `CommunityView.showCommentEmojiPicker` —— 声明了、被置过一次 false，
+   但**从来没有被读来渲染任何东西**。它不是「入口缺失」，是纯死状态；
+   删掉是零风险清理，但对用户没有任何可见改善，本轮不为清扫而改。
+2. `handleCreateGroupChat` 把新群写进 `localStorage['amas_custom_groups']`，
+   而**全仓没有任何一处读回它** —— 刷新后自建群消失。这是持久化缺口，
+   与本条的「入口缺失」不是一回事，需要单独一轮（且要先确定这类数据
+   到底该走本地还是后端）。
