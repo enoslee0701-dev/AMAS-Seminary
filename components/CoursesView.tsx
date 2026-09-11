@@ -822,13 +822,16 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
                 <button
                   aria-label="搜索"
                   onClick={() => setSearchExpanded(true)}
-                  className="w-9 h-9 rounded-full bg-white border border-slate-200 flex items-center justify-center active:scale-95 transition"
+                  /* 36×36 → 热区 46×46。伪元素向右只扩 6px，与右邻的「我的学习」
+                     之间有 8px gap，两块热区碰不到。 */
+                  className="relative w-9 h-9 rounded-full bg-white border border-slate-200 flex items-center justify-center active:scale-95 transition before:absolute before:-inset-[6px] before:content-['']"
                 >
                   <Search size={16} className="text-slate-500" />
                 </button>
                 <button
                   onClick={() => setMyCoursesOnly(v => !v)}
-                  className="flex items-center rounded-full active:scale-95 transition"
+                  /* 36 高 → 46。只向上下扩，不动左右，免得和左边的搜索圈抢。 */
+                  className="relative flex items-center rounded-full active:scale-95 transition before:absolute before:-inset-y-[5px] before:inset-x-0 before:content-['']"
                   style={{
                     height: 36, paddingLeft: 12, paddingRight: 14, gap: 5,
                     background: myCoursesOnly ? '#E8C98C' : '#04285F',
@@ -881,7 +884,9 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
                   <button
                     onClick={() => onOpenCustomTheology?.()}
                     className="mt-4 inline-flex items-center bg-[#E8C98C] text-[#04285F] rounded-full font-bold active:scale-95 transition"
-                    style={{ height: 32, paddingLeft: 14, paddingRight: 12, fontSize: 12, gap: 4 }}
+                    /* 本页的主行动点，实测只有 32 高。这里直接长到 44：
+                       外层卡片 minHeight 168，长高后内容约 162，撑不破。 */
+                    style={{ minHeight: 44, paddingLeft: 14, paddingRight: 12, fontSize: 12, gap: 4 }}
                   >
                     进入定制化神学
                     <ChevronRight size={14} strokeWidth={2.6} />
@@ -1164,14 +1169,21 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
 
             {/* CATEGORY FILTER CHIPS */}
             <section className="mt-4">
-              <div className="flex overflow-x-auto scrollbar-hide px-4" style={{ gap: 6 }}>
+              {/* overflow-x:auto 会让 overflow-y 也变成 auto —— 这条横滚容器会把
+                  chip 向上下扩出去的热区伪元素齐边裁掉。给容器留 8px 上下内边距，
+                  再用等量负外边距把布局还原，伪元素才有地方待着。 */}
+              <div className="flex overflow-x-auto scrollbar-hide px-4 py-2.5 -my-2.5" style={{ gap: 6 }}>
                 {categories.map((cat) => {
                   const active = activeCategory === cat;
                   return (
                     <button
                       key={cat}
                       onClick={() => setActiveCategory(cat)}
-                      className="font-semibold whitespace-nowrap active:scale-95 transition flex-shrink-0"
+                      /* 分类筛选条实测 31 高。这是一条横滚的紧凑 chip 行，
+                         画成 44 会把整条撑得很笨重，所以只用伪元素向上下各扩 7px
+                         （上方 section mt-4=16px、下方 mt-3=12px，都容得下）。
+                         左右不扩，chip 之间只有 6px gap。 */
+                      className="relative font-semibold whitespace-nowrap active:scale-95 transition flex-shrink-0 before:absolute before:-inset-y-[8px] before:inset-x-0 before:content-['']"
                       style={{
                         fontSize: 11,
                         padding: '6px 12px',
@@ -1282,7 +1294,10 @@ const CoursesView: React.FC<CoursesViewProps> = ({ courses, onAddCourse, onUpdat
                                   if (status.kind === 'apply') setEnrollPrompt(course);
                                   else onCourseClick?.(course.id);
                                 }}
-                                className="font-semibold transition active:scale-95 flex items-center"
+                                /* 课程卡右下角的行动键实测 29 高。卡片本身也可点，
+                                   所以只向上下扩 9px（上方是讲师/课时那行纯文本，
+                                   下方是卡片内边距），不抢卡片中心。 */
+                                className="relative font-semibold transition active:scale-95 flex items-center before:absolute before:-inset-y-[9px] before:inset-x-0 before:content-['']"
                                 style={{
                                   fontSize: 11,
                                   padding: '5px 10px',
