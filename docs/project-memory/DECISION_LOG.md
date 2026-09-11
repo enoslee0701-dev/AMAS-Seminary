@@ -17,15 +17,34 @@
 对 App **只读**。`POST` / `PATCH` / `DELETE /api/courses` 三个 admin 写路径
 返回 `501` + `CATALOG_MUTATION_UNSUPPORTED`。
 
-**为什么不能机械翻译过去（逐项具体缺口）**：
+**状态（Supervisor 裁定，DB-13C）**：
 
 ```
-availability   NOT NULL 枚举（available / in_development）
-               App 侧没有任何对应输入 —— 填什么都是凭空替产品做决定
-sort_order     NOT NULL 整数，目录编排意图；App 侧同样没有输入
+DEFERRED PRODUCT OWNERSHIP DECISION
+NON-BLOCKING FOR INTERNAL STAGING
+```
+
+> #### ⚠️ 本条初版的措辞不准确，已更正
+>
+> 初版写成「`availability` / `sort_order` 是 NOT NULL 而 App 侧没有对应输入」，
+> 这**暗示了数据库技术上写不进去**。那是错的。两列都有默认值
+> （本轮独立复核 live schema 确认：`availability` DEFAULT `'in_development'`、
+> `sort_order` DEFAULT `0`），不带这两列的 INSERT 完全可以成功。
+>
+> **真正的阻塞不是 schema 缺陷，而是产品契约缺失** —— App 目前没有定义
+> canonical 课程目录该如何被管理：新课程默认是 `in_development` 还是
+> `available`？谁决定排序？缩略图的 provenance 归谁？删除权归谁？
+> 在这些没有答案之前，让 App 用默认值静默建课，等于由实现者替产品
+> 做了四个决定。
+
+**逐项缺口（产品契约层面，不是技术层面）**：
+
+```
+availability   有默认值，但「新建课程默认上架还是在建」是产品决定
+sort_order     有默认值 0，但那会让每门新课都排在最前 —— 编排意图无人定义
 thumbnail      App 接受任意 URL（≤4000 字符），而 thumbnail_path 语义是存储路径
 created_by     SQLite 存的是创建者姓名；created_by_provenance 是数据溯源标签，语义不同
-DELETE         会删掉 DB-6 迁入的 canonical 目录行，影响远超「删一门 App 自建课程」
+DELETE         会删掉 DB-6 迁入的 canonical 目录行，删除权归属未定义
 ```
 
 **为什么不能把写路径留在 SQLite**：目录读取已切到 `course_catalog`。若写仍落
@@ -42,7 +61,12 @@ language 3↔语言与工具（合计 67/67）；
 换成英文 slug 会让分类筛选全部失效。
 
 **待产品决定（不由实现者选）**：目录内容今后由谁维护 —— Website 侧的目录管理，
-还是给 App 补上 availability / sort_order 的录入界面。在有结论前维持 501。
+还是给 App 补上 availability / ordering / thumbnail provenance / deletion ownership
+的完整契约与录入界面。在有结论前维持 501，**本阶段不新增课程管理 UI**。
+
+**明确不得为了消灭 501 而做的事**：猜 `availability` · 猜 `sort_order` ·
+把 thumbnail URL 硬塞成 `thumbnail_path` · 误用 `created_by_provenance` ·
+允许 App 删除 canonical `course_catalog` 行 · 新增一套 App 自己的课程目录。
 
 **证据**：`backend/src/staging/courseStore.ts` · `backend/src/routes/courses.ts` ·
 `backend/src/test/db13b-dal-cutover.test.ts`

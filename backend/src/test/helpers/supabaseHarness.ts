@@ -25,6 +25,14 @@ export interface FakeSupabase {
   /** 签一张真实可验证的 Supabase 风格 access token */
   mintToken(sub: string, extra?: Record<string, unknown>): Promise<string>;
   /**
+   * 让接下来对某张表的 `times` 次请求返回 500。
+   *
+   * 用于验证「持久层瞬时失败」这条真实路径：业务数据已经写成功，
+   * 随后的 realtime 通知失败**不得**把一次成功的请求变成 500。
+   * 没有它就只能靠拔配置，而配置是模块加载期捕获的，运行时改不动。
+   */
+  failTable(table: string, times?: number): void;
+  /**
    * 签一张**故意不合格**的 token，用于否定式断言：
    *   issuer   换成别的签发者（验证 iss 校验没被绕过）
    *   expired  已过期
@@ -201,6 +209,16 @@ export async function startFakeSupabase(): Promise<FakeSupabase> {
   /** DB-12：业务表的内存存储，键为表名（仅 app_* 表）。 */
   const tables: Record<string, Record<string, unknown>[]> = {};
 
+  /**
+   * DB-13C：`id` 由数据库分配（`GENERATED ALWAYS AS IDENTITY`）的表。
+   * 目前只有 realtime 事件日志是这种形态；其余 app_* 表的 id 由调用方给。
+   */
+  const IDENTITY_TABLES = new Set(['app_room_realtime_events']);
+  const nextIdentity: Record<string, number> = {};
+
+  /** 按表计数的注入故障：>0 时该表的下一次请求返回 500。 */
+  const injectedFailures: Record<string, number> = {};
+
   const server = http.createServer((req, res) => {
     const u = new URL(req.url ?? '/', 'http://127.0.0.1');
     if (u.pathname === '/auth/v1/.well-known/jwks.json') {
@@ -276,6 +294,12 @@ export async function startFakeSupabase(): Promise<FakeSupabase> {
     const m = /^\/rest\/v1\/(app_[a-z_]+|profiles|course_catalog)$/.exec(u.pathname);
     if (m) {
       const table = m[1]!;
+      if ((injectedFailures[table] ?? 0) > 0) {
+        injectedFailures[table] -= 1;
+        res.writeHead(500, { 'content-type': 'application/json' });
+        res.end('{"message":"injected failure"}');
+        return;
+      }
       const rows = tables[table] ?? (tables[table] = []);
       const RESERVED = ['select', 'order', 'limit', 'offset'];
 
@@ -342,6 +366,31 @@ export async function startFakeSupabase(): Promise<FakeSupabase> {
           const incoming = Array.isArray(parsed)
             ? parsed as Record<string, unknown>[]
             : [parsed as Record<string, unknown>];
+
+          // DB-13C：模拟 `GENERATED ALWAYS AS IDENTITY`。
+          //
+          // `app_room_realtime_events.id` 是 bigint IDENTITY —— 调用方**不传**
+          // 这一列，由 Postgres 分配。不模拟的话插入的行根本没有 id，
+          // 于是 eventId 恒为 0，续传游标彻底失效，而测试会以一个
+          // 很难定位的「id 不递增」失败。
+          //
+          // 只对确实是 IDENTITY 的表生效；其它表的 id 仍由调用方给
+          // （app_posts / app_prayer_shares 等都是自带 id 的）。
+          if (IDENTITY_TABLES.has(table)) {
+            for (const row of incoming) {
+              if (row.id === undefined || row.id === null) {
+                nextIdentity[table] = (nextIdentity[table] ?? 0) + 1;
+                row.id = nextIdentity[table];
+              } else {
+                // 显式带 id 的（测试里塞历史行）要把序列推到它之后，
+                // 否则后续自增会撞上已存在的 id。
+                const given = Number(row.id);
+                if (Number.isFinite(given)) {
+                  nextIdentity[table] = Math.max(nextIdentity[table] ?? 0, given);
+                }
+              }
+            }
+          }
           // 冲突键必须按表而定：app_rooms / app_course_files 等以 `id` 为主键，
           // 而 app_room_members / app_room_presence 的主键是 (room_id, user_id)、
           // 根本没有 `id` 列。若一律拿 `id` 比对，两边都是 undefined 会恒等，
@@ -410,6 +459,9 @@ export async function startFakeSupabase(): Promise<FakeSupabase> {
       const other = await generateKeyPair('ES256', { extractable: true });
       return base().setIssuedAt().setIssuer(`${origin}/auth/v1`)
         .setExpirationTime('10m').sign(other.privateKey);
+    },
+    failTable(table, times = 1) {
+      injectedFailures[table] = (injectedFailures[table] ?? 0) + times;
     },
     setRoles(supabaseUserId, roles) {
       rolesByUserId[supabaseUserId] = roles;

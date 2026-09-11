@@ -152,7 +152,7 @@ export function registerPrayerSessionRoutes(app: Express): void {
 
   /** 命令成功后：发事件 + 返回最新视图。 */
   async function respondFresh(res: Response, s: SessionRecord): Promise<void> {
-    emitRoomEvent(s.roomId, 'session.changed', s.id, s.revision);
+    void emitRoomEvent(s.roomId, 'session.changed', s.id, s.revision);
     res.json(await view(s, true));
   }
 
@@ -207,7 +207,7 @@ export function registerPrayerSessionRoutes(app: Express): void {
           id: sid, roomId, title, createdByUuid: me, items, idOf: uid, at: t,
         });
         // §6 写入全部成功之后才发事件——绝不会出现「已通知客户端、数据库随后回滚」
-        emitRoomEvent(roomId, 'session.changed', sid, 1);
+        void emitRoomEvent(roomId, 'session.changed', sid, 1);
         res.status(201).json(await view(s, true));
       } catch (e) {
         console.error('[prayer-session] create failed:', (e as Error).message);

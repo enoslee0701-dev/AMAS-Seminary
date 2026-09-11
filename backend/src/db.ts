@@ -130,6 +130,15 @@ db.exec(`
   -- 事件只是失效通知，客户端收到后回 REST 拿 canonical state。
   --
   -- 自增 id 作为单调递增 cursor，客户端用 lastEventId 断线续传。
+  --
+  -- ── DB-13C：本表已停止运行时读写 ──────────────────────────────────
+  -- 事件日志已切到 Postgres public.app_room_realtime_events（见
+  -- realtime/roomEvents.ts 与 staging/realtimeStore.ts）。DDL 按 §12 保留
+  -- 作回滚与参考源，**运行时不再有任何 INSERT / SELECT / DELETE**。
+  -- 不做 destructive DROP。
+  --
+  -- 注意：整段 schema 在一个模板字符串里，注释中**不能出现反引号** ——
+  -- 它会直接截断模板字面量，产生一个很难定位的语法错误。
   CREATE TABLE IF NOT EXISTS room_realtime_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     room_id TEXT NOT NULL,

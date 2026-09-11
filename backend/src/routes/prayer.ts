@@ -146,7 +146,7 @@ export function registerPrayerRoutes(app: Express): void {
 
       try {
         const saved = await replaceTopics(roomId, topics, me, uid, now());
-        emitRoomEvent(roomId, 'theme.changed');
+        void emitRoomEvent(roomId, 'theme.changed');
         res.json({ ok: true, topics: saved });
       } catch (e) {
         console.error('[prayer] topics write failed:', (e as Error).message);
@@ -195,7 +195,7 @@ export function registerPrayerRoutes(app: Express): void {
           }
           throw e;
         }
-        emitRoomEvent(roomId, 'prayer.changed', id);
+        void emitRoomEvent(roomId, 'prayer.changed', id);
         res.status(cid ? 201 : 200).json({ ok: true, id, idempotentReplay: false });
       } catch (e) {
         console.error('[prayer] share write failed:', (e as Error).message);
@@ -223,7 +223,7 @@ export function registerPrayerRoutes(app: Express): void {
           return res.status(403).json({ error: 'Only the author or host can delete.' });
         }
         await softDeleteShare(shareId, now());
-        emitRoomEvent(roomId, 'prayer.changed', shareId);
+        void emitRoomEvent(roomId, 'prayer.changed', shareId);
         res.json({ ok: true });
       } catch (e) {
         console.error('[prayer] share delete failed:', (e as Error).message);
@@ -249,7 +249,7 @@ export function registerPrayerRoutes(app: Express): void {
       if (add) await intercede(shareId, me, now());
       else await unintercede(shareId, me);
       const n = await intercessionCount(shareId);
-      emitRoomEvent(roomId, 'prayer.changed', shareId, n);
+      void emitRoomEvent(roomId, 'prayer.changed', shareId, n);
       res.json({ ok: true, intercessions: n, didIntercede: add });
     } catch (e) {
       console.error('[prayer] intercede failed:', (e as Error).message);
@@ -283,7 +283,7 @@ export function registerPrayerRoutes(app: Express): void {
         }
         const reason = String((req.body ?? {}).reason ?? 'other').slice(0, 200);
         await hideShare(shareId, me, reason, now());
-        emitRoomEvent(roomId, 'moderation.changed', shareId);
+        void emitRoomEvent(roomId, 'moderation.changed', shareId);
         res.json({ ok: true, hidden: true });
       } catch (e) {
         console.error('[prayer] hide failed:', (e as Error).message);
@@ -302,7 +302,7 @@ export function registerPrayerRoutes(app: Express): void {
           return res.status(404).json({ error: 'Share not found.' });
         }
         await unhideShare(shareId);
-        emitRoomEvent(roomId, 'moderation.changed', shareId);
+        void emitRoomEvent(roomId, 'moderation.changed', shareId);
         res.json({ ok: true, hidden: false });
       } catch (e) {
         console.error('[prayer] unhide failed:', (e as Error).message);
@@ -336,7 +336,7 @@ export function registerPrayerRoutes(app: Express): void {
           reason: reason as ReportReason, at: now(),
         });
         // 只通知「有举报状态变化」，**不含举报人身份**
-        if (created) emitRoomEvent(roomId, 'moderation.changed', shareId);
+        if (created) void emitRoomEvent(roomId, 'moderation.changed', shareId);
         res.json({ ok: true, created });
       } catch (e) {
         console.error('[prayer] report failed:', (e as Error).message);

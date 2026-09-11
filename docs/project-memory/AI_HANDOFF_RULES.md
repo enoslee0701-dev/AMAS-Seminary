@@ -49,10 +49,18 @@
 > ### ⬤ 当前阶段状态（写代码前必须先确认这一条）
 >
 > ```
-> DB-3 ~ DB-12  = CLOSED    DB-13A = CLOSED（已验收）
-> DB-13B        = 完成，等 Supervisor 验收
->                 COMMUNITY + LEARNING + PUSH + PRAYER 整域已切到 Postgres
+> DB-3 ~ DB-12  = CLOSED    DB-13A = CLOSED    DB-13B = CLOSED（均已验收）
+> DB-13C        = 完成，等 Supervisor 验收
+>                 realtime 事件日志已切到 Postgres
+> ACTIVE SQLITE WRITE TABLES = 1（只剩 users）
 > ```
+>
+> **DB-13C 起**：`room_realtime_events` 运行时读写 = 0，事件日志在
+> `public.app_room_realtime_events`，`eventId` 由 Postgres IDENTITY 分配。
+> 唯一还在写 SQLite 的是 `users`（身份域，属 DB-4，**不要动**）。
+>
+> **多实例口径不得夸大**：事件日志跨实例可见 ≠ 整个后端支持多实例。
+> legacy 用户身份仍在本地 SQLite，所以「整体多实例」**尚未验证**。
 >
 > **DB-13B 起的硬规则**：这四个域的运行时数据在 **Postgres**，身份是
 > **Supabase UUID**（D-42）。SQLite 里对应的表**运行时写入必须为 0** ——

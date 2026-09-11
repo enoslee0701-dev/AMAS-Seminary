@@ -34,7 +34,9 @@ export function registerRoomStreamRoutes(app: Express): void {
    * `text/event-stream`，只发失效通知，不含任何业务数据。
    */
   app.get('/api/rooms/:roomId/stream', requireAuth, requireRoomExists, requireRoomMember,
-    (req: Request, res: Response) => {
+    // DB-13C：取起始游标与断线续传都要读 Postgres，因此 handler 是 async。
+    // SSE 连接在 handler 返回后仍然活着（res 不 end），async 不影响这一点。
+    async (req: Request, res: Response) => {
       const p = req.principal;
       if (!p || p.kind !== 'user') { res.status(401).end(); return; }
       const userId = p.user.id;
@@ -52,14 +54,15 @@ export function registerRoomStreamRoutes(app: Express): void {
         res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
       };
 
-      // 先告知当前 cursor，客户端据此对齐 lastEventId
-      send('ready', { cursor: currentEventId(), serverNow: Date.now() });
+      // 先告知当前 cursor，客户端据此对齐 lastEventId。
+      // DB-13C：事件日志在 Postgres，取游标与续传都成了网络往返，因此是 async。
+      send('ready', { cursor: await currentEventId(), serverNow: Date.now() });
 
       // 断线续传：把 since 之后的事件补齐。
       // 客户端拿到后仍会做一次 full refresh，因此即使补不全也不会永久 stale（§8）。
       const since = Number(req.query.since ?? 0);
       if (Number.isFinite(since) && since > 0) {
-        for (const e of eventsSince(roomId, since)) send('room', e);
+        for (const e of await eventsSince(roomId, since)) send('room', e);
       }
 
       const unsub = subscribeRoom(roomId, (e: RoomEvent) => send('room', e));

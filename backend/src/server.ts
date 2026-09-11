@@ -143,8 +143,11 @@ server.listen(config.port, () => {
   // Realtime：全局一个事件轮询器（跨实例可见性 + 兜底），不是每连接一个
   startEventPoller();
   console.log(realtimeDeploymentNote(process.env.DB_PATH?.trim() || '<backend>/data/amas.sqlite'));
-  const swept = sweepRealtimeEvents();
-  if (swept > 0) console.log(`[amas-backend] realtime: swept ${swept} expired event(s)`);
+  // DB-13C：保留期裁剪走 Postgres，是网络往返。启动不等它 ——
+  // 裁剪失败只写日志，绝不阻止服务起来。
+  void sweepRealtimeEvents().then(swept => {
+    if (swept > 0) console.log(`[amas-backend] realtime: swept ${swept} expired event(s)`);
+  });
 });
 
 /**

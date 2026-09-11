@@ -24,7 +24,8 @@
 > DB-11 ✅  CLOSED
 > DB-12 ✅ **CLOSED**（Supervisor 已正式验收，canonical head `9e374f5`）
 > DB-13A ✅ **CLOSED**（已验收）—— canonical SQLite 写入守卫 + 剩余 DAL 清点
-> DB-13B 🔵 **完成待验收** —— COMMUNITY + LEARNING + PUSH + PRAYER 整域切到 Postgres
+> DB-13B ✅ **CLOSED**（已验收）—— COMMUNITY + LEARNING + PUSH + PRAYER 整域
+> DB-13C 🔵 **完成待验收** —— realtime 事件日志切到 Postgres + SQLite 写入底线
 > ```
 >
 > ---
@@ -35,9 +36,32 @@
 > STAGING DATABASE READY
 > DB-3 ~ DB-12  = CLOSED（DB-12 已正式验收）
 > DB-13A CANONICAL SQLITE GUARD + REMAINING DAL AUDIT = CLOSED（已验收）
-> DB-13B REMAINING APP DAL CUTOVER = 完成，待 Supervisor 验收
-> 验收世系      0af8cc6 → de34fe5 → 88a908b → b67eabc → 9e374f5 → b7c619a → 156c55a
+> DB-13B REMAINING APP DAL CUTOVER = CLOSED（已验收）
+> DB-13C REALTIME EVENT STORE CUTOVER = 完成，待 Supervisor 验收
+> 验收世系      … → 9e374f5 → b7c619a → 156c55a → 1e36ec5 → 099f59b
 > ```
+>
+> ### DB-13C 切换结果（当轮实测）
+>
+> ```
+> ACTIVE SQLITE WRITE TABLES   2 → **1**
+> 唯一剩余写表                  users（身份域，属 DB-4 范围，本轮不碰）
+> room_realtime_events         运行时读写 = 0（DDL 按 §12 保留，不做 DROP）
+> 事件日志                      public.app_room_realtime_events
+> eventId                      Postgres GENERATED ALWAYS AS IDENTITY 分配
+> createdAt                    Postgres timestamptz ↔ 对外 epoch 毫秒，协议未变
+> ```
+>
+> **多实例口径（精确表达，不夸大）**：
+>
+> ```
+> REALTIME EVENT LOG:            SHARED POSTGRES / CROSS-INSTANCE VISIBLE
+> OVERALL BACKEND MULTI-INSTANCE: NOT YET FULLY VERIFIED
+>                                 legacy user identity 仍在本地 SQLite
+> ```
+>
+> 旧的「本地文件 SQLite → 服务只能单实例」这句话对**事件日志**已不成立，
+> 但对**整个后端**仍然成立 —— 两句必须同时出现，启动日志里也是这么打的。
 >
 > ### DB-13B 切换结果（当轮实测）
 >
@@ -166,8 +190,12 @@
 > public staging 暴露 · 往空的 app_* 表塞假数据 · 复活 SQLite users/密码哈希 ·
 > 把 legacy user id 当作活动身份。
 >
-> **当前活动任务：DB-13B 已完成，等 Supervisor 验收。** 未开工任何后续阶段
+> **当前活动任务：DB-13C 已完成，等 Supervisor 验收。** 未开工任何后续阶段
 > （STAGING-1B persona 验收 · 0027 · DB-4 · public staging · production）。
+>
+> 课程目录 admin 写路径维持 501 —— 按裁定是
+> `DEFERRED PRODUCT OWNERSHIP DECISION / NON-BLOCKING`，不是 schema 缺陷。
+> **本阶段不新增课程管理 UI。** 理由见更正后的 D-43。
 >
 > **验证环境**：本地 PostgreSQL **17.6**（与 Supabase 目标版本一致）+ 18.6 对照。
 > **仍未验证**：真实 Supabase（Auth / PostgREST / RLS 运行时 / SECURITY DEFINER 上下文 /
