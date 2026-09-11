@@ -35,6 +35,8 @@ backend/recordings/
 .tmp-phase5/
 .tmp-sysroom/
 backend/.tmp-test/
+# #26：npm run dev 的一次性开发库（不再写 canonical backend/data/amas.sqlite）
+backend/.tmp-dev/
 .tmp-rooms/
 .tmp-presence/
 .tmp-reading/

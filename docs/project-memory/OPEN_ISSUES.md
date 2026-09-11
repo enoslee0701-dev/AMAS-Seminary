@@ -1373,10 +1373,10 @@ JWTS + user_roles，因此 DB-13B 把 growth / posts 切到 Postgres 后它一�
 ## #26 CANONICAL SQLITE WRITE CONTAINMENT
 
 ```
-status:    OPEN（静默写入向量已封堵，存储布局本身未重新设计）
+status:    OPEN（收窄：开发写入已围堵；**存储布局本身仍未重新设计**）
 severity:  P2 RELEASE HARDENING
 owner:     unassigned
-phase:     DB-13A
+phase:     DB-13A → #26 开发围堵（2026-09-11）
 blocking:  PUBLIC STAGING · PRODUCTION
 不阻塞:     内部 staging 验收
 ```
@@ -1410,10 +1410,40 @@ canonical 数据文件 `backend/data/amas.sqlite` 执行了表重建级 schema �
 production                  → 早已由 RB-06 强制：缺 DB_PATH 直接 exit 1
 ```
 
-**残留（本条因此仍 OPEN）**：dev 仍可以对 canonical 库做**行级**写入 ——
-那是 dev 数据库的本职，堵掉会破坏开发流程。更根本的问题是
-canonical 数据文件位于仓库目录内的一个**缺省**路径上；重新设计存储布局
-不属于本轮范围（Supervisor：不要在本阶段重构存储）。
+**已补齐（#26 开发围堵，2026-09-11）**：上面那条「dev 仍可对 canonical 做行级
+写入」的残留已经封掉。当时的判断是「堵掉会破坏开发流程」，这个判断不成立 ——
+破坏开发流程的不是围堵，是**围堵之后没给开发一条路**。现在两件事一起做：
+
+```
+开发上下文缺 DB_PATH        → 抛错拒绝启动（与测试上下文同样 fail closed）
+                             错误信息给出三条可操作出路，不是一句「拒绝」
+npm run dev                 → 经 backend/scripts/dev.mjs 显式指向
+                             <backend>/.tmp-dev/dev.sqlite（一次性，可随时删）
+                             跨平台：Windows 的 cmd/PowerShell 不支持内联环境变量，
+                             故用 node 包装器而非新增 cross-env 依赖
+兼容逃生口                  → AMAS_ALLOW_CANONICAL_DB=1 恢复旧行为，
+                             启动日志显式标注；**不放宽** schema 守卫
+production                  → 语义刻意不变：仍落 canonical，仍由 RB-06
+                             startupGuard 统一列出缺配置后 exit(1)。
+                             在 dbPath 里提前抛会把那份清单换成一条模块加载
+                             异常，是退步不是加固。
+```
+
+**仍 OPEN 的部分**：canonical 数据文件位于仓库目录内的一个**缺省**路径上 ——
+重新设计存储布局不属于本轮范围（Supervisor：不要在本阶段重构存储）。
+本条因此仍 OPEN，只是范围收窄到「存储布局」这一项。
+
+**回归**：`backend/src/test/issue26-dev-db-containment.test.ts`（17 项，已并入
+`test:local`）。负向控制：临时把 dev 分支改回旧行为重跑，5 条转红 ——
+其中一条正是「canonical 文件在本组用例全程未被改动」，旧代码确实会把
+`backend/data/amas.sqlite` 凭空创建出来。恢复后 17/17。
+另有一次 `npm run dev` 实机冒烟：health 200、dev 库落在 `.tmp-dev`、
+canonical 未被创建。
+
+**注意**：`db13a-canonical-db-guard.test.ts` 里原先断言「非测试上下文缺 DB_PATH
+→ 落 canonical」的那条，断言的正是本轮要封的行为，已改为断言新语义
+（production 一路仍落 canonical，开发一路拒绝）。DB-13A 的两条保证未被削弱，
+有独立用例钉住。
 
 **回归**：`backend/src/test/db13a-canonical-db-guard.test.ts`（16 项，已并入
 `test:local`），含一个真进程用例证明缺 DB_PATH 时拒绝启动，

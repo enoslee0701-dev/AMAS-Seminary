@@ -158,11 +158,22 @@ describe('DB-13A 守卫 · 路径解析判定', () => {
     assert.equal(r.source, 'env');
   });
 
-  test('非测试上下文缺 DB_PATH → 落 canonical，并标记出来', () => {
-    const r = resolveDbPath({}, FAKE_ROOT);
+  /*
+   * 这条原本断言「非测试上下文缺 DB_PATH → 落 canonical」。
+   * #26 把开发上下文也改成了 fail closed，所以旧断言不再成立 ——
+   * 它描述的正是 #26 要封的那个行为。改为断言新语义，
+   * 同时保留 production 一路仍落 canonical（RB-06 语义不得被改动）。
+   * 开发上下文的完整覆盖在 issue26-dev-db-containment.test.ts。
+   */
+  test('production 缺 DB_PATH → 仍落 canonical，交给 RB-06 统一拒绝', () => {
+    const r = resolveDbPath({ NODE_ENV: 'production' }, FAKE_ROOT);
     assert.equal(r.path, canonicalDbPath(FAKE_ROOT));
-    assert.equal(r.source, 'default');
+    assert.equal(r.source, 'production');
     assert.equal(r.isCanonicalDefault, true);
+  });
+
+  test('开发上下文缺 DB_PATH → 拒绝（#26）', () => {
+    assert.throws(() => resolveDbPath({}, FAKE_ROOT), /开发环境/);
   });
 
   test('显式指到 canonical 文件本身也算显式 —— 操作者自己指的', () => {
@@ -175,14 +186,16 @@ describe('DB-13A 守卫 · 路径解析判定', () => {
     const envLine = describeDbPath(resolveDbPath({ DB_PATH: '/tmp/x.sqlite' }, FAKE_ROOT));
     assert.match(envLine, /\/tmp\/x\.sqlite/);
     assert.match(envLine, /DB_PATH/);
-    const defLine = describeDbPath(resolveDbPath({}, FAKE_ROOT));
+    const defLine = describeDbPath(resolveDbPath({ NODE_ENV: 'production' }, FAKE_ROOT));
     assert.match(defLine, /amas\.sqlite/);
     assert.match(defLine, /缺省/);
   });
 });
 
 describe('DB-13A 守卫 · canonical 改 schema 授权', () => {
-  const canonical = resolveDbPath({}, FAKE_ROOT);
+  // #26 之后开发上下文缺 DB_PATH 会抛错，因此这里改用 production 上下文
+  // 构造同一个 canonical resolution —— 被测的 isCanonicalDefault 完全一致。
+  const canonical = resolveDbPath({ NODE_ENV: 'production' }, FAKE_ROOT);
   const explicit = resolveDbPath({ DB_PATH: '/tmp/x.sqlite' }, FAKE_ROOT);
 
   test('canonical 缺省 + 无授权 → 抛错，并列出会改哪几张表', () => {
