@@ -3,6 +3,8 @@ import React, { useState, useEffect, Suspense } from 'react';
 import Navigation from './components/Navigation';
 import Dashboard from './components/Dashboard';
 import AuthView from './components/AuthView';
+import { resolveBack } from './services/navigation/back';
+import { pushBackHandler } from './services/navigation/backButton';
 import SplashView from './components/SplashView';
 import ViewLoadingFallback from './components/ViewLoadingFallback';
 import OfflineNotice from './components/OfflineNotice';
@@ -477,6 +479,39 @@ const App: React.FC = () => {
       setCurrentView(ViewState.COURSES);
     }
   };
+
+  /*
+   * Android 硬件返回键。
+   *
+   * 在此之前 App 没有注册 backButton 监听，而 @capacitor/app 的默认实现是
+   * 「能 goBack 就 goBack，否则什么都不做」；本 App 是 ViewState 驱动的单页、
+   * 从不 pushState，canGoBack() 恒为 false —— 返回键因此在每个页面都是死键。
+   *
+   * 语义交给纯函数 resolveBack（可穷举单测），这里只负责把判定结果执行掉。
+   * 只有「首页 + 什么浮层都没开」才真的退出 App。
+   */
+  useEffect(() => pushBackHandler(() => {
+    const action = resolveBack({
+      view: currentView,
+      courseDetailOpen: selectedCourseId !== null,
+      userProfileOpen: viewingUserProfile !== null,
+      voiceRoomOpen: activeVoiceRoom !== null,
+      voiceRoomMinimized: isRoomMinimized,
+    });
+    switch (action.type) {
+      case 'closeVoiceRoom': setActiveVoiceRoom(null); return true;
+      case 'closeUserProfile': setViewingUserProfile(null); return true;
+      case 'closeCourseDetail': setSelectedCourseId(null); return true;
+      case 'goView':
+        if (action.communityTab) setCommunityTab(action.communityTab);
+        setCurrentView(action.view);
+        return true;
+      case 'exit':
+      default:
+        // 不消费 —— 交回 Capacitor 默认处理（在首页按返回本就该能退出）。
+        return false;
+    }
+  }), [currentView, selectedCourseId, viewingUserProfile, activeVoiceRoom, isRoomMinimized]);
 
   // Splash on cold start
   if (showSplash) {

@@ -77,7 +77,18 @@ try {
     id: 'a11y-local', name: '本地验证', email: 'a11y@example.com', role: 'student',
   })));
   await page.goto(base, { waitUntil: 'networkidle2' });
-  await sleep(9000);
+  /* 等 App 真正过了启动页再开测。固定 sleep 会在 vite 冷编译时抓空 ——
+     本轮就出现过一次「浮层打开」失败、实为卡在 SplashView 的假红。 */
+  const waitForApp = async (max = 90) => {
+    for (let i = 0; i < max; i++) {
+      const ready = await page.evaluate(() => [...document.querySelectorAll('button')]
+        .some(b => (b.innerText || '').trim().endsWith('校友圈')));
+      if (ready) return true;
+      await sleep(1000);
+    }
+    return false;
+  };
+  if (!await waitForApp()) { console.error('App 未能在 90 秒内离开启动页'); process.exit(1); }
 
   /** 两个搜索按钮的状态。索引 0 = 吸顶栏那个，1 = 悬浮那个（按 DOM 顺序）。 */
   const searches = () => page.evaluate(() => [...document.querySelectorAll('button')]

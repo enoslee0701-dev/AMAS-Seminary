@@ -5,6 +5,7 @@ import {
   PlayCircle, Sparkles, Library, Users, User,
 } from 'lucide-react';
 import { Course, NewsItem, ViewState } from '../types';
+import { pushBackHandler } from '../services/navigation/backButton';
 
 interface GlobalSearchProps {
   courses: Course[];
@@ -119,6 +120,10 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({
    * 刚刚 autoFocus 好的输入框抢回搜索按钮。表现为「输入框自动聚焦」这条断言
    * 时红时绿。归还这件事只该在**真正卸载时**发生一次。
    */
+  /* 硬件返回键：浮层开着时，返回要关的是浮层本身，不是它底下的页面。
+     注册在栈顶，消费掉这次按键。 */
+  useEffect(() => pushBackHandler(() => { onClose(); return true; }), [onClose]);
+
   useEffect(() => () => {
     if (!opener) return;
     /*
