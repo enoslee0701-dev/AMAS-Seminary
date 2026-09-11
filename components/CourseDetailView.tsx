@@ -524,7 +524,14 @@ const CourseDetailView: React.FC<CourseDetailViewProps> = ({ course, onUpdateCou
       {/* 1. Sticky Header */}
       <div className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-100 px-4 pt-safe-top pb-3 flex items-center justify-between shadow-sm">
          <div className="flex items-center">
-            <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 text-slate-600 transition">
+            {/* 顶栏三个图标键原本都没有可访问名称，读屏念到的是三个「按钮」；
+                尺寸也都不足（40 / 36 / 36）。这一排贴着屏幕上边缘，伪元素向上
+                扩会扩到视口外、真手指够不着，所以这里加内边距做真尺寸。 */}
+            <button
+               onClick={onBack}
+               aria-label="返回"
+               className="p-3 -ml-3 rounded-full hover:bg-slate-100 text-slate-600 transition"
+            >
                <ChevronLeft size={24} />
             </button>
             <h1 className="ml-1 font-bold text-slate-900 text-base truncate max-w-[200px]">{course.title}</h1>
@@ -532,13 +539,16 @@ const CourseDetailView: React.FC<CourseDetailViewProps> = ({ course, onUpdateCou
          <div className="flex items-center space-x-1 relative">
             <button 
                onClick={handleShare}
-               className="p-2 rounded-full hover:bg-slate-100 text-slate-500 active:bg-slate-200 transition"
+               aria-label="分享课程"
+               className="p-3 rounded-full hover:bg-slate-100 text-slate-500 active:bg-slate-200 transition"
             >
                <Share2 size={20} />
             </button>
             <button 
                onClick={() => setShowMenu(!showMenu)}
-               className={`p-2 rounded-full transition ${showMenu ? 'bg-blue-50 text-blue-600' : 'hover:bg-slate-100 text-slate-500'}`}
+               aria-label="更多操作"
+               aria-expanded={showMenu}
+               className={`p-3 -mr-1 rounded-full transition ${showMenu ? 'bg-blue-50 text-blue-600' : 'hover:bg-slate-100 text-slate-500'}`}
             >
                <MoreHorizontal size={20} />
             </button>
@@ -660,6 +670,7 @@ const CourseDetailView: React.FC<CourseDetailViewProps> = ({ course, onUpdateCou
                <div className="absolute inset-0 flex flex-col items-center justify-center text-white p-4 text-center">
                   <button 
                     onClick={() => { setIsPlaying(true); setIsPaused(false); setShowControls(true); }}
+                    aria-label="播放课程"
                     className="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center border-2 border-white/50 mb-4 group-hover:scale-110 transition-transform shadow-lg"
                   >
                     <Play size={32} fill="white" className="ml-1" />
@@ -769,7 +780,10 @@ const CourseDetailView: React.FC<CourseDetailViewProps> = ({ course, onUpdateCou
              {details.description && details.description.length > 60 && (
                  <button 
                     onClick={() => setIsDescExpanded(!isDescExpanded)}
-                    className="mt-1 text-xs font-bold text-blue-600 flex items-center hover:text-blue-700 active:scale-95 transition-transform"
+                    aria-expanded={isDescExpanded}
+                    /* 12px 纯文字，实测 64×16。padding 撑到 44 再用等量负 margin
+                       还原布局；上下吃的都是简介段落的行间空白，没有可点元素。 */
+                    className="mt-1 text-xs font-bold text-blue-600 flex items-center hover:text-blue-700 active:scale-95 transition-transform min-h-[44px] -my-3.5 py-3.5"
                  >
                     {isDescExpanded ? '收起' : '展开全文'}
                     {isDescExpanded ? <ChevronUp size={12} className="ml-1"/> : <ChevronDown size={12} className="ml-1"/>}
@@ -879,7 +893,9 @@ const CourseDetailView: React.FC<CourseDetailViewProps> = ({ course, onUpdateCou
                           <button
                             onClick={(e) => toggleComplete(lesson, idx, e)}
                             aria-label={isDone ? '标记为未完成' : '标记为已完成'}
-                            className={`ml-3 shrink-0 w-7 h-7 rounded-full flex items-center justify-center border transition-all active:scale-90 ${
+                            /* 28×28 → 热区 46×46。左边与课时标题有 ml-3（12px）间隔，
+                               扩 9px 碰不到；上下落在课时行自己的内边距里。 */
+                            className={`relative ml-3 shrink-0 w-7 h-7 rounded-full flex items-center justify-center border transition-all active:scale-90 before:absolute before:-inset-[9px] before:content-[''] ${
                                isDone
                                  ? 'bg-emerald-500 text-white border-emerald-500 shadow-sm'
                                  : 'bg-white text-slate-300 border-slate-200 hover:border-emerald-400 hover:text-emerald-500'

@@ -132,10 +132,11 @@ window.__tt = {
       const r = el.getBoundingClientRect();
       if (r.width < 2 || r.height < 2) return false;
       if (r.bottom <= 0 || r.top >= window.innerHeight) return false;
-      /* 横向滚出屏幕的（轮播的非当前页、横滚 chip 条的后半截）现在压根
-         没呈现给用户，此刻量不出热区也不该判它红。轮播的 CTA 另有
-         专门一段把每张幻灯片切出来单独量。 */
-      if (r.right <= 0 || r.left >= window.innerWidth) return false;
+      /* 横向也要求完整落在视口内，和纵向对称。
+         横滚条里只露半截的卡片，几何中心可能就在屏幕外，此刻量出来是 0×0 ——
+         那是「还没横着滚到」，不是点不到。扫掠会把每条横滚容器也步进一遍，
+         元素完整露出来的那一刻才判它。 */
+      if (r.left < -1 || r.right > window.innerWidth + 1) return false;
       const cs = getComputedStyle(el);
       return cs.opacity !== '0' && cs.visibility !== 'hidden' && cs.pointerEvents !== 'none';
     });
@@ -212,6 +213,7 @@ window.__tt = {
       const h = window.__tt.hit(el);
       out.push({
         sig: window.__tt.sig(el),
+        named: !!window.__tt.name(el),
         name: (window.__tt.name(el) || el.tagName).slice(0, 20),
         w: h.blocked ? 0 : h.w,
         h: h.blocked ? 0 : h.h,
@@ -221,6 +223,26 @@ window.__tt = {
         cls: (typeof el.className === 'string' ? el.className : '').split(/\s+/).slice(0, 3).join('.'),
       });
     }
+    return out;
+  },
+
+  /**
+   * 当前纵向位置下采样一轮，并把页面上每条横滚容器也步进一遍再各采一轮 ——
+   * 否则横滚条里默认没露出来的那些（分类 chip 的后半截、12 项事奉倾向画廊）
+   * 永远轮不到被判。scrollLeft 是同步的，可以在一次 evaluate 里做完。
+   */
+  sweepOnceWide() {
+    const out = [];
+    const push = () => { for (const r of window.__tt.sweepOnce()) out.push(r); };
+    const scrollers = [...document.querySelectorAll('*')].filter(e =>
+      e.scrollWidth > e.clientWidth + 4 && /auto|scroll/.test(getComputedStyle(e).overflowX));
+    const saved = scrollers.map(s => s.scrollLeft);
+    push();
+    for (const s of scrollers) {
+      const max = s.scrollWidth - s.clientWidth;
+      for (const f of [0.25, 0.5, 0.75, 1]) { s.scrollLeft = Math.round(max * f); push(); }
+    }
+    scrollers.forEach((s, i) => { s.scrollLeft = saved[i]; });
     return out;
   },
 
@@ -328,6 +350,11 @@ try {
    */
   const sweepTab = async (tab) => {
     if (!await openPage(tab)) return null;
+    return sweepHere();
+  };
+
+  /** 同一套扫掠，但假设调用方已经把页面带到位了（用于非标签页视图）。 */
+  const sweepHere = async () => {
     const max = await page.evaluate(() => {
       const s = window.__tt.scroller();
       return Math.max(0, s.scrollHeight - s.clientHeight);
@@ -336,7 +363,7 @@ try {
     for (let y = 0; y <= max + 160; y += 160) {
       await page.evaluate(v => { window.__tt.scroller().scrollTop = v; }, Math.min(y, max));
       await sleep(340);
-      for (const r of await page.evaluate(() => window.__tt.sweepOnce())) {
+      for (const r of await page.evaluate(() => window.__tt.sweepOnceWide())) {
         const prev = best.get(r.sig);
         const okNow = r.w >= MIN && r.h >= MIN;
         if (!prev) { best.set(r.sig, { ...r, ok: okNow }); continue; }
@@ -346,7 +373,12 @@ try {
         if (Math.min(r.w, r.h) > Math.min(prev.w, prev.h)) best.set(r.sig, { ...r, ok: false });
       }
     }
-    return { max, seen: best.size, bad: [...best.values()].filter(r => !r.ok) };
+    const all = [...best.values()];
+    return {
+      max, seen: all.length,
+      bad: all.filter(r => !r.ok),
+      unnamed: all.filter(r => !r.named),
+    };
   };
 
   const size = m => m.missing ? '缺失'
@@ -605,14 +637,74 @@ try {
     }
 
     /* ---------- 首页 / 课程 / 校友圈：整页扫掠 ---------- */
-    for (const tab of ['首页', '课程', '校友圈']) {
-      const r = await sweepTab(tab);
-      if (!r) { check(`${tab} · 能进入该页`, false, '导航失败'); anyFatal = true; continue; }
-      check(`${tab} · 每个可交互控件都有一个滚动位置能完整点到（≥${MIN}×${MIN}）`,
+    const reportSweep = (label, r) => {
+      check(`${label} · 每个可交互控件都有一个滚动位置能完整点到（≥${MIN}×${MIN}）`,
         r.bad.length === 0,
         r.bad.length
           ? r.bad.map(b => `「${b.name}」${b.w}×${b.h}（可视 ${b.vw}×${b.vh} ${b.box} ${b.cls}）`).join(' · ')
           : `扫掠 ${r.max}px，共 ${r.seen} 个控件全部达标`);
+      check(`${label} · 每个可交互控件都有可访问名称`,
+        r.unnamed.length === 0,
+        r.unnamed.length
+          ? r.unnamed.map(b => `${b.cls || '?'}（可视 ${b.vw}×${b.vh}）`).join(' · ')
+          : `${r.seen} 个全部有名`);
+    };
+
+    for (const tab of ['首页', '课程', '校友圈']) {
+      const r = await sweepTab(tab);
+      if (!r) { check(`${tab} · 能进入该页`, false, '导航失败'); anyFatal = true; continue; }
+      reportSweep(tab, r);
+    }
+
+    /* ---------- 非标签页的四个视图 ---------- */
+    const deepViews = [
+      {
+        label: '课程详情', tab: '课程',
+        // 课程卡整行是带 onClick 的 <div>，不是 button
+        enter: () => page.evaluate(() => {
+          const d = [...document.querySelectorAll('div')]
+            .find(x => /课时|讲义筹备中/.test(x.innerText || '')
+              && x.getBoundingClientRect().height < 140);
+          d?.click(); return !!d;
+        }),
+        expect: '课时',
+      },
+      {
+        label: '定制化神学', tab: '课程',
+        enter: () => page.evaluate(() => {
+          const b = [...document.querySelectorAll('button')]
+            .find(x => (x.innerText || '').includes('进入定制化神学'));
+          b?.click(); return !!b;
+        }),
+        expect: '定制化神学',
+      },
+      {
+        label: '口袋神学', tab: '课程',
+        enter: () => page.evaluate(() => {
+          const b = [...document.querySelectorAll('button')]
+            .find(x => (x.innerText || '').includes('口袋神学'));
+          b?.click(); return !!b;
+        }),
+        expect: '口袋神学',
+      },
+      {
+        label: '学院介绍', tab: '首页',
+        enter: () => page.evaluate(() => {
+          const b = [...document.querySelectorAll('button')]
+            .find(x => (x.innerText || '').trim().startsWith('全部服务'));
+          b?.click(); return !!b;
+        }),
+        expect: '学院',
+      },
+    ];
+    for (const v of deepViews) {
+      if (!await openPage(v.tab)) { check(`${v.label} · 能进入`, false, '导航失败'); anyFatal = true; continue; }
+      const entered = await v.enter();
+      await sleep(1800);
+      const there = await page.evaluate(t => document.body.innerText.includes(t), v.expect);
+      check(`${v.label} · 能从「${v.tab}」进到该页`, entered && there, `找「${v.expect}」`);
+      if (!entered || !there) continue;
+      reportSweep(v.label, await sweepHere());
     }
   }
 } finally {

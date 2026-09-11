@@ -2839,7 +2839,8 @@ const PocketTheologyView: React.FC<Props> = ({ onBack }) => {
       <div className="min-h-screen bg-gradient-to-br from-[#04285F] via-[#0A3878] to-[#0F4690] text-white flex flex-col" style={{ paddingTop: 'var(--safe-top)' }}>
         {/* Progress bar */}
         <div className="px-4 flex items-center" style={{ gap: 6 }}>
-          <button onClick={skipOnboarding} className="text-[11px] text-white/60 font-bold py-2 pr-2">跳过</button>
+          {/* 实测 30×32。引导页右上角的「跳过」是这一屏的出口之一，补到 44。 */}
+          <button onClick={skipOnboarding} className="text-[11px] text-white/60 font-bold py-2 pr-2 min-w-[44px] min-h-[44px] flex items-center justify-end">跳过</button>
           <div className="flex-1 h-1 bg-white/10 rounded-full overflow-hidden">
             <div className="h-full bg-[#E8C98C] rounded-full transition-all" style={{ width: `${(step / 4) * 100}%` }} />
           </div>
@@ -2857,7 +2858,8 @@ const PocketTheologyView: React.FC<Props> = ({ onBack }) => {
               <button onClick={() => setStep(1)} className="bg-[#E8C98C] text-[#04285F] rounded-full font-black px-8 py-3.5 text-[14px] active:scale-95 transition flex items-center mx-auto" style={{ gap: 6 }}>
                 开始 <ChevronRight size={16} strokeWidth={3} />
               </button>
-              <button onClick={skipOnboarding} className="block mx-auto mt-4 text-[11px] text-white/50 font-bold">先到处看看</button>
+              {/* 实测 55×17，纯文字。padding 撑到 44 再用等量负 margin 还原布局。 */}
+              <button onClick={skipOnboarding} className="block mx-auto mt-4 text-[11px] text-white/50 font-bold min-h-[44px] -my-3.5 py-3.5">先到处看看</button>
             </div>
           )}
 

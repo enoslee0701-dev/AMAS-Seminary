@@ -171,7 +171,12 @@ export const HeroSection = ({ onBack, onItemClick }: HeroSectionProps) => {
       {/* Main Header */}
       <div className="fixed top-0 left-0 right-0 max-w-md mx-auto z-20 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 py-3 pt-safe-top flex items-center justify-between shadow-sm transition-all">
         <div className="flex items-center">
-           <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 transition text-slate-600">
+           {/* 40×40 且没有可访问名称 —— 这是学院介绍唯一的出口。 */}
+           <button
+             onClick={onBack}
+             aria-label="返回"
+             className="p-3 -ml-3 rounded-full hover:bg-slate-100 transition text-slate-600"
+           >
               <ChevronLeft size={24} />
            </button>
            <h2 className="ml-1 font-bold text-lg text-slate-900 tracking-tight">学院概览</h2>

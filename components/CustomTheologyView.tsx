@@ -1429,7 +1429,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
     return (
       <div className="fixed inset-0 z-[120] max-w-md mx-auto flex flex-col bg-slate-50 animate-fade-in">
         <div className="flex items-center px-4 bg-white border-b border-slate-200" style={{ paddingTop: 'calc(var(--safe-top) + 8px)', paddingBottom: 10 }}>
-          <button onClick={() => setMode('home')} aria-label="返回" className="p-1 -ml-2 rounded-full hover:bg-slate-100 transition">
+          <button onClick={() => setMode('home')} aria-label="返回" className="p-2.5 -ml-3 rounded-full hover:bg-slate-100 transition">
             <ChevronLeft size={24} className="text-slate-900" />
           </button>
           <p className="ml-2" style={{ margin: 0, fontSize: 15, fontWeight: 800, color: '#1F2A37' }}>记录一次实际服事</p>
@@ -1510,7 +1510,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
     return (
       <div className="fixed inset-0 z-[120] max-w-md mx-auto flex flex-col bg-slate-50 animate-fade-in">
         <div className="flex items-center px-4 bg-white border-b border-slate-200" style={{ paddingTop: 'calc(var(--safe-top) + 8px)', paddingBottom: 10 }}>
-          <button onClick={() => setRoleDetail(null)} aria-label="返回" className="p-1 -ml-2 rounded-full hover:bg-slate-100 transition">
+          <button onClick={() => setRoleDetail(null)} aria-label="返回" className="p-2.5 -ml-3 rounded-full hover:bg-slate-100 transition">
             <ChevronLeft size={24} className="text-slate-900" />
           </button>
           <p className="ml-2 flex-1 min-w-0 truncate" style={{ margin: 0, fontSize: 15, fontWeight: 800, color: '#1F2A37' }}>{num} {a.label}</p>
@@ -1697,7 +1697,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
   return (
     <div className="min-h-screen bg-slate-50 pb-24 animate-fade-in relative">
       <div className="fixed top-0 left-0 right-0 max-w-md mx-auto z-20 bg-white/90 backdrop-blur-md px-4 py-3 pt-safe-top flex items-center shadow-sm border-b border-slate-200">
-        <button onClick={onBack} aria-label="返回" className="p-1 -ml-2 rounded-full hover:bg-slate-100 transition">
+        <button onClick={onBack} aria-label="返回" className="p-2.5 -ml-3 rounded-full hover:bg-slate-100 transition">
           <ChevronLeft size={24} className="text-slate-900" />
         </button>
         <h2 className="ml-2 font-bold text-lg text-slate-900">定制化神学</h2>
@@ -1756,7 +1756,8 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
             <button
               onClick={() => (cp ? setMode('cpResult') : openCp('quick'))}
               className="active:scale-95 transition-transform"
-              style={{ ...goldBtn, height: 38, fontSize: 12.5 }}
+              /* 实测 38 高。这是整页最主要的行动点。 */
+              style={{ ...goldBtn, minHeight: 44, fontSize: 12.5 }}
             >
               {cp ? '查看我的成长档案' : '测出我的事奉定位（30 题）'}
               <ChevronRight size={14} strokeWidth={2.6} />
@@ -1877,7 +1878,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                       <p style={{ margin: 0, fontSize: 11.5, fontWeight: 800, color: '#5C4A1E' }}>第二步 · 信仰基础与装备画像</p>
                       <p style={{ margin: '1px 0 0', fontSize: 10, color: '#7A6A45' }}>评估圣经与教义根基，生成你的专属装备路径</p>
                     </div>
-                    <button onClick={startQuiz} className="shrink-0 active:scale-95 transition" style={{ fontSize: 11, fontWeight: 800, color: '#04285F', border: '1px solid rgba(4,40,95,.3)', borderRadius: 999, padding: '5px 12px', background: '#FFF' }}>
+                    <button onClick={startQuiz} className="shrink-0 active:scale-95 transition flex items-center justify-center" style={{ /* 实测 48×29，长到 44 */ fontSize: 11, fontWeight: 800, color: '#04285F', border: '1px solid rgba(4,40,95,.3)', borderRadius: 999, padding: '5px 12px', minWidth: 44, minHeight: 44, background: '#FFF' }}>
                       {ct ? '重新评估' : '开始'}
                     </button>
                   </div>
@@ -1895,7 +1896,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
               <p style={{ margin: '0 0 12px', fontSize: 11.5, lineHeight: 1.7, color: '#667085' }}>
                 四层分开测量：信仰基础 · 门徒生命 · 事奉倾向 · 事奉准备度。结果是发展性参考，不是身份标签。
               </p>
-              <button onClick={() => openCp('quick')} className="w-full active:scale-[0.98] transition" style={{ ...goldBtn, width: '100%', justifyContent: 'center', height: 42 }}>
+              <button onClick={() => openCp('quick')} className="w-full active:scale-[0.98] transition" style={{ ...goldBtn, width: '100%', justifyContent: 'center', minHeight: 44 }}>
                 事奉倾向画像 · 精简版 · 30 题 <ChevronRight size={14} strokeWidth={2.6} />
               </button>
               <button onClick={() => openCp('standard')} className="w-full active:scale-[0.98] transition" style={{ ...navyBtn, width: '100%', marginTop: 8, height: 44 }}>
@@ -1908,7 +1909,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
                   <p style={{ margin: 0, fontSize: 11.5, fontWeight: 800, color: '#5C4A1E' }}>第二步 · 信仰基础与装备画像</p>
                   <p style={{ margin: '1px 0 0', fontSize: 10, color: '#7A6A45' }}>评估圣经与教义根基，生成你的专属装备路径</p>
                 </div>
-                <button onClick={startQuiz} className="shrink-0 active:scale-95 transition" style={{ fontSize: 11, fontWeight: 800, color: '#04285F', border: '1px solid rgba(4,40,95,.3)', borderRadius: 999, padding: '5px 12px', background: '#FFF' }}>
+                <button onClick={startQuiz} className="shrink-0 active:scale-95 transition flex items-center justify-center" style={{ /* 实测 48×29，长到 44 */ fontSize: 11, fontWeight: 800, color: '#04285F', border: '1px solid rgba(4,40,95,.3)', borderRadius: 999, padding: '5px 12px', minWidth: 44, minHeight: 44, background: '#FFF' }}>
                   {ct ? '重新评估' : '开始'}
                 </button>
               </div>
