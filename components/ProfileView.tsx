@@ -375,26 +375,32 @@ const ProfileView: React.FC<ProfileViewProps> = ({ favoriteCourseIds = [], onLog
          </div>
          <div className="space-y-4">
             <div>
-               <label className="block text-xs font-bold text-slate-600 mb-1">姓名/ID</label>
+               {/* 三个字段本来就有可见 label，只是没关联 —— 读屏念到的是无名输入框。
+                   用 htmlFor/id 关联比补 aria-label 好：可见文字就是它真正的名字。
+                   py-2.5 量出来 42 高，补到 py-3（46）。 */}
+               <label htmlFor="profile-edit-name" className="block text-xs font-bold text-slate-600 mb-1">姓名/ID</label>
                <input
+                 id="profile-edit-name"
                  type="text"
                  value={editForm.name}
                  onChange={(e) => setEditForm({...editForm, name: e.target.value})}
-                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-900 outline-none"
+                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-3 text-sm focus:ring-2 focus:ring-blue-900 outline-none"
                />
             </div>
             <div>
-               <label className="block text-xs font-bold text-slate-600 mb-1">学位</label>
+               <label htmlFor="profile-edit-degree" className="block text-xs font-bold text-slate-600 mb-1">学位</label>
                <input
+                 id="profile-edit-degree"
                  type="text"
                  value={editForm.degree}
                  onChange={(e) => setEditForm({...editForm, degree: e.target.value})}
-                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-900 outline-none"
+                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-3 text-sm focus:ring-2 focus:ring-blue-900 outline-none"
                />
             </div>
             <div>
-               <label className="block text-xs font-bold text-slate-600 mb-1">个人简介</label>
+               <label htmlFor="profile-edit-bio" className="block text-xs font-bold text-slate-600 mb-1">个人简介</label>
                <textarea
+                 id="profile-edit-bio"
                  value={editForm.bio}
                  onChange={(e) => setEditForm({...editForm, bio: e.target.value})}
                  rows={3}
@@ -422,7 +428,12 @@ const ProfileView: React.FC<ProfileViewProps> = ({ favoriteCourseIds = [], onLog
          <div className="flex justify-between items-center mb-6">
            <div className="flex items-center">
              {settingsPanel !== 'menu' && (
-               <button onClick={() => setSettingsPanel('menu')} className="mr-2 p-1.5 rounded-full text-slate-500 hover:bg-slate-100">
+               /* 28×28 且没有名称。向左扩 9px 落在弹窗自己的 p-6 内边距里。 */
+               <button
+                 onClick={() => setSettingsPanel('menu')}
+                 aria-label="返回"
+                 className="relative mr-2 p-1.5 rounded-full text-slate-500 hover:bg-slate-100 before:absolute before:-inset-[9px] before:content-['']"
+               >
                  <ChevronRight size={16} className="rotate-180" />
                </button>
              )}
@@ -430,7 +441,12 @@ const ProfileView: React.FC<ProfileViewProps> = ({ favoriteCourseIds = [], onLog
                {settingsPanel === 'menu' ? '设置' : settingsPanel === 'password' ? '修改密码' : settingsPanel === 'privacy' ? '隐私设置' : '关于 AMAS'}
              </h3>
            </div>
-           <button onClick={closeSettings} className="p-2 bg-slate-50 rounded-full text-slate-400"><X size={18}/></button>
+           {/* 34×34 且没有可访问名称，与编辑资料弹窗那个是同一处毛病。 */}
+           <button
+             onClick={closeSettings}
+             aria-label="关闭"
+             className="relative p-2 bg-slate-50 rounded-full text-slate-400 before:absolute before:-inset-[6px] before:content-['']"
+           ><X size={18}/></button>
          </div>
 
          {settingsPanel === 'menu' && (
@@ -443,11 +459,11 @@ const ProfileView: React.FC<ProfileViewProps> = ({ favoriteCourseIds = [], onLog
                 <div className="flex bg-slate-100 p-0.5 rounded-lg text-[11px] font-bold">
                   <button
                     onClick={() => handleLanguageChange('zh-CN')}
-                    className={`px-3 py-1 rounded-md transition-colors ${currentLang === 'zh-CN' ? 'bg-white text-blue-900 shadow-sm' : 'text-slate-500'}`}
+                    className={`px-4 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-md transition-colors ${currentLang === 'zh-CN' ? 'bg-white text-blue-900 shadow-sm' : 'text-slate-500'}`}
                   >中文</button>
                   <button
                     onClick={() => handleLanguageChange('en')}
-                    className={`px-3 py-1 rounded-md transition-colors ${currentLang === 'en' ? 'bg-white text-blue-900 shadow-sm' : 'text-slate-500'}`}
+                    className={`px-4 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-md transition-colors ${currentLang === 'en' ? 'bg-white text-blue-900 shadow-sm' : 'text-slate-500'}`}
                   >English</button>
                 </div>
               </div>
@@ -464,7 +480,9 @@ const ProfileView: React.FC<ProfileViewProps> = ({ favoriteCourseIds = [], onLog
                 <button
                   onClick={() => handleTogglePush(!pushEnabled)}
                   disabled={pushBusy}
-                  className="relative w-10 h-6 rounded-full transition-colors disabled:opacity-60"
+                  /* 开关视觉就该是 40×24 这么小，画大反而不像开关；
+                     用伪元素把热区扩到 60×44，左右上下都落在这一行自己的内边距里。 */
+                  className="relative w-10 h-6 rounded-full transition-colors disabled:opacity-60 before:absolute before:-inset-[10px] before:content-['']"
                   style={{ background: pushEnabled ? '#04285F' : '#E5E7EB' }}
                   aria-pressed={pushEnabled}
                   aria-label="推送通知"
@@ -487,9 +505,12 @@ const ProfileView: React.FC<ProfileViewProps> = ({ favoriteCourseIds = [], onLog
 
          {settingsPanel === 'password' && (
            <div className="space-y-3">
-             <input type="password" value={pwForm.current} onChange={(e) => setPwForm({...pwForm, current: e.target.value})} placeholder="当前密码" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-900" />
-             <input type="password" value={pwForm.next} onChange={(e) => setPwForm({...pwForm, next: e.target.value})} placeholder="新密码（至少 8 位）" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-900" />
-             <input type="password" value={pwForm.confirm} onChange={(e) => setPwForm({...pwForm, confirm: e.target.value})} placeholder="确认新密码" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-900" />
+             {/* 三个框原本只有 placeholder —— 一开始输入就消失，读屏用户此后
+                 分不清自己在填哪一个（而且这是改密码，填错框后果不小）。
+                 补 aria-label；py-2.5 量出来 42 高，补到 py-3（46）。 */}
+             <input type="password" value={pwForm.current} onChange={(e) => setPwForm({...pwForm, current: e.target.value})} aria-label="当前密码" placeholder="当前密码" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-900" />
+             <input type="password" value={pwForm.next} onChange={(e) => setPwForm({...pwForm, next: e.target.value})} aria-label="新密码（至少 8 位）" placeholder="新密码（至少 8 位）" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-900" />
+             <input type="password" value={pwForm.confirm} onChange={(e) => setPwForm({...pwForm, confirm: e.target.value})} aria-label="确认新密码" placeholder="确认新密码" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-900" />
              {pwError && <p className="text-xs text-rose-600 font-semibold">{pwError}</p>}
              {pwSaved && <p className="text-xs text-emerald-600 font-semibold">密码已更新</p>}
              <button onClick={handleChangePassword} disabled={pwBusy} className="w-full bg-blue-900 text-white font-bold py-3 rounded-xl mt-2 disabled:opacity-60">{pwBusy ? '保存中…' : '保存'}</button>

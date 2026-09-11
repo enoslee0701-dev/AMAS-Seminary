@@ -98,11 +98,55 @@ window.__ml = {
     });
   },
 
+  /**
+   * 可访问名称。输入框要认 <label for> / 包裹式 <label> / aria-labelledby ——
+   * 只认 aria-label 会把「已经用可见 label 正确关联」的框误判成无名。
+   * placeholder 一律不算：它一开始输入就消失。
+   */
   name(el) {
     const a = (el.getAttribute('aria-label') || '').trim();
     if (a) return a;
-    if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') return el.type || 'INPUT';
+    const by = el.getAttribute('aria-labelledby');
+    if (by) {
+      const t = by.split(/\\s+/).map(id => document.getElementById(id)).filter(Boolean)
+        .map(n => (n.innerText || n.textContent || '').trim()).join(' ').trim();
+      if (t) return t;
+    }
+    if (el.id) {
+      const lab = document.querySelector('label[for="' + CSS.escape(el.id) + '"]');
+      const t = lab ? (lab.innerText || '').trim() : '';
+      if (t) return t;
+    }
+    const wrap = el.closest('label');
+    if (wrap) { const t = (wrap.innerText || '').trim(); if (t) return t; }
+    if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') return '';
     return (el.innerText || '').trim().replace(/\\s+/g, ' ').slice(0, 18) || el.tagName;
+  },
+
+  /** 真实热区：从可视中心四向逐像素探，能盖住伪元素扩出来的部分。 */
+  hit(el, max = 48) {
+    const r = el.getBoundingClientRect();
+    const cx = Math.round(r.left + r.width / 2), cy = Math.round(r.top + r.height / 2);
+    const at = (x, y) => {
+      if (x < 0 || y < 0 || x >= window.innerWidth || y >= window.innerHeight) return false;
+      const p = document.elementFromPoint(x, y);
+      return !!p && window.__ml.owns(el, p);
+    };
+    if (!at(cx, cy)) return { w: 0, h: 0 };
+    const grow = (dx, dy) => { let k = 0; while (k < max && at(cx + dx * (k + 1), cy + dy * (k + 1))) k++; return k; };
+    return { w: grow(-1, 0) + grow(1, 0) + 1, h: grow(0, -1) + grow(0, 1) + 1 };
+  },
+
+  /** 弹窗内每个控件的名称与热区。 */
+  controls() {
+    const root = window.__ml.modalRoot();
+    if (!root) return null;
+    return window.__ml.interactives(root).map(el => ({
+      name: window.__ml.name(el),
+      tag: el.tagName,
+      hint: (el.getAttribute('placeholder') || (el.innerText || '').trim() || el.tagName).slice(0, 14),
+      hit: window.__ml.hit(el),
+    }));
   },
 
   /** 弹窗内部可滚动的那个面板。 */
@@ -210,6 +254,17 @@ try {
       r.bad.length === 0,
       r.bad.length ? r.bad.map(b => `${b.me}←${b.thief}`).join(' · ') : `弹窗内 ${r.count} 个控件全部可点`);
 
+    // 弹窗里的控件同样要有名字、同样要点得到。
+    const ctrls = await page.evaluate(() => window.__ml.controls());
+    const unnamed = (ctrls || []).filter(c => !c.name);
+    check(`${label} · 弹窗内每个控件都有可访问名称`,
+      unnamed.length === 0,
+      unnamed.length ? unnamed.map(c => `${c.tag}「${c.hint}」`).join(' · ') : `${ctrls.length} 个全部有名`);
+    const small = (ctrls || []).filter(c => c.hit.w < 44 || c.hit.h < 44);
+    check(`${label} · 弹窗内每个控件热区 ≥ 44×44`,
+      small.length === 0,
+      small.length ? small.map(c => `「${c.name || c.hint}」${c.hit.w}×${c.hit.h}`).join(' · ') : `${ctrls.length} 个全部达标`);
+
     // 键盘焦点必须能进到弹窗里面，而不是停在背后的页面上。
     const focusIn = await page.evaluate(() => {
       const root = window.__ml.modalRoot();
@@ -251,6 +306,38 @@ try {
       tab: '我的',
       expectText: '保存',
       open: () => clickByName('编辑资料'),
+      closeBy: () => clickByName('关闭'),
+    });
+
+    await auditModal({
+      label: '我的 · 设置 · 修改密码子面板',
+      tab: '我的',
+      expectText: '修改密码',
+      open: async () => {
+        if (!await clickByName('设置')) return false;
+        await sleep(700);
+        return clickByName('修改密码');
+      },
+      closeBy: () => page.evaluate(() => {
+        const root = window.__ml.modalRoot();
+        const row = root?.querySelector('.flex.justify-between');
+        const btns = row ? [...row.querySelectorAll('button')] : [];
+        btns[btns.length - 1]?.click();
+        return btns.length > 0;
+      }),
+    });
+
+    await auditModal({
+      label: '图书馆 · 书籍预览',
+      tab: '图书馆',
+      // 书名在底下的列表里也出现，用弹窗独有的文案判在不在。
+      expectText: '系统阐明信仰真理',
+      open: () => page.evaluate(() => {
+        const b = [...document.querySelectorAll('button')]
+          .find(x => (x.innerText || '').includes('基督教要义'));
+        b?.click();
+        return !!b;
+      }),
       closeBy: () => clickByName('关闭'),
     });
 

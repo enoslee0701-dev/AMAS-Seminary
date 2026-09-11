@@ -316,7 +316,12 @@ const LibraryView: React.FC = () => {
                   <span className="text-[9px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded mt-1 inline-block font-bold">{previewBook.type}</span>
                 </div>
               </div>
-              <button onClick={() => setPreviewBook(null)} className="p-2 rounded-full text-slate-400"><X size={18} /></button>
+              {/* 同上，34×34 且无名。 */}
+              <button
+                onClick={() => setPreviewBook(null)}
+                aria-label="关闭"
+                className="relative p-2 rounded-full text-slate-400 before:absolute before:-inset-[6px] before:content-['']"
+              ><X size={18} /></button>
             </div>
             <p className="text-[13px] text-slate-600 leading-relaxed mb-5">{previewBook.description}</p>
             <div className="flex" style={{ gap: 8 }}>
@@ -344,7 +349,12 @@ const LibraryView: React.FC = () => {
                 </div>
                 <h3 className="font-bold text-lg">神学 AI 助手</h3>
               </div>
-              <button onClick={() => setIsAiOpen(false)} className="text-blue-200 hover:text-white transition">
+              {/* 24×24 且没有可访问名称。伪元素补到 46×46，视觉不动。 */}
+              <button
+                onClick={() => setIsAiOpen(false)}
+                aria-label="关闭"
+                className="relative text-blue-200 hover:text-white transition before:absolute before:-inset-[11px] before:content-['']"
+              >
                 <X size={24} />
               </button>
             </div>
