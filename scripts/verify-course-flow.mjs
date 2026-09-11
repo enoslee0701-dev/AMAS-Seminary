@@ -35,7 +35,7 @@
  *
  * 跑法：node scripts/verify-course-flow.mjs
  */
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import net from 'node:net';
@@ -435,6 +435,71 @@ try {
       check('★ 切走再回来，刚发的帖子还在',
         await page.evaluate(t => document.body.innerText.includes(t), MARK), MARK);
     }
+  }
+
+  /* ---------------- 8. 通讯录：发起群聊 ---------------- */
+  console.log('');
+  console.log('-- 通讯录 · 发起群聊 --');
+  await tab('校友圈');
+  await page.evaluate(() => [...document.querySelectorAll('button')]
+    .find(x => (x.innerText || '').trim() === '通讯录')?.click());
+  await page.evaluate(() => [...document.querySelectorAll('button')]
+    .find(x => (x.innerText || '').trim() === '最近消息')?.click());
+
+  const groupEntry = await page.evaluate(() => {
+    const b = [...document.querySelectorAll('button')]
+      .find(x => (x.getAttribute('aria-label') || '') === '发起群聊');
+    if (!b) return null;
+    const r = b.getBoundingClientRect();
+    return { h: Math.round(r.height), focusable: b.tabIndex >= 0 };
+  });
+  check('★ 通讯录上有「发起群聊」入口（CreateGroupModal 此前没有任何调用点）',
+    !!groupEntry && groupEntry.h >= 44 && groupEntry.focusable, JSON.stringify(groupEntry));
+
+  if (groupEntry) {
+    await page.evaluate(() => [...document.querySelectorAll('button')]
+      .find(x => (x.getAttribute('aria-label') || '') === '发起群聊')?.click());
+    await sleep(1200);
+    check('点入口能打开发起群聊弹窗',
+      await page.evaluate(() => /选择成员/.test(document.body.innerText)));
+
+    const NAME = 'flow-group-' + Date.now();
+    await page.evaluate(n => {
+      const inp = [...document.querySelectorAll('input')].find(i => i.type === 'text' || !i.type);
+      if (!inp) return;
+      const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      set.call(inp, n); inp.dispatchEvent(new Event('input', { bubbles: true }));
+    }, NAME);
+    await sleep(400);
+    await page.evaluate(() => {
+      const rows = [...document.querySelectorAll('div,li,label')]
+        .filter(d => d.className && String(d.className).includes('cursor-pointer'));
+      rows[0]?.click();
+    });
+    await sleep(500);
+    await page.evaluate(() => {
+      const b = [...document.querySelectorAll('button')]
+        .find(x => /创建/.test((x.innerText || '').trim()) && !x.disabled);
+      b?.click();
+    });
+    await sleep(1600);
+    check('★ 建好的群出现在「最近消息」里（原本会被送到列官方群组的那一栏）',
+      await page.evaluate(n => document.body.innerText.includes(n), NAME), NAME);
+  }
+
+  /* ---------------- 9. 语音房主的房间密码入口（源码级） ---------------- */
+  console.log('');
+  console.log('-- 语音房 · 房间密码设置入口（源码级断言）--');
+  {
+    /* 说明：进真实语音房要走麦克风与传输通道，本地脚本进不去，
+       所以这一条只断言「入口还在、且只给房主」。它拦得住的是
+       「入口又被拿掉」这种回归，拦不住运行时行为 —— 如实标注，不冒充 UI 验证。 */
+    const src = readFileSync(path.join(ROOT, 'components/VoiceRoom/VoiceRoomOverlay.tsx'), 'utf8');
+    const line = src.split(String.fromCharCode(10)).find(l => l.includes('setShowPasswordSettings(true)'));
+    const opens = !!line && line.includes('isHost');
+    check('★ 房主菜单里有打开房间密码设置的调用点（此前全仓没有）', opens);
+    check('PasswordSettingsModal 仍挂在这个 state 上',
+      src.includes('showPasswordSettings && (') && src.includes('<PasswordSettingsModal'));
   }
 
   check('全程无 JS 运行时错误', errors.length === 0, errors.slice(0, 3).join(' | '));

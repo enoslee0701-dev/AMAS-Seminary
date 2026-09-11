@@ -624,7 +624,11 @@ const CommunityView: React.FC<CommunityViewProps> = ({
       showToast(result ? '房间创建成功！' : '房间创建成功！');
     });
   };
-  const handleCreateGroupChat = (name: string, members: string[]) => { const newGroupId = `g-${Date.now()}`; const newGroup: Conversation = { id: newGroupId, userId: newGroupId, userName: name, userAvatar: initialAvatar(newGroupId, name), isOnline: false, lastMessage: '群组已创建，开始聊天吧', time: '刚刚', unread: 0, role: 'Group', isGroup: true }; setConversations([newGroup, ...conversations]); try { const savedGroupsStr = localStorage.getItem('amas_custom_groups'); const savedGroups: Conversation[] = savedGroupsStr ? JSON.parse(savedGroupsStr) : []; savedGroups.push(newGroup); localStorage.setItem('amas_custom_groups', JSON.stringify(savedGroups)); } catch (e) { console.error("Failed to save group", e); } setShowCreateGroup(false); showToast(`群组 "${name}" 创建成功`); if (directoryTab !== 'groups') { setDirectoryTab('groups'); } };
+  const handleCreateGroupChat = (name: string, members: string[]) => { const newGroupId = `g-${Date.now()}`; const newGroup: Conversation = { id: newGroupId, userId: newGroupId, userName: name, userAvatar: initialAvatar(newGroupId, name), isOnline: false, lastMessage: '群组已创建，开始聊天吧', time: '刚刚', unread: 0, role: 'Group', isGroup: true }; setConversations([newGroup, ...conversations]); try { const savedGroupsStr = localStorage.getItem('amas_custom_groups'); const savedGroups: Conversation[] = savedGroupsStr ? JSON.parse(savedGroupsStr) : []; savedGroups.push(newGroup); localStorage.setItem('amas_custom_groups', JSON.stringify(savedGroups)); } catch (e) { console.error("Failed to save group", e); } setShowCreateGroup(false); showToast(`群组 "${name}" 创建成功`);
+    /* 原本建完跳到 'groups'，但那一栏列的是 OFFICIAL_GROUPS，新建的群是一条
+       Conversation、只在「最近消息」里出现 —— 跳过去用户会以为没建成。
+       改为留在/切到 'messages'，也就是新群真正出现的地方。 */
+    if (directoryTab !== 'messages') { setDirectoryTab('messages'); } };
   const enterRoom = (room: Room) => {
     setJoiningRoomId(room.id);
     setTimeout(() => {
@@ -1350,6 +1354,22 @@ const CommunityView: React.FC<CommunityViewProps> = ({
                     </div>
 
                     <div className="flex-1 overflow-y-auto px-4 pb-24 scrollbar-hide">
+                        {/* 发起群聊入口。CreateGroupModal 与 handleCreateGroupChat 都是完整
+                            实现（挑联系人、建会话、落 localStorage、toast），但
+                            showCreateGroup 全仓没有任何一处被置为 true —— 弹窗挂在一个
+                            永远为 false 的 state 上，用户根本打不开。
+                            放在「最近消息」这一栏：建出来的群是一条 Conversation，
+                            正是在这一栏里显示（带 GROUP 角标），而不是「官方群组」。 */}
+                        {directoryTab === 'messages' && (
+                            <button
+                                type="button"
+                                onClick={() => setShowCreateGroup(true)}
+                                aria-label="发起群聊"
+                                className="w-full mt-1 mb-2 flex items-center justify-center min-h-[44px] rounded-xl border border-dashed border-blue-200 bg-blue-50/60 text-blue-900 text-xs font-bold active:scale-[0.99] transition"
+                            >
+                                <Plus size={15} className="mr-1.5" /> 发起群聊
+                            </button>
+                        )}
                         {directoryTab === 'messages' && (
                             filteredConversations.length === 0 ? (
                                 <div className="flex flex-col items-center justify-center py-16 text-slate-400">

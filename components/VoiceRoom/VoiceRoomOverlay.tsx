@@ -1605,6 +1605,12 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
            {showMenu && (
              <div className="absolute bottom-full left-4 mb-2 w-48 bg-[#1a1a2e] backdrop-blur-xl rounded-2xl border border-white/10 shadow-2xl overflow-hidden animate-scale-in origin-bottom-left z-50">
                 {isHost && (<button onClick={() => { setShowMenu(false); setShowThemeSwitcher(true); }} className="w-full text-left px-5 py-4 hover:bg-white/5 flex items-center text-sm text-blue-300 border-b border-white/5"><Palette size={18} className="mr-3"/> 切换主题</button>)}
+                {/* 房间密码设置。PasswordSettingsModal 与 handleSavePassword 都是完整实现
+                    （后端 scrypt 哈希 + timingSafeEqual 校验，README 里作为已完成能力列出），
+                    但 showPasswordSettings 全仓没有任何一处被置为 true —— 弹窗挂在一个
+                    永远为 false 的 state 上，房主根本打不开它。与「切换主题」同为房主操作，
+                    放在同一个菜单里、同样只对房主显示。 */}
+                {isHost && (<button onClick={() => { setShowMenu(false); setShowPasswordSettings(true); }} className="w-full text-left px-5 py-4 hover:bg-white/5 flex items-center text-sm text-amber-300 border-b border-white/5"><Lock size={18} className="mr-3"/> {activeVoiceRoom.password ? '修改房间密码' : '设置房间密码'}</button>)}
                 {isOnStage && (<button onClick={handleLeaveStage} className="w-full text-left px-5 py-4 hover:bg-white/5 flex items-center text-sm text-rose-400"><LogOut size={18} className="mr-3"/> 下麦</button>)}
                 <button onClick={() => setShowInvite(true)} className="w-full text-left px-5 py-4 hover:bg-white/5 flex items-center text-sm text-white"><UserPlus2 size={18} className="mr-3 text-blue-400"/> 邀请好友</button>
              </div>
