@@ -1521,7 +1521,7 @@ phase:     触控目标巡检（2026-09-11）
 ## #29 七个 UI / 流程回归脚本未并入 CI，仅有本地聚合入口
 
 ```
-status:    PENDING_DECISION（是否进 CI 由监督裁定）
+status:    已备好独立 CI job（ci.yml 的 ui-flows），是否启用/合入由监督裁定
 severity:  low（不影响运行时；影响的是这些断言会不会随时间失效）
 owner:     unassigned
 phase:     触控目标 / 核心流程巡检（2026-09-11）
@@ -1548,12 +1548,19 @@ verify-touch-targets         100/100  九个视图的触控目标与可访问名
 verify-modal-layering         60/60   五个弹窗的层级 / 滚动 / 焦点 / 底栏遮挡
 verify-course-flow            29/29   首页进课 → 返回状态保留 → 收藏 → 进度跨页 → 发帖
 verify-assessment-resume      18/18   30 题评估的退出续答（按 CHRISTIAN_PROFILE_SPEC 铁律）
+verify-custom-groups          19/19   自建群的身份隔离与坏格式安全恢复
 ```
 
 `CHROME_PATH` 可覆盖 Chrome 路径。全套单跑约 10–15 分钟 —— 这也是没有直接塞进
 `test:regression` 的原因：那条链子目前是 CI 里跑的，多出十几分钟需要监督先裁定。
 
-**待决**：并入 `test:regression`（CI 变长）、单独开一个 CI job、还是保持本地入口。
+**已做**：在本隔离分支的 `.github/workflows/ci.yml` 里加了**独立 job `ui-flows`**，
+与 `regression` 并行、互不阻塞，**没有塞进 `verify:local-release` 那条 && 链** ——
+塞进去会把发布门禁时长翻倍，而且某个 UI 断言抖动会连带挡住后端与构建的信号。
+job 里没有 `continue-on-error` / `|| true`（那就又是假绿了）。
+
+**待决**：这个 job 是否随分支合入主线即生效。合入前它不会在任何地方触发
+（本分支未 push，CI 只在 push / PR 到 main 时跑）。
 
 ---
 
@@ -1595,7 +1602,63 @@ phase:     核心流程巡检（2026-09-11）
 1. `CommunityView.showCommentEmojiPicker` —— 声明了、被置过一次 false，
    但**从来没有被读来渲染任何东西**。它不是「入口缺失」，是纯死状态；
    删掉是零风险清理，但对用户没有任何可见改善，本轮不为清扫而改。
-2. `handleCreateGroupChat` 把新群写进 `localStorage['amas_custom_groups']`，
-   而**全仓没有任何一处读回它** —— 刷新后自建群消失。这是持久化缺口，
-   与本条的「入口缺失」不是一回事，需要单独一轮（且要先确定这类数据
-   到底该走本地还是后端）。
+2. ~~`handleCreateGroupChat` 把新群写进 `localStorage['amas_custom_groups']`，
+   而全仓没有任何一处读回它 —— 刷新后自建群消失。~~
+   **这条判断是错的，已于同日实测推翻并更正，见 #31。** `App.tsx` 的
+   `conversations` 初始化本来就读了那个键并按 id 去重合并，刷新后是在的。
+   错误来自只 grep 了写入侧、没查读回侧 —— 一个只看半边就下结论的教训。
+   那一处真正的缺陷是身份隔离与坏格式恢复，已在 #31 修掉。
+
+
+---
+
+## #31 自建群聊：身份之间串数据；坏格式会把会话列表弄坏 — `CLOSED`（2026-09-11）
+
+```
+status:    CLOSED —— 读写收到 services/customGroups.ts，按身份分桶 + 安全恢复
+severity:  medium（身份串数据是隐私问题；坏格式会让整个会话列表打不开）
+owner:     unassigned
+phase:     核心流程巡检（2026-09-11）
+```
+
+### 先把事实摆正
+
+`#30` 里曾写「自建群刷新即消失」。**那句话是错的。** 本轮实测：建群 → 刷新 →
+仍可见。`App.tsx` 的 `conversations` 初始化本来就读 `amas_custom_groups` 并按 id
+去重合并。前一轮的错误来自只 grep 了写入侧、没查读回侧。已在 #30 原处划掉更正。
+
+### 真正的两条缺陷（都实测复现过）
+
+```
+1. 键是全局的 amas_custom_groups，不带任何身份
+   甲登录建群 → 换乙登录 → 乙的会话列表里看得见甲建的群
+2. 只挡语法坏掉的 JSON，挡不住「合法 JSON 但类型不对」
+   把键写成 '"not-an-array"' → JSON.parse 得到字符串 →
+   [...INITIAL, ...'not-an-array'] 摊成一堆单字符 → 会话列表打不开
+```
+
+### 修法（沿用既有的纯本地设计，没有改性质）
+
+新增 `services/customGroups.ts`：
+
+- 按身份分键 `amas_custom_groups:v2:<userId>`；未登录时不落盘（没有归属）。
+- 逐项校验：不是数组就整份丢弃；数组里每项必须有非空字符串 `id` 与 `userName`，
+  坏项只丢那一项而不是整份。
+- 读取时**自愈回写**：清理掉的坏项/重复项写回存储，不留脏数据。
+- 同 id 去重（保留后出现的那条，与 `App.tsx` 原有 Map 口径一致）；上限 200 条。
+- 旧全局键一次性迁到当前身份名下再删除。旧数据**没有记录归属**，只能归给
+  先读到它的那个身份 —— 这是旧格式本身的信息缺失，不是这里的选择；
+  实际影响小（这套数据一直是本机本地的，通常只有一个人在用）。
+- `App.tsx` 加了一个按 `currentUser.id` 触发的 effect：登录/切换/登出都重算
+  会话列表 —— 组件不会因为换人而重新挂载，光靠初始值不够，登出后必须把
+  上一个身份的自建群从列表里撤掉。
+
+**性质没有变，别说过头**：自建群聊仍然只存在这台设备的这个浏览器里，
+不同步给群里其他人，也没有任何后端记录。本轮没有引入服务端同步、
+没有新增真实账号、没有任何后端映射。
+
+### 回归
+
+`scripts/verify-custom-groups.mjs` 19/19，已并入 `npm run verify:ui-flows`：
+建群→刷新仍可见 · 换身份不串（双向）· 四种坏格式下会话列表仍能打开 ·
+旧全局键迁移后不丢数据且别的身份看不到 · 同 id 只留一条。

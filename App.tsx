@@ -49,6 +49,7 @@ import { CheckCircle, Mic } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { getAccessToken, getCurrentUser, me as fetchMe, logout as apiLogout } from './services/authService';
 import { initialAvatar } from './services/imageFallback';
+import { loadCustomGroups } from './services/customGroups';
 import { hasPendingDiscoverHandoff } from './services/christianProfile/discoverHandoff';
 import { listAnnouncements } from './services/announcementsService';
 import {
@@ -280,15 +281,24 @@ const App: React.FC = () => {
 
   // Chat Navigation State
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
+  /* 自建群聊读写收到 services/customGroups.ts：按身份分键、逐项校验、
+     旧全局键一次性迁移。原来的写法有两个实测出来的问题 ——
+     键不带身份（换个人登录就看得见别人建的群），以及只挡语法坏掉的 JSON、
+     挡不住「合法 JSON 但不是数组」（把键写成 '"x"' 会被摊成一堆单字符，
+     会话列表直接打不开）。 */
   const [conversations, setConversations] = useState<Conversation[]>(() => {
-    try {
-      const savedGroups = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('amas_custom_groups') || '[]') : [];
-      const combined = [...INITIAL_CONVERSATIONS, ...savedGroups];
-      return Array.from(new Map(combined.map(item => [item.id, item])).values());
-    } catch (e) {
-      return INITIAL_CONVERSATIONS;
-    }
+    const combined = [...INITIAL_CONVERSATIONS, ...loadCustomGroups(currentUser?.id)];
+    return Array.from(new Map(combined.map(item => [item.id, item])).values());
   });
+
+  /* 身份变了（登录 / 切换 / 登出）就按新身份重算会话列表。
+     组件不会因为换人而重新挂载，光靠上面的初始化值不够 ——
+     登出后必须把上一个身份的自建群从列表里撤掉，否则下一个人还看得见。 */
+  const currentUserId = currentUser?.id ?? null;
+  useEffect(() => {
+    const combined = [...INITIAL_CONVERSATIONS, ...loadCustomGroups(currentUserId)];
+    setConversations(Array.from(new Map(combined.map(item => [item.id, item])).values()));
+  }, [currentUserId]);
 
   // --- User Profile Modal State ---
   const [viewingUserProfile, setViewingUserProfile] = useState<{name: string; avatar: string; role: string; id: string} | null>(null);
@@ -765,6 +775,7 @@ const App: React.FC = () => {
                         onChatClick={handleChatClick}
                         initialTab={communityTab}
                         unreadCount={unreadCount}
+                        currentUserId={currentUserId}
                         conversations={conversations}
                         setConversations={setConversations}
                       />

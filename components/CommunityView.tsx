@@ -19,6 +19,7 @@ import { UserProfileModal, THEME_CONFIGS } from './VoiceRoom';
 import type { Room, RoomType } from './VoiceRoom';
 import { registerRoom, validateRoomPassword, isBackendConfigured } from '../services/roomService';
 import { initialAvatar } from '../services/imageFallback';
+import { addCustomGroup } from '../services/customGroups';
 import { STOCK_PHOTOS } from '../services/stockPhotos';
 import {
   listPosts as apiListPosts,
@@ -422,6 +423,8 @@ export interface CommunityViewProps {
   unreadCount?: number;
   conversations: Conversation[];
   setConversations: (v: Conversation[]) => void;
+  /** 当前身份 id。自建群按身份分桶保存，没有它就只在内存里活着（见 services/customGroups.ts）。 */
+  currentUserId?: string | null;
 }
 
 const CommunityView: React.FC<CommunityViewProps> = ({
@@ -434,7 +437,8 @@ const CommunityView: React.FC<CommunityViewProps> = ({
   initialTab = 'rooms',
   unreadCount = 0,
   conversations,
-  setConversations
+  setConversations,
+  currentUserId,
 }) => {
   const staticRooms: Room[] = [
     { id: 'prayer_room', type: 'prayer', label: '祷告室', icon: HandHeart, color: 'text-rose-500', bg: 'bg-rose-50', desc: '早晨 6:00 - 7:00 | 每日晨更祷告会', action: 'voice' },
@@ -624,7 +628,7 @@ const CommunityView: React.FC<CommunityViewProps> = ({
       showToast(result ? '房间创建成功！' : '房间创建成功！');
     });
   };
-  const handleCreateGroupChat = (name: string, members: string[]) => { const newGroupId = `g-${Date.now()}`; const newGroup: Conversation = { id: newGroupId, userId: newGroupId, userName: name, userAvatar: initialAvatar(newGroupId, name), isOnline: false, lastMessage: '群组已创建，开始聊天吧', time: '刚刚', unread: 0, role: 'Group', isGroup: true }; setConversations([newGroup, ...conversations]); try { const savedGroupsStr = localStorage.getItem('amas_custom_groups'); const savedGroups: Conversation[] = savedGroupsStr ? JSON.parse(savedGroupsStr) : []; savedGroups.push(newGroup); localStorage.setItem('amas_custom_groups', JSON.stringify(savedGroups)); } catch (e) { console.error("Failed to save group", e); } setShowCreateGroup(false); showToast(`群组 "${name}" 创建成功`);
+  const handleCreateGroupChat = (name: string, members: string[]) => { const newGroupId = `g-${Date.now()}`; const newGroup: Conversation = { id: newGroupId, userId: newGroupId, userName: name, userAvatar: initialAvatar(newGroupId, name), isOnline: false, lastMessage: '群组已创建，开始聊天吧', time: '刚刚', unread: 0, role: 'Group', isGroup: true }; setConversations([newGroup, ...conversations]); addCustomGroup(currentUserId, newGroup); setShowCreateGroup(false); showToast(`群组 "${name}" 创建成功`);
     /* 原本建完跳到 'groups'，但那一栏列的是 OFFICIAL_GROUPS，新建的群是一条
        Conversation、只在「最近消息」里出现 —— 跳过去用户会以为没建成。
        改为留在/切到 'messages'，也就是新群真正出现的地方。 */
