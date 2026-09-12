@@ -119,7 +119,12 @@ const server = http.createServer(app);
 // (Auth is enforced inside the upgrade handler via ?token=...)
 const { wss } = registerGeminiProxy(server);
 
-server.listen(config.port, () => {
+/* 可选的绑定地址。**默认行为不变**（不设就照旧监听所有网卡，
+   局域网里的真机照样连得到）。加它是为了能起一个「只有本机连得上」的
+   实例做联调 —— 不设这个变量时一个字节的行为都没变。 */
+const BIND_HOST = (process.env.HOST ?? '').trim();
+
+const onListening = () => {
   console.log(`[amas-backend] listening on :${config.port}`);
   console.log(`[amas-backend] cors origins: ${config.corsOrigins.join(', ') || '(none)'}`);
   console.log(`[amas-backend] gemini configured: ${Boolean(config.gemini.apiKey)}`);
@@ -157,7 +162,10 @@ server.listen(config.port, () => {
   void sweepRealtimeEvents().then(swept => {
     if (swept > 0) console.log(`[amas-backend] realtime: swept ${swept} expired event(s)`);
   });
-});
+};
+
+if (BIND_HOST) server.listen(config.port, BIND_HOST, onListening);
+else server.listen(config.port, onListening);
 
 /**
  * Graceful shutdown: stop accepting new connections, close all active WS
