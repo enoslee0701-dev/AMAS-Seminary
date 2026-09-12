@@ -30,6 +30,46 @@ interface Message {
   audioUrl?: string; // Real audio blob URL for playback
 }
 
+/**
+ * 语音房邀请卡片。
+ *
+ * 「立即创建并发送」本来就会往会话里塞一条 `type: 'room-invite'` 的消息，
+ * 但渲染分支从来没接过它，于是发完只看到一个空气泡 —— 用户以为没发出去。
+ *
+ * **措辞上不声称已经通知到对方。** 这一版的会话是本地 mock，消息只存在自己
+ * 这边（`setMessages` 改的是本地 state，没有任何传输），所以卡片只说
+ * 「已开启」，不说「已邀请 XX」。真的多人投递是另一件事，记在 OPEN_ISSUES 里。
+ *
+ * 点「进入房间」用的是 meta 里带回来的同一个 roomId / type，不另外生成 ——
+ * 否则每点一次就是一间新房。
+ */
+const RoomInviteBubble: React.FC<{ msg: Message; onJoinRoom?: (room: Room) => void }> = ({ msg, onJoinRoom }) => {
+  const type: RoomType = (msg.meta?.type as RoomType) || 'fellowship';
+  const cfg = THEME_CONFIGS[type];
+  const label = msg.meta?.label || msg.content || '语音房间';
+  return (
+    <div className={`px-4 py-3 rounded-2xl shadow-sm border w-[13.5rem] ${msg.isMe ? 'bg-emerald-50 border-emerald-200 rounded-tr-none' : 'bg-white border-slate-200 rounded-tl-none'}`}>
+      <div className="flex items-center mb-2">
+        <span className={`w-8 h-8 rounded-xl flex items-center justify-center mr-2.5 shrink-0 ${cfg.bg} ${cfg.color}`}>
+          <cfg.icon size={16} />
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-bold text-slate-900 truncate">{label}</p>
+          <p className="text-[10px] text-slate-500">已开启 · {cfg.label}</p>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={() => onJoinRoom?.({ id: msg.meta?.roomId || `r-${msg.id}`, type, label, icon: cfg.icon, color: cfg.color, bg: cfg.bg, desc: cfg.desc, action: 'voice' })}
+        aria-label={`进入语音房间 ${label}`}
+        className="w-full bg-emerald-500 text-white py-2 rounded-xl text-xs font-bold active:scale-[0.98] transition-transform"
+      >
+        进入房间
+      </button>
+    </div>
+  );
+};
+
 const ImageMessage: React.FC<{ imageId?: string; fallback?: string }> = ({ imageId, fallback }) => {
   const url = useImageUrl(imageId);
   const src = url ?? fallback ?? '';
@@ -522,8 +562,66 @@ export const ChatView: React.FC<ChatViewProps> = ({ onBack, initialChatId, onJoi
                 {activePicker === 'room' && (
                     <div>
                         <h3 className="font-semibold text-lg text-slate-900 mb-4 flex items-center"><Radio size={20} className="mr-2 text-emerald-500"/> 开启语音房间</h3>
-                        <input type="text" value={roomName} onChange={(e) => setRoomName(e.target.value)} className="w-full bg-[#f1f3f5] rounded-xl px-4 py-3 text-[15px] text-black outline-none font-semibold mb-4" placeholder="输入房间名称..." />
-                        <button onClick={() => { if(!roomName.trim()) return; onJoinRoom?.({ id: `r-${Date.now()}`, type: selectedRoomType, label: roomName, icon: Radio, color: 'text-emerald-500', bg: 'bg-emerald-50', desc: '新房间', action: 'voice' }); sendMessage({ type: 'room-invite', content: roomName, meta: { label: roomName } }); }} className="w-full bg-emerald-500 text-white py-4 rounded-[1.2rem] font-medium">立即创建并发送</button>
+                        {/* 房间主题。这一段此前**根本不存在**：`selectedRoomType` 声明了
+                            却没有任何控件去改它（`setSelectedRoomType` 全仓零调用点），
+                            恒为 'fellowship'；`THEME_CONFIGS` 也只是 import 进来没用过。
+                            实际后果是从聊天里开的房永远只能是交通室，而校友圈那条路
+                            （CommunityView 的 CreateRoomModal）五种主题都能选。
+
+                            这里复用的是**同一份 THEME_CONFIGS**，不新建第二套主题定义，
+                            所以两条路开出来的房天然一致。 */}
+                        <div className="mb-4">
+                            <span id="chat-room-type-label" className="block text-xs font-bold text-slate-500 mb-2 ml-1">房间主题</span>
+                            <div role="group" aria-labelledby="chat-room-type-label" className="grid grid-cols-2 gap-2">
+                                {(Object.keys(THEME_CONFIGS) as RoomType[]).map((type) => {
+                                    const cfg = THEME_CONFIGS[type];
+                                    const on = selectedRoomType === type;
+                                    return (
+                                        <button
+                                            key={type}
+                                            type="button"
+                                            onClick={() => setSelectedRoomType(type)}
+                                            aria-pressed={on}
+                                            className={`flex items-center rounded-xl px-3 py-2.5 border-2 text-left transition-all active:scale-[0.98] ${type === 'fellowship' ? 'col-span-2' : ''} ${on ? 'bg-emerald-50 border-emerald-500' : 'bg-white border-slate-100'}`}
+                                        >
+                                            <span className={`w-8 h-8 rounded-xl flex items-center justify-center mr-2.5 shrink-0 ${on ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                                                <cfg.icon size={16} />
+                                            </span>
+                                            <span className={`text-sm font-bold ${on ? 'text-emerald-900' : 'text-slate-700'}`}>{cfg.label}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                        <label htmlFor="chat-room-name" className="block text-xs font-bold text-slate-500 mb-2 ml-1">房间名称</label>
+                        <input id="chat-room-name" type="text" value={roomName} onChange={(e) => setRoomName(e.target.value)} className="w-full bg-[#f1f3f5] rounded-xl px-4 py-3 text-[15px] text-black outline-none font-semibold mb-4" placeholder="输入房间名称..." />
+                        <button
+                            type="button"
+                            onClick={() => {
+                                if (!roomName.trim()) return;
+                                /* 图标 / 颜色 / 描述此前是写死的 emerald + Radio +「新房间」，
+                                   选了哪种主题都长一个样。校友圈那条路（CommunityView 的
+                                   handleCreateRoom）是从 THEME_CONFIGS 取的，这里对齐它。 */
+                                const cfg = THEME_CONFIGS[selectedRoomType];
+                                const roomId = `r-${Date.now()}`;
+                                onJoinRoom?.({ id: roomId, type: selectedRoomType, label: roomName, icon: cfg.icon, color: cfg.color, bg: cfg.bg, desc: cfg.desc, action: 'voice' });
+                                /* meta 里带上 roomId 与 type：会话里那张邀请卡片要靠它们
+                                   回到**同一间**房，否则每点一次「进入房间」都是新的一间。 */
+                                sendMessage({ type: 'room-invite', content: roomName, meta: { roomId, label: roomName, type: selectedRoomType } });
+                            }}
+                            disabled={!roomName.trim()}
+                            aria-describedby="chat-room-hint"
+                            className="w-full bg-emerald-500 text-white py-4 rounded-[1.2rem] font-medium disabled:opacity-50 transition-all active:scale-[0.98]"
+                        >
+                            立即创建并发送
+                        </button>
+                        {/* 此前按钮一直是可点的，点下去只是静悄悄地 return —— 名字没填
+                            就没有任何反馈。改成禁用并说清为什么。 */}
+                        <p id="chat-room-hint" className={`text-[11px] mt-2 leading-relaxed ${roomName.trim() ? 'text-slate-400' : 'text-rose-600 font-semibold'}`}>
+                            {roomName.trim()
+                                ? `将开启「${roomName.trim()}」（${THEME_CONFIGS[selectedRoomType].label}）并把邀请发到这个会话`
+                                : '请先填写房间名称'}
+                        </p>
                     </div>
                 )}
             </div>
@@ -574,6 +672,24 @@ export const ChatView: React.FC<ChatViewProps> = ({ onBack, initialChatId, onJoi
                         {msg.type === 'audio' && <AudioBubble msg={msg} />}
                         {msg.type === 'image' && <ImageMessage imageId={msg.imageId} fallback={msg.content} />}
                         {msg.type === 'course' && <CourseBubble courseId={msg.content || ''} />}
+                        {/* 「分享经文」和「语音房间」这两个面板本来就能用，发出去的
+                            消息却**一个字都不显示** —— 渲染分支只认 text / audio /
+                            image / course 四种，`verse` 与 `room-invite` 落进来就是
+                            一个空气泡（只剩下面那行时间戳）。Message 的 type 声明了
+                            13 种，渲染只接了 4 种。这里先把本仓里**真的会被发出来**的
+                            这两种补上；其余几种没有任何入口会产生，不在这里凭空发明。 */}
+                        {msg.type === 'verse' && (
+                           <div className={`px-4 py-3 rounded-2xl shadow-sm border ${msg.isMe ? 'bg-orange-50 border-orange-200 rounded-tr-none' : 'bg-white border-slate-200 rounded-tl-none'}`}>
+                             <div className="flex items-center mb-1.5 text-orange-600">
+                               <Scroll size={13} className="mr-1.5 shrink-0" />
+                               <span className="text-[10px] font-bold tracking-wide">分享经文</span>
+                             </div>
+                             <p className="text-[15px] leading-relaxed font-serif text-slate-800 whitespace-pre-wrap break-words">{msg.text}</p>
+                           </div>
+                        )}
+                        {msg.type === 'room-invite' && (
+                           <RoomInviteBubble msg={msg} onJoinRoom={onJoinRoom} />
+                        )}
                         
                         <div className="mt-1 flex items-center px-1">
                             <span className="text-[9px] text-slate-400 font-medium">{msg.time}</span>
@@ -602,8 +718,12 @@ export const ChatView: React.FC<ChatViewProps> = ({ onBack, initialChatId, onJoi
                <div className="grid grid-cols-4 gap-y-8">
                  {plusMenuItems.map((item, idx) => (
                    <div key={idx} className="flex flex-col items-center">
-                     <button onClick={item.action} className={`w-16 h-16 rounded-[1.5rem] flex items-center justify-center transition-all active:scale-95 shadow-sm ${item.color}`}><item.icon size={28} strokeWidth={2} /></button>
-                     <span className="text-[11px] mt-2.5 text-slate-600 font-semibold">{item.label}</span>
+                     {/* 这八个按钮里**只有一个图标**，名字在旁边那个 span 上，
+                         按钮自己没有任何可访问名称 —— 读屏走到这里只会念「按钮」，
+                         八个一模一样。span 已经显示了文字，所以不重复朗读它
+                         （aria-hidden），由按钮的 aria-label 来承担名称。 */}
+                     <button onClick={item.action} aria-label={item.label} className={`w-16 h-16 rounded-[1.5rem] flex items-center justify-center transition-all active:scale-95 shadow-sm ${item.color}`}><item.icon size={28} strokeWidth={2} /></button>
+                     <span aria-hidden="true" className="text-[11px] mt-2.5 text-slate-600 font-semibold">{item.label}</span>
                    </div>
                  ))}
                </div>
