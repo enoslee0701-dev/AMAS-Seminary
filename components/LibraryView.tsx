@@ -3,6 +3,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Search, BookOpen, Bot, Send, X, FileText, Headphones, Download, Star } from 'lucide-react';
 import { generateTheologicalResponse } from '../services/geminiService';
 import { MODAL_LAYER } from '../services/layers';
+import BookAdminPanel from './library/BookAdminPanel';
+import { canManageLibraryBooks } from '../services/permissions';
+import { fetchRoles } from '../services/supabaseAuth';
 import {
   useLibraryFavorites,
   seedFromServer as seedFavorites,
@@ -53,6 +56,22 @@ const LibraryView: React.FC = () => {
   const [activeCategory, setActiveCategory] = useState<'全部' | '神学藏书' | '宣教资料库'>('全部');
   const [previewBook, setPreviewBook] = useState<Book | null>(null);
   const [books, setBooks] = useState<Book[]>(FALLBACK_BOOKS);
+
+  /* 书目管理入口。角色取的是**服务端那份**（fetchRoles 走同一个 my_roles RPC），
+     不是 currentUser.role 那个展示字符串 —— 两者词汇不同：服务端认的是
+     registrar / academic_admin / super_admin，前端那串是 'admin' 之类，
+     拿错了会把真正的 registrar 挡在外面。
+
+     **这只是决定要不要把入口显示出来，不是授权。** 服务端每次现查角色、
+     撤销即时生效，并且明确不信任客户端声明的任何身份字段。
+     所以非管理员即便想办法把这块渲染出来，POST / PATCH / DELETE 照样 403。 */
+  const [serverRoles, setServerRoles] = useState<string[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void fetchRoles().then(roles => { if (!cancelled) setServerRoles(roles); });
+    return () => { cancelled = true; };
+  }, []);
+  const canManageBooks = canManageLibraryBooks(serverRoles);
   const [toast, setToast] = useState<string | null>(null);
   /* 收藏搬到进程内共享 store：原本放在本组件 useState 里，切个标签页
      视图一卸载就归零，而重新挂载时 listFavorites() 在本地模式下返回空数组，
@@ -244,6 +263,11 @@ const LibraryView: React.FC = () => {
             <button onClick={() => { setActiveCategory('全部'); setSearchQuery(''); }} className="text-[11px] text-blue-900 font-bold">清除筛选</button>
           )}
         </div>
+        {/* 书目管理：只对服务端认定的管理角色显示。
+            **显示 ≠ 授权** —— 服务端每次现查角色，非管理员照样 403。 */}
+        {canManageBooks && (
+          <BookAdminPanel books={books as any} onChanged={(next) => setBooks(next as any)} />
+        )}
         <div className="space-y-3">
           {filteredBooks.length === 0 ? (
             <div className="bg-white rounded-xl border border-slate-100 py-12 flex flex-col items-center justify-center text-slate-400">
