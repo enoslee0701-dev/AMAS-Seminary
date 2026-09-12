@@ -38,6 +38,13 @@ import {
   listFriends as apiListFriends,
   isBackendConfigured as isFriendsBackendConfigured,
   type IncomingRequest as FriendIncomingRequest,
+  /* 下面三个 `services/friendsService.ts` 早就写好了、后端端点也一直在，
+     但**全应用没有任何地方调用** —— 结果是好友关系「只能加，不能退」：
+     发出去的申请看不到也撤不回，加上了也解除不了。 */
+  listOutgoing as apiListOutgoingFriendRequests,
+  cancelFriendRequest as apiCancelFriendRequest,
+  unfriend as apiUnfriend,
+  type OutgoingRequest as FriendOutgoingRequest,
 } from '../services/friendsService';
 import {
   uploadImage as uploadImageToBackend,
@@ -515,6 +522,11 @@ const CommunityView: React.FC<CommunityViewProps> = ({
   // Backend-backed friend-request state. These are best-effort — the UI keeps
   // its existing local-only behavior when the backend is unconfigured.
   const [incomingRequests, setIncomingRequests] = useState<FriendIncomingRequest[]>([]);
+  const [outgoingRequests, setOutgoingRequests] = useState<FriendOutgoingRequest[]>([]);
+  /** 好友申请弹窗的分栏：收到的 / 我发出的。 */
+  const [requestsTab, setRequestsTab] = useState<'incoming' | 'outgoing'>('incoming');
+  /** 解除好友是不可逆的，先让人确认清楚跟谁解除。 */
+  const [unfriendTarget, setUnfriendTarget] = useState<Contact | null>(null);
   const [showFriendRequests, setShowFriendRequests] = useState(false);
   const [showToastMsg, setShowToastMsg] = useState<string | null>(null);
   const [showCreateRoom, setShowCreateRoom] = useState(false);
@@ -610,12 +622,14 @@ const CommunityView: React.FC<CommunityViewProps> = ({
     let cancelled = false;
     (async () => {
       try {
-        const [incoming, friends] = await Promise.all([
+        const [incoming, outgoing, friends] = await Promise.all([
           apiListIncomingFriendRequests(),
+          apiListOutgoingFriendRequests(),
           apiListFriends(),
         ]);
         if (cancelled) return;
         setIncomingRequests(incoming);
+        setOutgoingRequests(outgoing);
         if (friends.length > 0) {
           const friendIds = new Set(friends.map(f => f.id));
           setContacts(prev => prev.map(c =>
@@ -674,6 +688,34 @@ const CommunityView: React.FC<CommunityViewProps> = ({
     setIncomingRequests(rs => rs.filter(r => r.id !== req.id));
   };
   
+  /**
+   * 撤回自己发出去的好友申请。
+   *
+   * `cancelFriendRequest` 与 `DELETE /api/friends/requests/:id` 一直都在，
+   * 只是没有任何界面调用过 —— 申请一旦发出就再也收不回来。
+   */
+  const handleCancelFriendRequest = async (req: FriendOutgoingRequest) => {
+    const ok = await apiCancelFriendRequest(req.id);
+    if (!ok) { showToast('撤回失败，请稍后重试'); return; }
+    setOutgoingRequests(rs => rs.filter(r => r.id !== req.id));
+    showToast('已撤回申请');
+  };
+
+  /**
+   * 解除好友。
+   *
+   * `unfriend` 与 `DELETE /api/friends/:userId` 同样一直都在、同样没人调用 ——
+   * 加上之后就没有退路了。这是个不可逆操作，所以先确认再执行。
+   */
+  const handleUnfriend = async (contact: Contact) => {
+    const ok = await apiUnfriend(contact.id);
+    if (!ok) { showToast('解除失败，请稍后重试'); return; }
+    setContacts(prev => prev.map(c =>
+      c.id === contact.id ? { ...c, status: 'none' } : c));
+    setUnfriendTarget(null);
+    showToast(`已解除与 ${contact.name} 的好友关系`);
+  };
+
   const toggleExpand = (id: string) => setExpandedId(expandedId === id ? null : id);
 
   const handleCreateRoom = (name: string, type: RoomType, password?: string) => {
@@ -991,8 +1033,28 @@ const CommunityView: React.FC<CommunityViewProps> = ({
                     <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-4 sm:hidden"></div>
                     <button onClick={() => setShowFriendRequests(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 hidden sm:block"><X size={20}/></button>
                     <h3 className="text-lg font-bold text-slate-900 mb-5 text-center">好友申请</h3>
+                    {/* 「我发出的」这一栏此前根本不存在 —— `listOutgoing` /
+                        `cancelFriendRequest` 与对应端点一直都在，却没有任何界面用过，
+                        于是申请发出去就再也看不到、也撤不回。 */}
+                    <div role="tablist" aria-label="好友申请分栏" className="flex bg-slate-100 rounded-xl p-1 mb-4">
+                        {([
+                          ['incoming', `收到的${incomingRequests.length ? ` (${incomingRequests.length})` : ''}`],
+                          ['outgoing', `我发出的${outgoingRequests.length ? ` (${outgoingRequests.length})` : ''}`],
+                        ] as const).map(([key, label]) => (
+                          <button
+                            key={key}
+                            type="button"
+                            role="tab"
+                            aria-selected={requestsTab === key}
+                            onClick={() => setRequestsTab(key)}
+                            className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${requestsTab === key ? 'bg-white text-blue-900 shadow-sm' : 'text-slate-500'}`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                    </div>
                     <div className="flex-1 overflow-y-auto -mx-2 px-2 custom-scrollbar">
-                        {incomingRequests.length === 0 ? (
+                        {requestsTab === 'incoming' && (incomingRequests.length === 0 ? (
                             <div className="flex flex-col items-center justify-center py-12 text-slate-400">
                                 <UserPlus size={32} className="mb-3 opacity-40" />
                                 <p className="text-xs font-bold">暂无待处理的好友申请</p>
@@ -1023,7 +1085,53 @@ const CommunityView: React.FC<CommunityViewProps> = ({
                                     </div>
                                 ))}
                             </div>
-                        )}
+                        ))}
+                        {requestsTab === 'outgoing' && (outgoingRequests.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+                                <UserPlus size={32} className="mb-3 opacity-40" />
+                                <p className="text-xs font-bold">你还没有发出过好友申请</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-2">
+                                {outgoingRequests.map(req => (
+                                    <div key={req.id} className="flex items-center p-3 rounded-2xl border border-slate-100">
+                                        <img src={req.toUserAvatar || initialAvatar(req.toUserId, req.toUserName)} alt="" className="w-10 h-10 rounded-squircle mr-3 object-cover" />
+                                        <div className="flex-1 min-w-0">
+                                            <h4 className="font-bold text-slate-900 text-sm truncate">{req.toUserName}</h4>
+                                            <p className="text-[10px] text-slate-500 font-bold">等待对方回应</p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleCancelFriendRequest(req)}
+                                            aria-label={`撤回发给 ${req.toUserName} 的好友申请`}
+                                            className="ml-3 px-3 py-1.5 rounded-full bg-white border border-slate-200 text-slate-600 text-xs font-bold"
+                                        >
+                                            撤回
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* 解除好友是不可逆的，先确认跟谁解除。
+            `unfriend` 与 DELETE /api/friends/:userId 一直都在，此前没有任何入口。 */}
+        {unfriendTarget && (
+            <div className="fixed inset-0 z-[120] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 animate-fade-in" onClick={() => setUnfriendTarget(null)}>
+                <div role="dialog" aria-modal="true" aria-label="解除好友" className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+                    <h3 className="text-base font-bold text-slate-900 mb-2">解除好友关系</h3>
+                    <p className="text-[13px] text-slate-600 leading-relaxed mb-1">
+                        确定要解除与「{unfriendTarget.name}」的好友关系吗？
+                    </p>
+                    <p className="text-[11px] text-slate-400 leading-relaxed mb-5">
+                        解除之后需要重新发送申请并等对方同意才能加回来。已有的会话记录不会被删除。
+                    </p>
+                    <div className="flex space-x-3">
+                        <button type="button" onClick={() => setUnfriendTarget(null)} className="flex-1 py-3 rounded-xl bg-slate-100 text-slate-700 font-bold text-sm">取消</button>
+                        <button type="button" onClick={() => handleUnfriend(unfriendTarget)} className="flex-1 py-3 rounded-xl bg-rose-600 text-white font-bold text-sm">解除好友</button>
                     </div>
                 </div>
             </div>
@@ -1657,7 +1765,20 @@ const CommunityView: React.FC<CommunityViewProps> = ({
                                                 {contact.status === 'received' && <span className="text-[9px] text-blue-600 font-black flex items-center"><AlertCircle size={10} className="mr-0.5" /> 待通过</span>}
                                             </div>
                                         </div>
-                                        <div className="ml-3">
+                                        <div className="ml-3 flex items-center space-x-1.5">
+                                            {/* 解除好友的入口此前完全不存在 —— unfriend 与
+                                                DELETE /api/friends/:userId 一直都在、没人调用，
+                                                所以加上好友之后就没有退路了。 */}
+                                            {contact.status === 'connected' && (
+                                              <button
+                                                type="button"
+                                                onClick={(e) => { e.stopPropagation(); setUnfriendTarget(contact); }}
+                                                aria-label={`解除与 ${contact.name} 的好友关系`}
+                                                className="w-8 h-8 rounded-full flex items-center justify-center bg-white border border-slate-200 text-slate-400 hover:text-rose-500 transition-colors"
+                                              >
+                                                <UserMinus size={15} />
+                                              </button>
+                                            )}
                                             <button
                                                 onClick={(e) => {
                                                     e.stopPropagation();
