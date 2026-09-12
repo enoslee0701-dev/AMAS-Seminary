@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { MOCK_COURSES, MOCK_USER } from '../constants';
 import { THEME_CONFIGS } from './VoiceRoom';
+import { loadChatMessages, saveChatMessages } from '../services/chatMessages';
 import type { Room, RoomType } from './VoiceRoom';
 import { initialAvatar } from '../services/imageFallback';
 import { putImageDataURI, useImageUrl } from '../services/imageStore';
@@ -182,16 +183,26 @@ const VoiceRecordingOverlay: React.FC<{ duration: number }> = ({ duration }) => 
   );
 };
 
-export const ChatView: React.FC<ChatViewProps> = ({ onBack, initialChatId, onJoinRoom, onCourseClick, onOpenLibrary }) => {
+/**
+ * 某个身份的起始聊天记录：他自己桶里的内容，没有的会话用静态演示种子补齐。
+ * 种子对每个身份都一样，不是任何人的真实数据。
+ */
+const seedFor = (userId?: string | null): Record<string, Message[]> => {
+  const own = loadChatMessages(userId) as Record<string, Message[]>;
+  return { ...INITIAL_MESSAGES, ...own };
+};
+
+export const ChatView: React.FC<ChatViewProps> = ({ onBack, initialChatId, currentUserId, onJoinRoom, onCourseClick, onOpenLibrary }) => {
   const [activeChatId, setActiveChatId] = useState<string | null>(initialChatId || null);
-  const [messages, setMessages] = useState<Record<string, Message[]>>(() => {
-    try {
-        const saved = localStorage.getItem('amas_chat_messages');
-        return saved ? JSON.parse(saved) : INITIAL_MESSAGES;
-    } catch (e) {
-        return INITIAL_MESSAGES;
-    }
-  });
+  /* 本机聊天记录。改之前读的是全局键 `amas_chat_messages`，不看是谁 ——
+     换个身份登录就看得见上一个人的聊天记录（实测复现，见
+     scripts/verify-chat-identity.mjs）。现在按身份分桶。
+
+     `INITIAL_MESSAGES` 是静态的演示种子，对每个身份都一样，不是谁的数据；
+     所以「这个身份还没有记录」时用它打底是安全的。 */
+  const [messages, setMessages] = useState<Record<string, Message[]>>(
+    () => seedFor(currentUserId),
+  );
   const [inputText, setInputText] = useState("");
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showPlusMenu, setShowPlusMenu] = useState(false);
@@ -267,9 +278,27 @@ export const ChatView: React.FC<ChatViewProps> = ({ onBack, initialChatId, onJoi
     return () => window.removeEventListener('keydown', onKey);
   }, [activePicker]);
 
+  /* 落盘按身份分桶；没有身份就不写（没有归属可言）。
+     **写本机 ≠ 送达对方** —— 这一版的会话没有传输层，写进去只意味着
+     「你自己再打开那个会话时看得到」。 */
   useEffect(() => {
-    localStorage.setItem('amas_chat_messages', JSON.stringify(messages));
-  }, [messages]);
+    saveChatMessages(currentUserId, messages);
+  }, [messages, currentUserId]);
+
+  /* 换人登录 / 登出时按新身份重算，否则上一个身份的记录还留在内存里，
+     下一个人照样看得见。
+
+     这里比的是**上一次的身份值**，不是「是不是第一次跑」：
+     用 `firstRun` 标记踩过一次坑 —— StrictMode 下挂载时 effect 会跑两次，
+     第二次那个标记已经是 false，于是刚打开的会话立刻被 `setActiveChatId(null)`
+     关掉，消息发不出去。比值就没有这个问题，重复执行也是幂等的。 */
+  const prevUserIdRef = useRef(currentUserId);
+  useEffect(() => {
+    if (prevUserIdRef.current === currentUserId) return;
+    prevUserIdRef.current = currentUserId;
+    setMessages(seedFor(currentUserId));
+    setActiveChatId(null);
+  }, [currentUserId]);
 
   // Unmount safety: an in-flight recording would otherwise keep the mic open
   // and the 1s duration interval ticking after the view is gone. Stopping the
@@ -1039,6 +1068,13 @@ const ChatDetailView: React.FC<ChatDetailViewProps> = ({ conv, onBack }) => {
 export interface ChatViewProps {
   onBack: () => void;
   initialChatId?: string | null;
+  /**
+   * 当前身份。本机聊天记录按身份分桶存 —— 改之前存在全局键
+   * `amas_chat_messages` 上、读的时候不看是谁，实测复现过：
+   * 甲发完消息登出、乙在同一台设备登录，**乙看得见甲的聊天记录**。
+   * 见 services/chatMessages.ts。
+   */
+  currentUserId?: string | null;
   onJoinRoom?: (room: Room) => void;
   onCourseClick?: (courseId: string) => void;
   /**

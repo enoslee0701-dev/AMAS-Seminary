@@ -582,15 +582,24 @@ try {
        这里验证的是**本机会话记录**，不是任何投递。 */
     const stored = await page.evaluate(() => {
       try {
-        const raw = localStorage.getItem('amas_chat_messages');
-        if (!raw) return { has: false };
+        // 本机聊天记录按身份分桶存（services/chatMessages.ts）。
+        // 旧的全局键 amas_chat_messages 不该再被写 —— 那是泄露过的那个键。
+        const raw = localStorage.getItem('amas_chat_messages:v2:chat-local');
+        const legacy = localStorage.getItem('amas_chat_messages');
+        if (!raw) return { has: false, legacy };
         const o = JSON.parse(raw);
         const all = Object.values(o).flat();
-        return { has: true, hit: all.some(m => typeof m.text === 'string' && m.text.startsWith('分享自校友圈 · ')) };
+        return {
+          has: true,
+          hit: all.some(m => typeof m.text === 'string' && m.text.startsWith('分享自校友圈 · ')),
+          legacy,
+        };
       } catch (e) { return { has: false, err: String(e) }; }
     });
     check('★ 真的写进了本机的会话记录（此前一个字节都没写）',
       stored.has && stored.hit, JSON.stringify(stored));
+    check('★ 而且写的是按身份分的桶，不是那个泄露过的全局键',
+      stored.legacy === null, String(stored.legacy));
 
     await clickTxt('通讯录'); await sleep(1100);
     await clickTxt('最近消息'); await sleep(900);

@@ -625,6 +625,7 @@ const App: React.FC = () => {
       {activeVoiceRoom && (
         <Suspense fallback={<VoiceRoomLoadingFallback />}>
           <VoiceRoomOverlay
+            currentUserId={currentUserId}
             activeVoiceRoom={activeVoiceRoom}
             isRoomMinimized={isRoomMinimized}
             setIsRoomMinimized={setIsRoomMinimized}
@@ -702,6 +703,7 @@ const App: React.FC = () => {
                 <ChatView
                   onBack={handleBackToHome}
                   initialChatId={selectedChatId}
+                  currentUserId={currentUserId}
                   onJoinRoom={(room) => {
                       setActiveVoiceRoom(room);
                       setIsRoomMinimized(false);

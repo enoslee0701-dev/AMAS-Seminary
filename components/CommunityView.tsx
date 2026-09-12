@@ -20,6 +20,7 @@ import type { Room, RoomType } from './VoiceRoom';
 import { registerRoom, validateRoomPassword, isBackendConfigured } from '../services/roomService';
 import { initialAvatar } from '../services/imageFallback';
 import { addCustomGroup } from '../services/customGroups';
+import { appendToChats } from '../services/chatMessages';
 import { STOCK_PHOTOS } from '../services/stockPhotos';
 import {
   listPosts as apiListPosts,
@@ -823,33 +824,18 @@ const CommunityView: React.FC<CommunityViewProps> = ({
    * 返回是否真的落盘了 —— `setItem` 不抛异常不代表写进去了。
    */
   const deliverPostToChats = (chatIds: string[], text: string): boolean => {
-    try {
-      const raw = localStorage.getItem('amas_chat_messages');
-      let store: Record<string, any[]>;
-      try {
-        const parsed = raw ? JSON.parse(raw) : {};
-        store = (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
-      } catch {
-        store = {};   // 坏掉的旧内容不让它把这次投递也带崩
-      }
-      const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      chatIds.forEach((chatId, i) => {
-        const msg = {
-          id: `share-post-${Date.now()}-${i}`,
-          isMe: true,
-          time,
-          status: 'sent' as const,
-          type: 'text' as const,
-          text,
-        };
-        store[chatId] = [...(Array.isArray(store[chatId]) ? store[chatId] : []), msg];
-      });
-      const payload = JSON.stringify(store);
-      localStorage.setItem('amas_chat_messages', payload);
-      return localStorage.getItem('amas_chat_messages') === payload;   // 读回核对
-    } catch {
-      return false;
-    }
+    /* 走 services/chatMessages.ts，跟 ChatView 读的是**同一个按身份分的桶**。
+       原来这里直接写全局键 `amas_chat_messages`，跟 ChatView 当时一样不看身份 ——
+       换个人登录就看得见上一个人的记录（实测复现过）。
+       解析校验、读回核对、未登录不落盘都在那个服务里，这里不再各写一遍。 */
+    return appendToChats(currentUserId, chatIds, {
+      id: `share-post-${Date.now()}`,
+      isMe: true,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      status: 'sent',
+      type: 'text',
+      text,
+    }).persisted;
   };
 
   /**

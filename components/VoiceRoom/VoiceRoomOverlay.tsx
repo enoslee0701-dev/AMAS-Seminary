@@ -8,6 +8,7 @@ import { formatLocation } from '../../services/roomReadingService';
 import SharedReadingBar from './SharedReadingBar';
 import { getCurrentUser } from '../../services/authService';
 import { registerRoom, isBackendConfigured } from '../../services/roomService';
+import { appendToChats } from '../../services/chatMessages';
 import { VARIANT, MODAL_WIDTH, type RoomVariant } from './prayerTheme';
 import {
   Heart, MessageCircle, Share2, MoreHorizontal,
@@ -61,11 +62,17 @@ export interface VoiceRoomOverlayProps {
   onEndRoom: () => void;
   onViewProfile?: (user: { id: string; name: string; avatar: string; role: string }) => void;
   onChat?: (contactId: string) => void;
+  /**
+   * 当前身份。「分享给会话」写的是本机聊天记录，那份记录按身份分桶 ——
+   * 改之前写的是不带身份的全局键，换个人登录就看得见上一个人的记录。
+   * 见 services/chatMessages.ts。
+   */
+  currentUserId?: string | null;
 }
 
 export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
   activeVoiceRoom, isRoomMinimized, setIsRoomMinimized, setActiveVoiceRoom,
-  isMicOn, setIsMicOn, showToast, contacts, conversations, initialChats, onUpdateRoom, onShareToFeed, onEndRoom, onViewProfile, onChat
+  isMicOn, setIsMicOn, showToast, contacts, conversations, initialChats, onUpdateRoom, onShareToFeed, onEndRoom, onViewProfile, onChat, currentUserId
 }) => {
     const { t } = useTranslation();
     const [chatInput, setChatInput] = useState("");
@@ -676,30 +683,25 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
                 showToast("请至少选择一个会话");
                 return;
             }
-            try {
-                const savedMsgs = localStorage.getItem('amas_chat_messages');
-                const messages = savedMsgs ? JSON.parse(savedMsgs) : {};
-                selectedIds.forEach(chatId => {
-                    const message = {
-                        id: `share-${Date.now()}-${chatId}`,
-                        isMe: true,
-                        time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
-                        status: 'sent' as const,
-                        type: 'room-invite' as const,
-                        content: comment || `邀请加入：${activeVoiceRoom.label}`,
-                        meta: activeVoiceRoom
-                    };
-                    const chatMsgs = messages[chatId] || [];
-                    messages[chatId] = [...chatMsgs, message];
+            {
+                /* 走 services/chatMessages.ts，跟 ChatView 读的是**同一个按身份
+                   分的桶**。原来这里直接写全局键 `amas_chat_messages`，不看身份 ——
+                   换个人登录就看得见上一个人的聊天记录（实测复现过）。
+
+                   措辞上：写进本机存储只是「你自己再打开那个会话时看得到」，
+                   这一版的会话没有传输层，对方收不到。 */
+                const saved = appendToChats(currentUserId, selectedIds, {
+                    id: `share-${Date.now()}`,
+                    isMe: true,
+                    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    status: 'sent',
+                    type: 'room-invite',
+                    content: comment || `邀请加入：${activeVoiceRoom.label}`,
+                    meta: { roomId: activeVoiceRoom.id, label: activeVoiceRoom.label, type: activeVoiceRoom.type },
                 });
-                localStorage.setItem('amas_chat_messages', JSON.stringify(messages));
-                /* 跟校友圈那条分享是同一个毛病、同一个存储：写进
-                   localStorage 只是「你自己再打开那个会话时看得到」，
-                   没有任何传输层，对方收不到。措辞照实说。 */
-                showToast(`已放入 ${selectedIds.length} 个会话（仅本机，未发送给对方）`);
-            } catch (err) {
-                console.warn('share to chat: localStorage write failed', err);
-                showToast("分享失败：本地存储已满");
+                showToast(saved.persisted
+                    ? `已放入 ${selectedIds.length} 个会话（仅本机，未发送给对方）`
+                    : '没能放进会话：本机存储写不进去');
             }
         } else {
             onShareToFeed(activeVoiceRoom, comment);
