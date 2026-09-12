@@ -84,21 +84,32 @@ function toBackendType(t: NewsItem['type']): AnnouncementType {
   return t === 'Urgent' ? 'important' : 'normal';
 }
 
-/** GET /api/announcements — public. Returns [] when backend unavailable. */
-export async function listAnnouncements(): Promise<NewsItem[]> {
+/**
+ * GET /api/announcements — public。
+ *
+ * 失败带原因回去。原来回 `[]`，调用方分不出「服务端说一条都没有」和
+ * 「压根没问到」 —— 于是 App 保留本地那份（可能是 MOCK_NEWS 里写死的示例
+ * 公告），界面一个字都不说。公告是发给所有人看的东西，把示例公告摆在那儿
+ * 当真公告，比书目那边更糟。
+ */
+export async function listAnnouncements(): Promise<ApiResult<NewsItem[]>> {
   const base = apiBase();
-  if (!base) return [];
+  if (!base) return apiFail('not-configured');
   try {
     const res = await fetch(`${base}/api/announcements`);
     if (!res.ok) {
       console.warn('[announcementsService.listAnnouncements] backend rejected:', res.status);
-      return [];
+      return failureFromResponse(res);
     }
     const raw = (await res.json()) as Announcement[];
-    return Array.isArray(raw) ? raw.map(toNewsItem) : [];
+    if (!Array.isArray(raw)) {
+      console.warn('[announcementsService.listAnnouncements] unexpected body shape');
+      return apiFail('server-error', res.status);
+    }
+    return apiOk(raw.map(toNewsItem));
   } catch (err) {
     console.warn('[announcementsService.listAnnouncements] network error:', err);
-    return [];
+    return apiFail('network');
   }
 }
 

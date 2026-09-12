@@ -99,7 +99,7 @@ const BookAdminPanel: React.FC<BookAdminPanelProps> = ({ books, onChanged }) => 
       if (failed(res)) {
         /* 服务端说了什么就转述什么：403 才说权限，503 说数据服务不可用，
            只有真的没连上才说连不上。不替服务端下结论。 */
-        setError(failureMessage(res.reason, draft.id ? '保存' : '新增'));
+        setError(`${failureMessage(res.reason, draft.id ? '保存' : '新增')}内容已保留，可以直接重试。`);
         return;                      // ★ 不清空表单
       }
       const saved = res.data;

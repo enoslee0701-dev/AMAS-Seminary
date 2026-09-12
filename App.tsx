@@ -55,6 +55,7 @@ import { setAssessmentIdentity } from './services/assessmentStorage';
 import { setScopedIdentity } from './services/scopedLocalStore';
 import { hasPendingDiscoverHandoff } from './services/christianProfile/discoverHandoff';
 import { listAnnouncements } from './services/announcementsService';
+import type { FeedStatus } from './components/AnnouncementsView';
 import {
   listCourses,
   listMyProgress,
@@ -242,21 +243,50 @@ const App: React.FC = () => {
     localStorage.setItem('amas_news', JSON.stringify(newsItems));
   }, [newsItems]);
 
-  // Boot-time fetch: when the backend is configured and returns at least
-  // one announcement, use it as the source of truth (localStorage is the
-  // offline cache). Empty/failure responses keep the existing local list,
-  // so the offline-mock fallback is preserved byte-for-byte.
+  /**
+   * 公告的来源状态。
+   *
+   * 原来拉取失败就悄悄保留本地那份 —— 而本地那份在第一次启动时是
+   * `MOCK_NEWS`，即源码里写死的示例公告。公告是「学院发的、大家都看得到」
+   * 的东西，把示例公告不声不响地摆在公告栏里，读的人没有任何办法分辨。
+   * 现在把来源记下来，交给公告页如实显示。
+   *
+   * 服务端返回空数组是**真答复**（「现在一条公告都没有」），照收；
+   * 原来那条 `length > 0` 会把空答复当成失败，于是继续展示示例公告。
+   */
+  const [newsStatus, setNewsStatus] = useState<FeedStatus>({ source: 'loading' });
+
+  const loadAnnouncements = React.useCallback(async () => {
+    try {
+      const res = await listAnnouncements();
+      if (failed(res)) {
+        setNewsStatus({ source: 'local', reason: res.reason });
+        return;
+      }
+      setNewsItems(res.data);
+      setNewsStatus({ source: 'server' });
+    } catch (err) {
+      console.warn('[App] listAnnouncements failed:', err);
+      setNewsStatus({ source: 'local', reason: 'network' });
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const remote = await listAnnouncements();
+        const res = await listAnnouncements();
         if (cancelled) return;
-        if (Array.isArray(remote) && remote.length > 0) {
-          setNewsItems(remote);
+        if (failed(res)) {
+          setNewsStatus({ source: 'local', reason: res.reason });
+          return;
         }
+        setNewsItems(res.data);
+        setNewsStatus({ source: 'server' });
       } catch (err) {
+        if (cancelled) return;
         console.warn('[App] listAnnouncements failed:', err);
+        setNewsStatus({ source: 'local', reason: 'network' });
       }
     })();
     return () => { cancelled = true; };
@@ -802,6 +832,8 @@ const App: React.FC = () => {
                   setNewsItems={setNewsItems}
                   showToast={showToast}
                   userRole={currentUser?.role}
+                  feedStatus={newsStatus}
+                  onReload={() => { void loadAnnouncements(); }}
                 />
               </Suspense>
             ) : (

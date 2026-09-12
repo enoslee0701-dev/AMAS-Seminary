@@ -183,16 +183,57 @@ describe('成功路径没有被改坏', () => {
   });
 });
 
-describe('读取路径保持原样（不在本轮改动范围）', () => {
-  it('listBooks 失败仍回 null，调用方的本地回落不受影响', async () => {
+describe('读取路径', () => {
+  it('★ listBooks 失败也带原因 —— 界面才能说清现在看到的不是学院书目', async () => {
+    /* 原来这里回 null，LibraryView 默默换上六本示例书，一个字都不说。 */
     fetchMock.mockResolvedValue(resp(503, {}));
     const { listBooks } = await import('../../services/libraryService');
-    expect(await listBooks()).toBeNull();
+    const r = await listBooks();
+    expect(r.ok).toBe(false);
+    expect((r as any).reason).toBe('unavailable');
   });
 
-  it('listAnnouncements 失败仍回空数组', async () => {
+  it('★ listBooks 的空数组是真答复，不是失败', async () => {
+    fetchMock.mockResolvedValue(resp(200, []));
+    const { listBooks } = await import('../../services/libraryService');
+    const r = await listBooks();
+    expect(r.ok).toBe(true);
+    expect(r.ok && r.data).toEqual([]);
+  });
+
+  it('listBooks 成功带回书目', async () => {
+    fetchMock.mockResolvedValue(resp(200, [
+      { id: 'b1', title: '认识神', author: '巴刻', category: '神学藏书', addedAt: 0, addedBy: 'x' },
+    ]));
+    const { listBooks } = await import('../../services/libraryService');
+    const r = await listBooks();
+    expect(r.ok && r.data[0].title).toBe('认识神');
+  });
+
+  it('★ listAnnouncements 失败也带原因 —— 空数组跟「没问到」不是一回事', async () => {
+    /* 原来回 []，App 分不出「服务端说一条都没有」和「压根没问到」，
+       于是继续展示 MOCK_NEWS 里写死的示例公告。 */
     fetchMock.mockResolvedValue(resp(503, {}));
     const { listAnnouncements } = await import('../../services/announcementsService');
-    expect(await listAnnouncements()).toEqual([]);
+    const r = await listAnnouncements();
+    expect(r.ok).toBe(false);
+    expect((r as any).reason).toBe('unavailable');
+  });
+
+  it('★ listAnnouncements 的空数组是真答复', async () => {
+    fetchMock.mockResolvedValue(resp(200, []));
+    const { listAnnouncements } = await import('../../services/announcementsService');
+    const r = await listAnnouncements();
+    expect(r.ok).toBe(true);
+    expect(r.ok && r.data).toEqual([]);
+  });
+
+  it('listAnnouncements 成功带回公告', async () => {
+    fetchMock.mockResolvedValue(resp(200, [
+      { id: 'a1', title: '开学', content: '', type: 'normal', publishedAt: Date.UTC(2026, 0, 2), publishedBy: 'x' },
+    ]));
+    const { listAnnouncements } = await import('../../services/announcementsService');
+    const r = await listAnnouncements();
+    expect(r.ok && r.data[0].title).toBe('开学');
   });
 });

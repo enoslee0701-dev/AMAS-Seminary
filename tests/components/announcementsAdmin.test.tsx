@@ -72,6 +72,9 @@ let toasts: string[] = [];
 /* 宿主要真的持有列表并把 setNewsItems 回流 —— 第一版只把新列表推进数组、
    没回流给组件，于是乐观插入的那行从没进过组件看见的 props，
    「成功后用服务端那条替换」自然对不上。那是宿主的问题，不是产品的。 */
+let reloads = 0;
+let feedStatus: any = undefined;
+
 const Harness: React.FC<{ roles: string[] }> = () => {
   const [list, setList] = React.useState<any[]>(items);
   return (
@@ -80,6 +83,8 @@ const Harness: React.FC<{ roles: string[] }> = () => {
       newsItems={list}
       setNewsItems={(n) => { saved.push(n); setList(n); }}
       showToast={(m: string) => { toasts.push(m); }}
+      feedStatus={feedStatus}
+      onReload={() => { reloads += 1; }}
       userRole="admin"
     />
   );
@@ -124,7 +129,7 @@ const openForm = async () => {
 };
 
 beforeEach(() => {
-  saved = []; toasts = [];
+  saved = []; toasts = []; reloads = 0; feedStatus = undefined;
   createMock.mockReset(); deleteMock.mockReset(); rolesMock.mockReset();
   host = document.createElement('div');
   document.body.appendChild(host);
@@ -356,5 +361,100 @@ describe('删除：失败要还原', () => {
     await deleteWith(failWith('forbidden', 403));
     expect(toasts.join(' ')).toContain('权限');
     expect(saved[saved.length - 1].map((i: any) => i.id)).toEqual(['a1', 'a2']);
+  });
+});
+
+describe('★ 公告不是刚从服务器取到的时候，要说出来', () => {
+  /**
+   * 原来 App 拉取失败就悄悄保留本地那份 —— 而本地那份第一次启动时
+   * 是 `MOCK_NEWS`，源码里写死的示例公告。公告的意义就是「学院发的、
+   * 大家都看得到」；把示例公告不声不响摆在公告栏里，读的人没法分辨。
+   *
+   * 未配 staging 时 GET /api/announcements 实际回 503
+   * （实测，见 work/app-event-handoff.md §7）。
+   */
+  const banner = () => host.querySelector('[data-testid="feed-status"]');
+
+  it('★ 503：明说这些不是刚取到的，原因说准', async () => {
+    feedStatus = { source: 'local', reason: 'unavailable' };
+    await mount(['student']);
+    const msg = banner()?.textContent ?? '';
+    expect(msg).toContain('不是刚从服务器取到的');
+    expect(msg).toContain('暂时不可用');
+    expect(msg).not.toContain('连不上');
+  });
+
+  it('★ 连不上才说连不上', async () => {
+    feedStatus = { source: 'local', reason: 'network' };
+    await mount(['student']);
+    expect(banner()?.textContent).toContain('连不上服务器');
+  });
+
+  it('★ 没配后端地址：说没配', async () => {
+    feedStatus = { source: 'local', reason: 'not-configured' };
+    await mount(['student']);
+    expect(banner()?.textContent).toContain('没有配置后端地址');
+  });
+
+  it('★ 真从服务端取到了就没有横幅', async () => {
+    feedStatus = { source: 'server' };
+    await mount(['student']);
+    expect(banner()).toBeNull();
+  });
+
+  it('★ 还在加载时不先吓唬人', async () => {
+    feedStatus = { source: 'loading' };
+    await mount(['student']);
+    expect(banner()).toBeNull();
+  });
+
+  it('不传 feedStatus 的老调用方不会凭空多一条横幅', async () => {
+    feedStatus = undefined;
+    await mount(['student']);
+    expect(banner()).toBeNull();
+  });
+
+  it('★ 503 给重新加载入口，点了真会重新拉', async () => {
+    feedStatus = { source: 'local', reason: 'unavailable' };
+    await mount(['student']);
+    const btn = [...host.querySelectorAll('button')]
+      .find(b => (b.textContent || '').trim() === '重新加载公告');
+    expect(btn).not.toBeUndefined();
+    click(btn!);
+    expect(reloads).toBe(1);
+  });
+
+  it('★ 没配后端地址时不给重新加载 —— 点多少次都一样', async () => {
+    feedStatus = { source: 'local', reason: 'not-configured' };
+    await mount(['student']);
+    const btn = [...host.querySelectorAll('button')]
+      .find(b => (b.textContent || '').trim() === '重新加载公告');
+    expect(btn).toBeUndefined();
+  });
+
+  it('★ 横幅只说来源，不妨碍公告照常显示', async () => {
+    feedStatus = { source: 'local', reason: 'unavailable' };
+    await mount(['student']);
+    expect(text()).toContain('开学通知');
+  });
+});
+
+describe('★ 源码级：App.tsx 真的把来源传下来了', () => {
+  /* 上面用的是宿主传进去的 feedStatus，挡不住 App.tsx 自己不传。
+     这条读源码补上。拦得住回归，拦不住运行时 —— 如实标注。 */
+  it('App 拉公告失败会记下原因，而不是静默保留本地那份', async () => {
+    const fs = await import('node:fs');
+    const src = fs.readFileSync('App.tsx', 'utf8');
+    expect(src).toContain("setNewsStatus({ source: 'local', reason: res.reason })");
+    expect(src).toContain('feedStatus={newsStatus}');
+    expect(src).toContain('onReload={() => { void loadAnnouncements(); }}');
+  });
+
+  it('★ 空数组不再被当成失败', async () => {
+    const fs = await import('node:fs');
+    const src = fs.readFileSync('App.tsx', 'utf8');
+    /* 原来是 `if (Array.isArray(remote) && remote.length > 0)` ——
+       服务端说「一条都没有」时继续展示示例公告。 */
+    expect(src).not.toContain('Array.isArray(remote) && remote.length > 0');
   });
 });

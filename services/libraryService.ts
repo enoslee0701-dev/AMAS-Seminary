@@ -123,27 +123,36 @@ export function toClientBook(b: ServerBook): ClientBook {
 }
 
 /**
- * GET /api/library/books — public. Returns `null` on failure so the
- * caller can fall back to a local mock list. An empty array means "the
- * backend is reachable but empty" and should also be treated as a hint
- * to use the local mock (per task spec).
+ * GET /api/library/books — public。
+ *
+ * 失败带原因回去（见 ./apiResult）。原来是 `null`，调用方只知道「没拿到」，
+ * 于是界面默默换上六本写死的示例书，一个字都不说 —— 用户没有任何办法
+ * 知道那不是学院的书目。原因分出来之后，界面才能说准是哪种失败。
+ *
+ * **空数组是服务端的真答复**（「一本都没有」），不是失败。原来的注释写着
+ * 空数组也该走本地 mock —— 那等于凭空变出六本库存，不再这么做；
+ * 由调用方按「真的空」处理。
  */
-export async function listBooks(q?: string): Promise<ClientBook[] | null> {
+export async function listBooks(q?: string): Promise<ApiResult<ClientBook[]>> {
   const base = apiBase();
-  if (!base) return null;
+  if (!base) return apiFail('not-configured');
   try {
     const url = new URL(`${base}/api/library/books`);
     if (q && q.trim()) url.searchParams.set('q', q.trim());
     const res = await fetch(url.toString());
     if (!res.ok) {
       console.warn('[libraryService.listBooks] backend rejected:', res.status);
-      return null;
+      return failureFromResponse(res);
     }
     const raw = (await res.json()) as ServerBook[];
-    return Array.isArray(raw) ? raw.map(toClientBook) : null;
+    if (!Array.isArray(raw)) {
+      console.warn('[libraryService.listBooks] unexpected body shape');
+      return apiFail('server-error', res.status);
+    }
+    return apiOk(raw.map(toClientBook));
   } catch (err) {
     console.warn('[libraryService.listBooks] network error:', err);
-    return null;
+    return apiFail('network');
   }
 }
 

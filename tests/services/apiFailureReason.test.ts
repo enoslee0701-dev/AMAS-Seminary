@@ -90,6 +90,16 @@ describe('文案：每种原因说的是不同的事', () => {
     expect(failureMessage('unavailable', '删除')).toContain('删除');
   });
 
+  it('★ 只说为什么没成，不替调用方说后果', () => {
+    /* 「内容已保留」「书目未改动」「文件没有上传」由各入口自己接 ——
+       只有它知道自己保留了什么。这一层最初把「内容已保留」写死在每句里，
+       结果图书馆那条**加载**书目失败的横幅也跟着说「内容已保留」，不知所云。 */
+    for (const m of msgs) {
+      expect(m).not.toContain('内容已保留');
+      expect(m).not.toContain('未改动');
+    }
+  });
+
   it('所有文案都不替服务端下结论式地断言「一定是没权限」', () => {
     for (const m of msgs) expect(m).not.toContain('一定');
   });

@@ -2,9 +2,23 @@ import React, { useRef, useState, useEffect } from 'react';
 import { ChevronLeft, Bell, Search, Plus, Edit2, Trash2, X, Settings, ChevronDown, ChevronUp, AlertOctagon, Info, AlertTriangle } from 'lucide-react';
 import { NewsItem } from '../types';
 import { createAnnouncement, deleteAnnouncement } from '../services/announcementsService';
-import { failed, failureMessage } from '../services/apiResult';
+import { failed, failureMessage, isRetryable, type FailureReason } from '../services/apiResult';
 import { canManageAnnouncements } from '../services/permissions';
 import { fetchRoles } from '../services/supabaseAuth';
+
+/**
+ * 这份公告是哪来的。
+ *
+ * ```
+ * loading   还在问服务端
+ * server    服务端给的，是当前真公告
+ * local     没问到，显示的是本地那份（上次缓存，或者干脆是源码里的示例公告）
+ * ```
+ */
+export type FeedStatus =
+  | { source: 'loading' }
+  | { source: 'server' }
+  | { source: 'local'; reason: FailureReason };
 
 interface AnnouncementsViewProps {
   onBack: () => void;
@@ -14,9 +28,16 @@ interface AnnouncementsViewProps {
   showToast?: (msg: string) => void;
   /** Logged-in user's role; gates posting/editing announcements. */
   userRole?: string;
+  /**
+   * 列表是不是真从服务端拿到的。不传就当 loading（什么都不声张）——
+   * 老的调用方不会因此凭空多出一条横幅。
+   */
+  feedStatus?: FeedStatus;
+  /** 重新拉取公告；没有就不显示重试入口。 */
+  onReload?: () => void;
 }
 
-const AnnouncementsView: React.FC<AnnouncementsViewProps> = ({ onBack, newsItems, setNewsItems, showToast, userRole }) => {
+const AnnouncementsView: React.FC<AnnouncementsViewProps> = ({ onBack, newsItems, setNewsItems, showToast, userRole, feedStatus, onReload }) => {
   // Ref tracking the latest news list so async backend callbacks can
   // reconcile against current state instead of a stale closure snapshot.
   const newsItemsRef = useRef<NewsItem[]>(newsItems);
@@ -127,7 +148,7 @@ const AnnouncementsView: React.FC<AnnouncementsViewProps> = ({ onBack, newsItems
       /* 服务端答复的失败按原因逐种措辞；只有客户端自己抛了异常
          （请求都没走完）才说"客户端出错"，不冒充成服务端的答复。 */
       const failMsg = result && failed(result)
-        ? failureMessage(result.reason, '发布')
+        ? `${failureMessage(result.reason, '发布')}公告没有发出去，内容已保留，可以直接重试。`
         : '发布没有完成：客户端出错了，公告没有发出去。内容已保留，可重试。';
       if (threw || !result || failed(result)) {
         // 撤回那条别人看不见的「公告」，不留在列表里冒充已发布
@@ -166,7 +187,7 @@ const AnnouncementsView: React.FC<AnnouncementsViewProps> = ({ onBack, newsItems
           /* 失败就把那条放回去 —— 它在别人那里从来没被删掉过，
              列表里少一条只会让人以为已经删了。原因照实说。 */
           setNewsItems(beforeSnapshot);
-          notify(failureMessage(res.reason, '删除'));
+          notify(`${failureMessage(res.reason, '删除')}公告未改动。`);
         }
       } catch (err) {
         console.warn('[AnnouncementsView.delete] backend error:', err);
@@ -279,6 +300,31 @@ const AnnouncementsView: React.FC<AnnouncementsViewProps> = ({ onBack, newsItems
 
       {/* Announcements Stream */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-safe-area scrollbar-hide">
+        {/* 这份公告不是刚从服务端取到的时候，必须说出来。
+            公告的意义就是「学院发的、大家都看得到的」；把本地那份
+            （上次的缓存，甚至是源码里写死的示例公告）不声不响地摆在这里，
+            等于让人把示例当成学院的通知。 */}
+        {feedStatus && feedStatus.source === 'local' && (
+          <div
+            data-testid="feed-status"
+            role="status"
+            className="p-3 rounded-2xl bg-amber-50 border border-amber-100 text-[11px] text-amber-800 leading-relaxed"
+          >
+            <p>
+              {`以下公告不是刚从服务器取到的，可能是旧的或示例内容。${failureMessage(feedStatus.reason, '加载公告')}`}
+            </p>
+            {onReload && isRetryable(feedStatus.reason) && (
+              <button
+                type="button"
+                onClick={onReload}
+                className="mt-2 px-3 py-1.5 rounded-full bg-amber-600 text-white text-[11px] font-bold"
+              >
+                重新加载公告
+              </button>
+            )}
+          </div>
+        )}
+
         {isManageMode && isAdmin && (
           <div className="bg-blue-50 p-4 rounded-2xl border border-blue-200 border-dashed flex items-center space-x-3 mb-2 animate-fade-in">
             <div className="p-2 bg-white rounded-full shadow-sm text-blue-600">

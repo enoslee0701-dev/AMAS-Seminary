@@ -121,26 +121,31 @@ export async function failureFromResponse(res: Response): Promise<ApiFailure> {
  * 501 不叫人重试                     —— 重试一百次也还是不支持
  * 不写「一定是…」                    —— 服务端说了什么就转述什么
  * ```
+ *
+ * **只说「为什么没成」，不说后果。**「内容已保留」「书目未改动」
+ * 「文件没有上传」这类话由各个入口自己接在后面 —— 只有它知道自己
+ * 到底保留了什么。这一层最初把「内容已保留」写死在每句话里，结果
+ * 图书馆那条「加载书目失败」的横幅也跟着说「内容已保留」，不知所云。
  */
 export function failureMessage(reason: FailureReason, action: string): string {
   switch (reason) {
     case 'not-configured':
-      return `${action}没有完成：这个版本没有配置后端地址，请求没有发出去。内容已保留。`;
+      return `${action}没有完成：这个版本没有配置后端地址，请求没有发出去。`;
     case 'unauthorized':
-      return `${action}没有完成：登录状态已失效，请重新登录后再操作。内容已保留。`;
+      return `${action}没有完成：登录状态已失效，请重新登录后再操作。`;
     case 'forbidden':
-      return `${action}没有完成：服务端拒绝了，当前账号没有这项操作的权限。内容已保留。`;
+      return `${action}没有完成：服务端拒绝了，当前账号没有这项操作的权限。`;
     case 'unavailable':
-      return `${action}没有完成：服务器答复数据服务暂时不可用，稍后可重试。内容已保留。`;
+      return `${action}没有完成：服务器答复数据服务暂时不可用，稍后可重试。`;
     case 'not-supported':
-      return `${action}没有完成：服务端不支持这项操作。内容已保留。`;
+      return `${action}没有完成：服务端不支持这项操作。`;
     case 'server-error':
-      return `${action}没有完成：服务器出错了，稍后可重试。内容已保留。`;
+      return `${action}没有完成：服务器出错了，稍后可重试。`;
     case 'rejected':
-      return `${action}没有完成：服务端不接受这次提交，请检查内容后再提交一次。内容已保留。`;
+      return `${action}没有完成：服务端不接受这次提交，请检查内容后再提交一次。`;
     case 'network':
     default:
-      return `${action}没有完成：连不上服务器，稍后可重试。内容已保留。`;
+      return `${action}没有完成：连不上服务器，稍后可重试。`;
   }
 }
 

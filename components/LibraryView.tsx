@@ -19,6 +19,10 @@ import {
   toggleFavorite as apiToggleFavorite,
   type ClientBook,
 } from '../services/libraryService';
+import {
+  failed, failureMessage, isRetryable,
+  type FailureReason,
+} from '../services/apiResult';
 
 type BookType = '电子书' | '有声书' | 'PDF';
 
@@ -47,6 +51,27 @@ const FALLBACK_BOOKS: Book[] = [
 
 const SEARCH_DEBOUNCE_MS = 300;
 
+/**
+ * 现在列表里这些书是哪来的 —— 这件事必须让人看得见。
+ *
+ * ```
+ * loading    还在问服务端，先别下结论
+ * server     服务端给的，货真价实
+ * fallback   服务端没给，显示的是源码里那六本示例书
+ * stale      先前拿到过服务端的书目，这次（搜索）问不到了，显示的是上一次的结果
+ * ```
+ *
+ * 原来只有一个 books 数组，失败时默默保留示例书。用户看到一个「正常的
+ * 图书馆」：能搜、能收藏、能点开 —— 而这六本书跟学院没有半点关系。
+ * 管理员那边更糟：书目管理面板就挂在这些假数据上，「编辑」「删除」对着的是
+ * id 为 1…5 的本地条目，服务端根本没有。
+ */
+type CatalogStatus =
+  | { source: 'loading' }
+  | { source: 'server' }
+  | { source: 'fallback'; reason: FailureReason }
+  | { source: 'stale'; reason: FailureReason };
+
 const LibraryView: React.FC = () => {
   const [isAiOpen, setIsAiOpen] = useState(false);
   const [aiQuery, setAiQuery] = useState("");
@@ -56,6 +81,7 @@ const LibraryView: React.FC = () => {
   const [activeCategory, setActiveCategory] = useState<'全部' | '神学藏书' | '宣教资料库'>('全部');
   const [previewBook, setPreviewBook] = useState<Book | null>(null);
   const [books, setBooks] = useState<Book[]>(FALLBACK_BOOKS);
+  const [catalog, setCatalog] = useState<CatalogStatus>({ source: 'loading' });
 
   /* 书目管理入口。角色取的是**服务端那份**（fetchRoles 走同一个 my_roles RPC），
      不是 currentUser.role 那个展示字符串 —— 两者词汇不同：服务端认的是
@@ -80,15 +106,41 @@ const LibraryView: React.FC = () => {
   const favorites = useLibraryFavorites();
 
   // Boot-time hydrate: fetch the live catalog + this user's favorites.
-  // If the backend returns an empty list or fails, we keep the fallback
-  // mocks so the UI remains usable in offline / unconfigured envs.
+  /**
+   * 拉一次真书目。
+   *
+   * 失败不清空页面 —— 离线时那六本示例书照样能翻，这个回落本身是有用的。
+   * 但 `catalog` 要如实标出来源，界面据此说清楚现在看的是什么。
+   *
+   * **空数组照收**：服务端说「一本都没有」是真答复，不是失败，
+   * 不能拿六本示例书去填一个空书目。（原来的注释写着空列表也走回落，
+   * 那等于凭空变出库存。）
+   */
+  const loadCatalog = React.useCallback(async () => {
+    const res = await apiListBooks();
+    if (failed(res)) {
+      /* 重试又没成。**之前拿到过真书目就留着它**（标成 stale），
+         不要换成示例书 —— 一份可能有点旧的真书目，比六本跟学院无关的
+         示例书有用得多，也更接近事实。只有从来没拿到过才回落到示例。 */
+      setCatalog(prev => (prev.source === 'server' || prev.source === 'stale'
+        ? { source: 'stale', reason: res.reason }
+        : { source: 'fallback', reason: res.reason }));
+      return;
+    }
+    setBooks(res.data.map(toLocalBook));
+    setCatalog({ source: 'server' });
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const serverBooks = await apiListBooks();
+      const res = await apiListBooks();
       if (cancelled) return;
-      if (serverBooks && serverBooks.length > 0) {
-        setBooks(serverBooks.map(toLocalBook));
+      if (failed(res)) {
+        setCatalog({ source: 'fallback', reason: res.reason });
+      } else {
+        setBooks(res.data.map(toLocalBook));
+        setCatalog({ source: 'server' });
       }
       // Favorites are per-user; listFavorites() returns [] when not
       // logged in / backend unreachable so it's safe to seed unconditionally.
@@ -104,17 +156,28 @@ const LibraryView: React.FC = () => {
   // returned list so category filtering keeps working. Skipped when the
   // backend isn't returning data (FALLBACK_BOOKS path).
   const debounceRef = useRef<number | null>(null);
+  /* 防抖回调里读 catalog 会读到注册那一刻的旧值，用 ref 拿当下的。 */
+  const catalogRef = useRef<CatalogStatus>(catalog);
+  catalogRef.current = catalog;
   useEffect(() => {
     if (debounceRef.current !== null) {
       window.clearTimeout(debounceRef.current);
     }
     debounceRef.current = window.setTimeout(async () => {
-      const serverBooks = await apiListBooks(searchQuery);
-      if (serverBooks && serverBooks.length > 0) {
-        setBooks(serverBooks.map(toLocalBook));
+      /* 拿不到真书目的时候不去问服务端 —— 那会儿列表里是示例书，
+         下面的本地筛选自己能干这件事。 */
+      if (catalogRef.current.source === 'fallback') return;
+      const res = await apiListBooks(searchQuery);
+      if (failed(res)) {
+        /* 搜索这一次问不到了。列表留着上一次的结果，但要说明白它是旧的 ——
+           原来这里是静默 return，用户以为看到的是这次搜索的结果。 */
+        setCatalog({ source: 'stale', reason: res.reason });
+        return;
       }
-      // If the server returns null (unconfigured) or empty, we leave the
-      // current `books` state alone so the local mock filter still works.
+      /* 空结果照收：服务端说「没有匹配的」就是没有，
+         不能把上一次的列表留着冒充这次的搜索结果。 */
+      setBooks(res.data.map(toLocalBook));
+      setCatalog({ source: 'server' });
     }, SEARCH_DEBOUNCE_MS);
     return () => {
       if (debounceRef.current !== null) {
@@ -263,9 +326,36 @@ const LibraryView: React.FC = () => {
             <button onClick={() => { setActiveCategory('全部'); setSearchQuery(''); }} className="text-[11px] text-blue-900 font-bold">清除筛选</button>
           )}
         </div>
-        {/* 书目管理：只对服务端认定的管理角色显示。
+        {/* 书目服务的实情：拿不到真书目就说清楚现在看的是什么。 */}
+        {catalog.source !== 'loading' && catalog.source !== 'server' && (
+          <div
+            data-testid="catalog-status"
+            role="status"
+            className="mb-3 p-3 rounded-xl bg-amber-50 border border-amber-100 text-[11px] text-amber-800 leading-relaxed"
+          >
+            <p>
+              {catalog.source === 'fallback'
+                ? `以下是示例条目，不是学院书目。${failureMessage(catalog.reason, '加载书目')}`
+                : `显示的是上一次加载的结果，不是这次搜索的结果。${failureMessage(catalog.reason, '搜索书目')}`}
+            </p>
+            {isRetryable(catalog.reason) && (
+              <button
+                type="button"
+                onClick={() => { void loadCatalog(); }}
+                className="mt-2 px-3 py-1.5 rounded-full bg-amber-600 text-white text-[11px] font-bold"
+              >
+                重试加载书目
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* 书目管理：只对服务端认定的管理角色显示，**并且**得先真拿到书目。
+            拿不到的时候面板会挂在示例书上 —— 「编辑《系统神学》」对着的是
+            id=1 的本地假数据，服务端根本没有这本书。那种入口不该存在。
+
             **显示 ≠ 授权** —— 服务端每次现查角色，非管理员照样 403。 */}
-        {canManageBooks && (
+        {canManageBooks && catalog.source === 'server' && (
           <BookAdminPanel books={books as any} onChanged={(next) => setBooks(next as any)} />
         )}
         <div className="space-y-3">
