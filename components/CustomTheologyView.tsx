@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { readSlot, writeSlot, removeSlot } from '../services/assessmentStorage';
 import {
   ChevronLeft, ChevronRight, ChevronDown, Sparkles, Target, TrendingUp,
   ShieldCheck, RefreshCw, BookOpen, ArrowDown, AlertTriangle, Trash2, Undo2, X,
@@ -790,11 +791,14 @@ interface CTState {
   legacy?: boolean;
 }
 
-const STORAGE_KEY = 'amas_ct_state_v2';
+/* 原来直接读写全局键，不看是谁 —— 换个身份登录就看得见上一个人的评估结果
+   （实测复现）。现在经 services/assessmentStorage.ts 按身份分键。 */
+const STORAGE_KEY = 'amas_ct_state_v2';   // 仅供文档 / 诊断引用
+void STORAGE_KEY;
 const loadCT = (): CTState | null => {
-  try { const raw = localStorage.getItem(STORAGE_KEY); const s = raw ? JSON.parse(raw) : null; return s && s.v === 2 && s.scores ? s : null; } catch { return null; }
+  try { const raw = readSlot('doc'); const s = raw ? JSON.parse(raw) : null; return s && s.v === 2 && s.scores ? s : null; } catch { return null; }
 };
-const saveCT = (s: CTState) => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); } catch {} };
+const saveCT = (s: CTState) => { try { writeSlot('doc', JSON.stringify(s)); } catch {} };
 
 const stageOf = (avg: number, tier: number, years: number): { name: string; level: number; desc: string } => {
   if (avg >= 78 && tier >= 2) return { name: '成熟装备者', level: 4, desc: '根基与经验兼备，接下来重在深化专项与培育他人。' };
@@ -1268,7 +1272,7 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
   // ---- 撤销评估 / 时间 ----
   const clearDiagnosis = () => {
     if (!window.confirm('确定撤销本次评估吗？成长画像与装备路径将被清除，页面恢复到初始状态。')) return;
-    try { localStorage.removeItem(STORAGE_KEY); } catch {}
+    try { removeSlot('doc'); } catch {}
     setCt(null);
   };
   const fmtTime = (iso: string) => {

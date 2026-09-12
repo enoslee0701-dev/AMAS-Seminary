@@ -6,6 +6,7 @@
 // - 历史快照只追加，不重算（题库/评分版本变化时旧结果保持原样，规范 §45/§87）。
 
 import { scheduleGrowthPush } from '../growthSyncService';
+import { readSlot, writeSlot, removeSlot } from '../assessmentStorage';
 import type { Answer, ChristianProfile } from './scoring';
 import type { AssessmentLevel } from './items';
 import { isValidEvidence, type ChristianProfileEvidence } from './evidence';
@@ -16,8 +17,17 @@ import {
 } from './experiments';
 import type { ArchKey } from '../growthArchetypes';
 
+/* 这两份数据原本直接存在**全局键** `amas_ct_state_v2` / `amas_cp_session_v1`
+   上，读的时候不看是谁 —— 甲完成评估后登出、乙在同一台设备登录，
+   打开「定制化神学」看到的是甲那份已完成的结果（实测复现过）。
+   这是本应用里最私人的一份数据：答题记录与事奉倾向画像。
+
+   现在经 services/assessmentStorage.ts 按身份分键。那一层只搬字节：
+   不解析、不截断、不按形状过滤；旧的全局内容归属未知，原字节挪进隔离位，
+   不归给任何身份也不按解析结果删除。键名常量留在这里只为文档引用。 */
 const DOC_KEY = 'amas_ct_state_v2';
 const SESSION_KEY = 'amas_cp_session_v1';
+void DOC_KEY; void SESSION_KEY;
 
 export interface AssessmentSession {
   level: AssessmentLevel;
@@ -37,13 +47,13 @@ export interface ProfileHistoryEntry {
 
 // ---------- 会话 ----------
 export function loadSession(): AssessmentSession | null {
-  try { const raw = localStorage.getItem(SESSION_KEY); return raw ? JSON.parse(raw) : null; } catch { return null; }
+  try { const raw = readSlot('session'); return raw ? JSON.parse(raw) : null; } catch { return null; }
 }
 export function saveSession(s: AssessmentSession): void {
-  try { localStorage.setItem(SESSION_KEY, JSON.stringify({ ...s, updatedAt: new Date().toISOString() })); } catch {}
+  try { writeSlot('session', JSON.stringify({ ...s, updatedAt: new Date().toISOString() })); } catch {}
 }
 export function clearSession(): void {
-  try { localStorage.removeItem(SESSION_KEY); } catch {}
+  try { removeSlot('session'); } catch {}
 }
 
 // ---------- Profile（嵌入成长档案文档） ----------
@@ -63,7 +73,7 @@ interface GrowthDoc {
 
 function readDoc(): GrowthDoc {
   try {
-    const raw = localStorage.getItem(DOC_KEY);
+    const raw = readSlot('doc');
     const d = raw ? JSON.parse(raw) : null;
     if (d && d.v === 2) return d as GrowthDoc;
   } catch {}
@@ -109,7 +119,7 @@ export function saveChristianProfile(profile: ChristianProfile): void {
     // 旧的九维/恩赐字段若存在，标记为 legacy（保留可读，不再驱动角色）
     legacy: Boolean((d as { gifts?: unknown }).gifts),
   };
-  try { localStorage.setItem(DOC_KEY, JSON.stringify(next)); } catch {}
+  try { writeSlot('doc', JSON.stringify(next)); } catch {}
   scheduleGrowthPush(next);
   clearSession();
 }
@@ -118,7 +128,7 @@ export function saveChristianProfile(profile: ChristianProfile): void {
 export function clearChristianProfile(): void {
   const d = readDoc();
   delete d.christianProfile;
-  try { localStorage.setItem(DOC_KEY, JSON.stringify(d)); } catch {}
+  try { writeSlot('doc', JSON.stringify(d)); } catch {}
   scheduleGrowthPush(d);
 }
 
@@ -140,7 +150,7 @@ export function appendEvidence(e: ChristianProfileEvidence): void {
   const log = d.profileEvidence ?? [];
   if (log.some(x => x.id === e.id)) return;
   const next: GrowthDoc = { ...d, profileEvidence: [...log, e].slice(-200) };
-  try { localStorage.setItem(DOC_KEY, JSON.stringify(next)); } catch {}
+  try { writeSlot('doc', JSON.stringify(next)); } catch {}
   scheduleGrowthPush(next);
 }
 
@@ -178,7 +188,7 @@ export function readExperiments(): ValidationExperiment[] {
 function writeExperiments(next: ValidationExperiment[]): void {
   const d = readDoc();
   const doc: GrowthDoc = { ...d, experiments: next.filter(e => !e.id.startsWith('mig_')).slice(-100) };
-  try { localStorage.setItem(DOC_KEY, JSON.stringify(doc)); } catch {}
+  try { writeSlot('doc', JSON.stringify(doc)); } catch {}
   scheduleGrowthPush(doc);
 }
 
@@ -240,7 +250,7 @@ export function saveReflection(experimentId: string, input: {
   };
   const d = readDoc();
   const doc: GrowthDoc = { ...d, reflections: [...(d.reflections ?? []), r].slice(-200) };
-  try { localStorage.setItem(DOC_KEY, JSON.stringify(doc)); } catch {}
+  try { writeSlot('doc', JSON.stringify(doc)); } catch {}
   writeExperiments(list.map(e => (e.id === experimentId
     ? { ...e, status: 'completed' as const, completedAt: e.completedAt ?? now, selfReflectionId: r.id, updatedAt: now }
     : e)));
@@ -267,7 +277,7 @@ export function saveMentorObservation(experimentId: string, input: {
   };
   const d = readDoc();
   const doc: GrowthDoc = { ...d, observations: [...(d.observations ?? []), o].slice(-200) };
-  try { localStorage.setItem(DOC_KEY, JSON.stringify(doc)); } catch {}
+  try { writeSlot('doc', JSON.stringify(doc)); } catch {}
   writeExperiments(list.map(e => (e.id === experimentId ? { ...e, mentorObservationId: o.id, updatedAt: now } : e)));
   return o;
 }

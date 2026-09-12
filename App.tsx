@@ -51,6 +51,7 @@ import { getAccessToken, getCurrentUser, me as fetchMe, logout as apiLogout } fr
 import { initialAvatar } from './services/imageFallback';
 import { loadCustomGroups } from './services/customGroups';
 import { loadCourseFavorites, saveCourseFavorites } from './services/courseFavorites';
+import { setAssessmentIdentity } from './services/assessmentStorage';
 import { hasPendingDiscoverHandoff } from './services/christianProfile/discoverHandoff';
 import { listAnnouncements } from './services/announcementsService';
 import {
@@ -302,6 +303,19 @@ const App: React.FC = () => {
      组件不会因为换人而重新挂载，光靠上面的初始化值不够 ——
      登出后必须把上一个身份的自建群从列表里撤掉，否则下一个人还看得见。 */
   const currentUserId = currentUser?.id ?? null;
+
+  /* 评估与成长档案（Christian Profile 结果、每题作答、事奉倾向、实践证据）
+     原本存在全局键上、读的时候不看是谁 —— 甲完成评估后登出、乙在同一台设备
+     登录，打开「定制化神学」看到的是甲那份已完成的结果（实测复现）。
+     那是本应用里最私人的一份数据。
+
+     那一层的读写点遍布评估流程，逐个传 userId 会改动大量与本次缺陷无关的
+     签名、反而更容易漏，所以由这里设一次当前身份。
+     用 useLayoutEffect 是因为下面的视图（含懒加载的 CustomTheologyView）
+     一挂载就会读，必须在那之前设好。没有身份时设 null，那一层就既不读也不写。 */
+  React.useLayoutEffect(() => {
+    setAssessmentIdentity(currentUserId);
+  }, [currentUserId]);
   useEffect(() => {
     const combined = [...INITIAL_CONVERSATIONS, ...loadCustomGroups(currentUserId)];
     setConversations(Array.from(new Map(combined.map(item => [item.id, item])).values()));

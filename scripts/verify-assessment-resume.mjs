@@ -39,8 +39,16 @@ const CHROME = process.env.CHROME_PATH
     '/usr/bin/google-chrome', '/usr/bin/chromium-browser'].find(p => existsSync(p));
 if (!CHROME) { console.error('找不到 Chrome'); process.exit(1); }
 
-const SESSION_KEY = 'amas_cp_session_v1';
-const DOC_KEY = 'amas_ct_state_v2';
+/* 这两份数据现在**按身份分桶**存（services/assessmentStorage.ts）——
+   原来是不带身份的全局键，换个人登录就看得见上一个人的评估结果，
+   实测复现过，见 scripts/verify-assessment-identity.mjs。
+   本脚本固定用 cp-local 这个本地 fixture 身份。 */
+const USER_ID = 'cp-local';
+const SESSION_KEY = `amas_cp_session_v1:${USER_ID}`;
+const DOC_KEY = `amas_ct_state_v2:${USER_ID}`;
+/** 旧的全局键：这里只负责清干净，免得它被挪进隔离位干扰用例。 */
+const LEGACY_KEYS = ['amas_cp_session_v1', 'amas_ct_state_v2',
+  'amas_cp_session_v1:unclaimed:v1', 'amas_ct_state_v2:unclaimed:v1'];
 const TOTAL = 30;                 // 精简版题数（CP_QUICK_V1.0）
 
 let pass = 0; let fail = 0;
@@ -84,13 +92,14 @@ try {
   /** 清空这套流程用到的两个键，再重载。绝不碰别的存储。 */
   const freshRun = async () => {
     await page.goto(base, { waitUntil: 'domcontentloaded' });
-    await page.evaluate(([sk, dk]) => {
+    await page.evaluate(([sk, dk, uid, legacy]) => {
       localStorage.setItem('amas_current_user', JSON.stringify({
-        id: 'cp-local', name: '本地验证', email: 'cp@example.com', role: 'student' }));
+        id: uid, name: '本地验证', email: 'cp@example.com', role: 'student' }));
       localStorage.setItem('amas_offline_notice_dismissed', '1');
       localStorage.removeItem(sk);
       localStorage.removeItem(dk);
-    }, [SESSION_KEY, DOC_KEY]);
+      for (const k of legacy) localStorage.removeItem(k);
+    }, [SESSION_KEY, DOC_KEY, USER_ID, LEGACY_KEYS]);
     await page.goto(base, { waitUntil: 'networkidle2' });
     if (!await waitForApp()) { anyFatal = true; return false; }
     return true;

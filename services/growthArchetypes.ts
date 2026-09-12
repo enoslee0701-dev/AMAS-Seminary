@@ -1,3 +1,5 @@
+import { readSlot } from './assessmentStorage';
+
 // growthArchetypes — 十二项事奉倾向维度（Ministry Orientation Dimensions）共享数据。
 //
 // 规范（AMAS Christian Profile Assessment System v1.0 §6/§35）：
@@ -145,7 +147,7 @@ export const archetypeByKey = (k: ArchKey): ArchetypeBase => ARCHETYPES_BASE.fin
 // 供 App 其他页面（个人档案 / 首页入口）读取当前倾向摘要
 // ------------------------------------------------------------
 
-export const GROWTH_STORAGE_KEY = 'amas_ct_state_v2';
+export const GROWTH_STORAGE_KEY = 'amas_ct_state_v2';   // 仅供文档 / 诊断引用
 
 export interface GrowthRoleSummary {
   combined: string;
@@ -160,7 +162,8 @@ export interface GrowthRoleSummary {
 /** 从本地成长档案读取 Christian Profile 的倾向摘要（未完成评估返回 null）。 */
 export function readGrowthRole(): GrowthRoleSummary | null {
   try {
-    const raw = localStorage.getItem(GROWTH_STORAGE_KEY);
+    // 按身份读，见 services/assessmentStorage.ts（原来读的是不分身份的全局键）
+    const raw = readSlot('doc');
     if (!raw) return null;
     const doc = JSON.parse(raw) as {
       christianProfile?: {
