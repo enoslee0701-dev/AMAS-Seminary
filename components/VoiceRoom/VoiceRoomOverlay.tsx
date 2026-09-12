@@ -693,7 +693,10 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
                     messages[chatId] = [...chatMsgs, message];
                 });
                 localStorage.setItem('amas_chat_messages', JSON.stringify(messages));
-                showToast(`已分享给 ${selectedIds.length} 个会话`);
+                /* 跟校友圈那条分享是同一个毛病、同一个存储：写进
+                   localStorage 只是「你自己再打开那个会话时看得到」，
+                   没有任何传输层，对方收不到。措辞照实说。 */
+                showToast(`已放入 ${selectedIds.length} 个会话（仅本机，未发送给对方）`);
             } catch (err) {
                 console.warn('share to chat: localStorage write failed', err);
                 showToast("分享失败：本地存储已满");

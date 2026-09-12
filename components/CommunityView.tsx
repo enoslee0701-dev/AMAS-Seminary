@@ -149,7 +149,11 @@ const INITIAL_NOTIFICATIONS = [
                    <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm mb-2 text-blue-600">
                       <LinkIcon size={20} />
                    </div>
-                   <span className="text-xs font-bold text-slate-700">复制链接</span>
+                   {/* 原来叫「复制链接」，但本应用没有指向单条帖子的 URL，
+                       复制进去的其实是一段被截断的正文。改叫「复制内容」，
+                       名副其实。旁边那个系统分享按钮走 navigator.share，
+                       它带的 url 是应用地址，那是真的 URL，保持原样。 */}
+                   <span className="text-xs font-bold text-slate-700">复制内容</span>
                 </button>
                 <button 
                   onClick={() => { 
@@ -192,13 +196,20 @@ const INITIAL_NOTIFICATIONS = [
                     )
                   })}
                 </div>
-                <button 
+                {/* 原来这个键叫「发送」，会被读成「发给对方」。本应用的会话
+                     没有传输层，点下去只是往**本机**的会话记录里放一条。
+                     按钮与下面这行说明都照实说，别让人以为对方收到了。 */}
+                <button
                   onClick={() => onShare('chat', selectedChatIds)}
                   disabled={selectedChatIds.length === 0}
+                  aria-describedby="share-chat-scope"
                   className="w-full mt-4 py-3 bg-blue-900 text-white rounded-xl font-bold shadow-md hover:bg-blue-800 transition flex items-center justify-center active:scale-95 disabled:opacity-50 disabled:shadow-none"
                 >
-                  发送 {selectedChatIds.length > 0 ? `(${selectedChatIds.length})` : ''}
+                  放入会话 {selectedChatIds.length > 0 ? `(${selectedChatIds.length})` : ''}
                 </button>
+                <p id="share-chat-scope" className="text-[11px] text-slate-400 leading-relaxed mt-2">
+                  只会保存在这台设备的会话记录里，不会发送给对方。
+                </p>
              </div>
           </div>
         </div>
@@ -325,11 +336,21 @@ export const UserProfileFeed: React.FC<{
                                     <div className="flex items-center justify-between text-slate-400 mt-1">
                                         <span className="text-[11px] font-medium">{post.timestamp}</span>
                                         <div className="flex space-x-4">
-                                            <button onClick={() => onLike(post.id)} className={`transition-colors ${post.likedByMe ? 'text-rose-500' : 'hover:text-slate-600'}`}>
+                                            <button onClick={() => onLike(post.id)} aria-pressed={post.likedByMe} aria-label={`${post.likedByMe ? '取消赞' : '赞'} ${post.userName} 的动态`} className={`transition-colors ${post.likedByMe ? 'text-rose-500' : 'hover:text-slate-600'}`}>
                                                 <Heart size={18} fill={post.likedByMe ? "currentColor" : "none"} />
                                             </button>
-                                            <button onClick={() => onCommentClick(post.id)} className="hover:text-slate-600">
+                                            <button onClick={() => onCommentClick(post.id)} aria-label={`评论 ${post.userName} 的动态`} className="hover:text-slate-600">
                                                 <MessageSquare size={18} />
+                                            </button>
+                                            {/* onShareClick 这个 prop 一直传进来、也解构出来了，
+                                                但从头到尾没被调用过 —— 个人主页里同样没有分享入口。 */}
+                                            <button
+                                              type="button"
+                                              onClick={() => onShareClick(post)}
+                                              aria-label={`分享 ${post.userName} 的动态`}
+                                              className="hover:text-slate-600 relative before:absolute before:-inset-2 before:content-['']"
+                                            >
+                                                <Share2 size={18} />
                                             </button>
                                         </div>
                                     </div>
@@ -789,7 +810,91 @@ const CommunityView: React.FC<CommunityViewProps> = ({
       }
     })();
   };
-  const handleSharePost = (target: 'copy' | 'chat', selectedIds?: string[]) => { if (target === 'copy') { navigator.clipboard.writeText(`看这个帖子: ${postToShare?.content.substring(0, 20)}...`); showToast("链接已复制"); } else if (target === 'chat' && selectedIds && postToShare) { showToast(`已发送给 ${selectedIds.length} 个会话`); } setPostToShare(null); };
+  /**
+   * 把一条帖子投递到选中的会话里。
+   *
+   * 用的是 `amas_chat_messages` —— ChatView 挂载时读的就是它，语音房的
+   * 「分享给会话」写的也是它。**复用同一份，不另起一套。**
+   *
+   * 消息类型用 `text`：聊天的渲染分支只认得 text / audio / image / course /
+   * verse / room-invite 几种，塞一个没人接的类型等于发一个空气泡
+   * （那正是 #36 修掉的毛病）。
+   *
+   * 返回是否真的落盘了 —— `setItem` 不抛异常不代表写进去了。
+   */
+  const deliverPostToChats = (chatIds: string[], text: string): boolean => {
+    try {
+      const raw = localStorage.getItem('amas_chat_messages');
+      let store: Record<string, any[]>;
+      try {
+        const parsed = raw ? JSON.parse(raw) : {};
+        store = (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
+      } catch {
+        store = {};   // 坏掉的旧内容不让它把这次投递也带崩
+      }
+      const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      chatIds.forEach((chatId, i) => {
+        const msg = {
+          id: `share-post-${Date.now()}-${i}`,
+          isMe: true,
+          time,
+          status: 'sent' as const,
+          type: 'text' as const,
+          text,
+        };
+        store[chatId] = [...(Array.isArray(store[chatId]) ? store[chatId] : []), msg];
+      });
+      const payload = JSON.stringify(store);
+      localStorage.setItem('amas_chat_messages', payload);
+      return localStorage.getItem('amas_chat_messages') === payload;   // 读回核对
+    } catch {
+      return false;
+    }
+  };
+
+  /**
+   * 分享一条帖子。两条路此前都在说不实的话：
+   *
+   * ```
+   * copy   写进剪贴板的是 `看这个帖子: 前20字...` —— 既不是链接，本应用也
+   *        根本没有指向单条帖子的 URL（SPA，没有单帖路由）。而且
+   *        writeText 是会 reject 的 Promise（非安全上下文、权限被拒），
+   *        原来连 catch 都没有，失败照样弹「链接已复制」。
+   * chat   **什么都没做**，只弹一句「已发送给 N 个会话」。
+   *        打开那个会话，里面什么都没有。
+   * ```
+   */
+  const handleSharePost = async (target: 'copy' | 'chat', selectedIds?: string[]) => {
+    const post = postToShare;
+    if (!post) { setPostToShare(null); return; }
+
+    if (target === 'copy') {
+      // 没有单帖链接可给，就复制真正有内容的东西，按钮也已改叫「复制内容」
+      const text = `${post.userName}：${post.content}`;
+      let ok = false;
+      try {
+        await navigator.clipboard.writeText(text);
+        ok = true;
+      } catch {
+        ok = false;
+      }
+      showToast(ok ? '帖子内容已复制' : '复制失败，请长按帖子文字手动复制');
+      setPostToShare(null);
+      return;
+    }
+
+    const ids = selectedIds ?? [];
+    if (ids.length === 0) { showToast('请至少选择一个会话'); return; }
+    const ok = deliverPostToChats(ids, `分享自校友圈 · ${post.userName}：${post.content}`);
+    /* **措辞要守住的一条线**：这是往本机的会话记录里写一条，
+       不是把消息投递给对方。这一版的会话没有任何传输层，
+       写进 localStorage 只意味着「你自己再打开那个会话时看得到」。
+       所以不说「已发送」「已送达」，只说放进了本机的哪几个会话。 */
+    showToast(ok
+      ? `已放入 ${ids.length} 个会话（仅本机，未发送给对方）`
+      : '没能放进会话：本机存储写不进去');
+    setPostToShare(null);
+  };
   const handleCommentEmojiClick = (emoji: string) => { setCommentInput(prev => prev + emoji); };
   const handleCommentSubmit = (postId: string) => {
     if (!commentInput.trim()) return;
@@ -1278,19 +1383,38 @@ const CommunityView: React.FC<CommunityViewProps> = ({
                                     <div className="flex items-center justify-between mt-4">
                                         <span className="text-[11px] text-slate-400 font-medium">{post.timestamp}</span>
                                         <div className="flex items-center space-x-6 text-slate-500">
-                                            <button 
+                                            <button
                                               onClick={() => handleLikePost(post.id)}
+                                              aria-pressed={post.likedByMe}
+                                              aria-label={`${post.likedByMe ? '取消赞' : '赞'} ${post.userName} 的动态`}
                                               className={`flex items-center space-x-1.5 transition-colors ${post.likedByMe ? 'text-rose-500' : 'hover:text-slate-800'}`}
                                             >
                                                 <Heart size={18} fill={post.likedByMe ? "currentColor" : "none"} />
                                                 <span className="text-[11px] font-black">{post.likes > 0 ? post.likes : ''}</span>
                                             </button>
-                                            <button 
+                                            <button
                                               onClick={() => setActiveCommentPostId(activeCommentPostId === post.id ? null : post.id)}
+                                              aria-label={`评论 ${post.userName} 的动态`}
+                                              aria-expanded={activeCommentPostId === post.id}
                                               className={`flex items-center space-x-1.5 transition-colors ${activeCommentPostId === post.id ? 'text-blue-600' : 'hover:text-slate-800'}`}
                                             >
                                                 <MessageCircle size={18} />
                                                 <span className="text-[11px] font-black">{post.comments > 0 ? post.comments : ''}</span>
+                                            </button>
+                                            {/* 分享入口。`SharePostModal` 是完整实现的（复制内容、
+                                                系统分享、放入本机会话），但**全仓没有任何地方打开它**：
+                                                `Share2` 只出现在 import 行里从没被渲染，
+                                                `onShareClick` 也只传给了个人主页那个列表、
+                                                在里面被解构出来后一次都没调用过。
+                                                所以这个功能一直是不可达的。这里把它接上，
+                                                用的就是已有的 `setPostToShare`，不新建第二套。 */}
+                                            <button
+                                              type="button"
+                                              onClick={() => setPostToShare(post)}
+                                              aria-label={`分享 ${post.userName} 的动态`}
+                                              className="flex items-center transition-colors hover:text-slate-800 relative before:absolute before:-inset-2 before:content-['']"
+                                            >
+                                                <Share2 size={18} />
                                             </button>
                                         </div>
                                     </div>

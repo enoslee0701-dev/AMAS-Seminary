@@ -460,6 +460,150 @@ try {
     verseShown.found, JSON.stringify(verseShown));
   check('★ 气泡上标明了这是分享的经文', verseShown.tagged);
 
+  /* ---------------- 3. 校友圈分享：入口此前根本不存在 ---------------- */
+  console.log('');
+  console.log('-- 校友圈 · 分享帖子 --');
+  {
+    /* 三件事一起：
+       1. SharePostModal 是完整实现的，但**全仓没有任何地方打开它** ——
+          Share2 只出现在 import 行里从没渲染过，onShareClick 传进个人主页
+          那个列表、解构出来后一次都没调用。功能一直不可达。
+       2. copy 分支写进剪贴板的是「看这个帖子: 前20字...」，既不是链接，
+          本应用也没有指向单条帖子的 URL；writeText 会 reject 却没有 catch。
+       3. chat 分支**什么都没做**，只弹一句「已发送给 N 个会话」。
+
+       最后这条改完之后有一条线必须守住：往 amas_chat_messages 里写一条，
+       只是「你自己再打开那个会话时看得到」，**不是投递给对方**。
+       这一版的会话没有任何传输层。下面有专门的断言钉住这个措辞。 */
+    /* 这一节从**重新加载**起步。前面「语音房间」那节真的建了一间祷告室，
+       语音房覆盖层连着房间指南一直盖在最上面（实测：elementFromPoint 量到的
+       是「祷告室房间指南」那张卡），不清掉就量不到底下的按钮。
+       重新加载不会动 localStorage，所以后面对本机会话记录的断言照样成立。 */
+    await page.goto(base, { waitUntil: 'networkidle2' });
+    if (!await waitForApp()) throw new Error('重新加载超时');
+    await tab('校友圈');
+    // 这一栏叫「校友动态」，不是「动态」；校友圈默认落在「语音房间」那一栏
+    await clickTxt('校友动态'); await sleep(1200);
+
+    const shareBtns = await page.evaluate(() => [...document.querySelectorAll('button')]
+      .filter(b => /^分享 .+ 的动态$/.test(b.getAttribute('aria-label') || '')).length);
+    check('★ 动态列表里有分享入口（此前 SharePostModal 完全不可达）',
+      shareBtns > 0, `${shareBtns} 个`);
+
+    const named = await page.evaluate(() => {
+      const b = [...document.querySelectorAll('button')]
+        .filter(x => /的动态$/.test(x.getAttribute('aria-label') || ''))
+        .map(x => x.getAttribute('aria-label'));
+      return { like: b.some(l => /^赞 |^取消赞 /.test(l)), comment: b.some(l => /^评论 /.test(l)), share: b.some(l => /^分享 /.test(l)) };
+    });
+    check('★ 赞 / 评论 / 分享三个键都有可访问名称（此前只有图标）',
+      named.like && named.comment && named.share, JSON.stringify(named));
+
+    const hit = await page.evaluate(() => {
+      const el = [...document.querySelectorAll('button')]
+        .find(b => /^分享 /.test(b.getAttribute('aria-label') || ''));
+      if (!el) return null;
+      el.scrollIntoView({ block: 'center' });
+      const r = el.getBoundingClientRect();
+      const cx = Math.round(r.left + r.width / 2), cy = Math.round(r.top + r.height / 2);
+      const owns = q => { let n = q; while (n) { if (n === el) return true; n = n.parentElement; } return false; };
+      const at = (x, y) => x >= 0 && y >= 0 && x < innerWidth && y < innerHeight && owns(document.elementFromPoint(x, y));
+      if (!at(cx, cy)) {
+        const top = document.elementFromPoint(cx, cy);
+        return { blocked: true, by: top ? (top.tagName + '.' + String(top.className).slice(0, 60)) : 'none', cx, cy };
+      }
+      const grow = (dx, dy) => { let k = 0; while (k < 50 && at(cx + dx * (k + 1), cy + dy * (k + 1))) k++; return k; };
+      return { w: grow(-1, 0) + grow(1, 0) + 1, h: grow(0, -1) + grow(0, 1) + 1 };
+    });
+    check('分享键热区 >= 34x34（图标 18px，伪元素扩的）',
+      !!hit && !hit.blocked && hit.w >= 34 && hit.h >= 34, JSON.stringify(hit));
+
+    await page.evaluate(() => {
+      [...document.querySelectorAll('button')]
+        .find(b => /^分享 /.test(b.getAttribute('aria-label') || ''))?.click();
+    });
+    await sleep(1000);
+
+    const sheet = await page.evaluate(() => {
+      const t = document.body.innerText;
+      return {
+        open: t.includes('分享给...'),
+        copyNew: t.includes('复制内容'),
+        copyOld: t.includes('复制链接'),
+        sendNew: t.includes('放入会话'),
+        scope: t.includes('不会发送给对方'),
+      };
+    });
+    check('分享面板打开了', sheet.open, JSON.stringify(sheet));
+    check('★ 不再叫「复制链接」（本应用没有指向单条帖子的 URL）',
+      sheet.copyNew && !sheet.copyOld, JSON.stringify(sheet));
+    check('★ 提交键不再叫「发送」，改叫「放入会话」',
+      sheet.sendNew, JSON.stringify(sheet));
+    check('★ 面板里写明只存在这台设备、不会发送给对方',
+      sheet.scope, JSON.stringify(sheet));
+
+    const picked = await page.evaluate(() => {
+      const rows = [...document.querySelectorAll('div')]
+        .filter(d => /cursor-pointer/.test(d.className || '')
+          && /border-b border-slate-100/.test(d.className || '')
+          && d.querySelector('img'));
+      if (!rows[0]) return null;
+      const name = (rows[0].innerText || '').trim();
+      rows[0].click();
+      return name;
+    });
+    check('选中了一个会话', !!picked, String(picked));
+    await sleep(700);
+
+    const submit = await page.evaluate(() => {
+      const b = [...document.querySelectorAll('button')]
+        .find(x => (x.innerText || '').trim().startsWith('放入会话'));
+      if (!b) return null;
+      const id = b.getAttribute('aria-describedby');
+      return { disabled: b.disabled, scope: id ? (document.getElementById(id)?.innerText || '').trim() : null };
+    });
+    check('放入会话键随选择启用', submit && submit.disabled === false, JSON.stringify(submit));
+    check('★ 提交键把「不会发送给对方」关联给读屏',
+      !!submit && /不会发送给对方/.test(submit.scope || ''), String(submit && submit.scope));
+
+    await page.evaluate(() => {
+      [...document.querySelectorAll('button')]
+        .find(x => (x.innerText || '').trim().startsWith('放入会话'))?.click();
+    });
+    await sleep(1300);
+
+    const toast = await page.evaluate(() => document.body.innerText);
+    check('★ 提示说的是「放入本机会话」，不是「已发送」',
+      /已放入 1 个会话（仅本机，未发送给对方）/.test(toast));
+    check('★ 提示里没有任何「已发送 / 已送达 / 对方已收到」这类话',
+      !/已发送给|已送达|对方已收到/.test(toast));
+
+    /* fixture 级：真的写进了 ChatView 读的那个本机存储吗？
+       这里验证的是**本机会话记录**，不是任何投递。 */
+    const stored = await page.evaluate(() => {
+      try {
+        const raw = localStorage.getItem('amas_chat_messages');
+        if (!raw) return { has: false };
+        const o = JSON.parse(raw);
+        const all = Object.values(o).flat();
+        return { has: true, hit: all.some(m => typeof m.text === 'string' && m.text.startsWith('分享自校友圈 · ')) };
+      } catch (e) { return { has: false, err: String(e) }; }
+    });
+    check('★ 真的写进了本机的会话记录（此前一个字节都没写）',
+      stored.has && stored.hit, JSON.stringify(stored));
+
+    await clickTxt('通讯录'); await sleep(1100);
+    await clickTxt('最近消息'); await sleep(900);
+    await page.evaluate(() => {
+      const rows = [...document.querySelectorAll('div')]
+        .filter(d => /rounded-\[1\.5rem\]/.test(d.className || '') && d.querySelector('img'));
+      rows[0]?.click();
+    });
+    await sleep(1800);
+    const inThread = await page.evaluate(() => document.body.innerText.includes('分享自校友圈 · '));
+    check('★ 在本机打开那个会话，分享的内容真的在里面（此前打开是空的）', inThread);
+  }
+
   check('全程无 JS 运行时错误', errors.length === 0, errors.slice(0, 3).join(' | '));
 } finally {
   await browser.close();
