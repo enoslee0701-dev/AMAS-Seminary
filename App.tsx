@@ -52,6 +52,7 @@ import { initialAvatar } from './services/imageFallback';
 import { loadCustomGroups } from './services/customGroups';
 import { loadCourseFavorites, saveCourseFavorites } from './services/courseFavorites';
 import { setAssessmentIdentity } from './services/assessmentStorage';
+import { setScopedIdentity } from './services/scopedLocalStore';
 import { hasPendingDiscoverHandoff } from './services/christianProfile/discoverHandoff';
 import { listAnnouncements } from './services/announcementsService';
 import {
@@ -315,6 +316,9 @@ const App: React.FC = () => {
      一挂载就会读，必须在那之前设好。没有身份时设 null，那一层就既不读也不写。 */
   React.useLayoutEffect(() => {
     setAssessmentIdentity(currentUserId);
+    /* 第二批按身份分桶的本机数据（事工合作表单留档、讲道笔记）走同一套。
+       同样要在懒加载视图挂载之前设好。 */
+    setScopedIdentity(currentUserId);
   }, [currentUserId]);
   useEffect(() => {
     const combined = [...INITIAL_CONVERSATIONS, ...loadCustomGroups(currentUserId)];

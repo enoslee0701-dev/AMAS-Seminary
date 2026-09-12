@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ChevronLeft, Building2, Handshake, BookOpen, Users, ArrowRight, MessageSquare, ShieldCheck, Globe, Send, CheckCircle } from 'lucide-react';
 import { submitCooperation, isBackendConfigured } from '../services/cooperationService';
+import { appendScopedItem } from '../services/scopedLocalStore';
 
 interface CooperationViewProps {
   onBack: () => void;
@@ -17,14 +18,19 @@ const CooperationView: React.FC<CooperationViewProps> = ({ onBack }) => {
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  /** 这次提交实际走到了哪一步。措辞按它分，不一律说「已提交」。 */
+  const [outcome, setOutcome] = useState<'server' | 'local' | 'none'>('none');
 
-  const persistLocal = () => {
-    try {
-      const existing = JSON.parse(localStorage.getItem('amas_cooperation_submissions') || '[]');
-      existing.push({ ...formData, submittedAt: new Date().toISOString() });
-      localStorage.setItem('amas_cooperation_submissions', JSON.stringify(existing));
-    } catch {}
-  };
+  /* 本机留档。原来直接写全局键 `amas_cooperation_submissions`，不看是谁 ——
+     同一台设备上换个人填表，机构名、联系人、邮箱、电话就堆在同一份数组里。
+     （这份数据**全仓只有写、没有读**，界面上不回显；所以问题在存储层，
+     不是「乙在界面上看见了甲的邮箱」。）现在经 services/scopedLocalStore.ts
+     按身份分桶，写失败如实返回。 */
+  const persistLocal = (): boolean =>
+    appendScopedItem('amas_cooperation_submissions', {
+      ...formData,
+      submittedAt: new Date().toISOString(),
+    }).persisted;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,6 +55,7 @@ const CooperationView: React.FC<CooperationViewProps> = ({ onBack }) => {
         type: formData.cooperationType,
       });
       if (result.ok === true) {
+        setOutcome('server');
         setIsSubmitted(true);
         setSubmitting(false);
         return;
@@ -66,7 +73,11 @@ const CooperationView: React.FC<CooperationViewProps> = ({ onBack }) => {
       // user still gets a confirmation (parity with previous behavior).
     }
 
-    persistLocal();
+    /* 走到这里说明**没有送到服务器**（没配后端，或网络 / 服务端出错）。
+       原来这里照样切到「申请已提交 …… 2 个工作日内邮件联系」，
+       那是不实的：没有任何东西被送出去，也没有人会收到。
+       现在按实际结果分三种说法，见下面的成功页。 */
+    setOutcome(persistLocal() ? 'local' : 'none');
     setIsSubmitted(true);
     setSubmitting(false);
   };
@@ -75,13 +86,34 @@ const CooperationView: React.FC<CooperationViewProps> = ({ onBack }) => {
     return (
       <div className="flex-1 bg-white flex flex-col pt-safe-top animate-fade-in h-screen overflow-hidden">
         <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
-          <div className="w-20 h-20 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mb-6 border border-emerald-100 shadow-sm animate-bounce-subtle">
+          {/* 措辞按**实际走到哪一步**分。原来三种情形都显示「申请已提交 ……
+              2 个工作日内邮件联系」—— 后端没配或请求失败时那是不实的：
+              没有任何东西被送出去，也不会有人收到。 */}
+          <div
+            className={`w-20 h-20 rounded-full flex items-center justify-center mb-6 border shadow-sm ${
+              outcome === 'server'
+                ? 'bg-emerald-50 text-emerald-500 border-emerald-100 animate-bounce-subtle'
+                : 'bg-amber-50 text-amber-500 border-amber-100'
+            }`}
+          >
             <CheckCircle size={40} />
           </div>
-          <h2 className="text-2xl font-black text-slate-900 mb-3 tracking-tight">申请已提交</h2>
-          <p className="text-slate-500 text-sm leading-relaxed mb-10 max-w-xs">
-            感谢您对 AMAS 的关注！我们的机构合作专员将在 2 个工作日内通过邮件与您取得联系。
+          <h2 className="text-2xl font-black text-slate-900 mb-3 tracking-tight">
+            {outcome === 'server' ? '申请已提交' : '申请还没送出'}
+          </h2>
+          <p className="text-slate-500 text-sm leading-relaxed mb-4 max-w-xs">
+            {outcome === 'server'
+              ? '感谢您对 AMAS 的关注！我们的机构合作专员将在 2 个工作日内通过邮件与您取得联系。'
+              : outcome === 'local'
+                ? '这次没能连上服务器，内容只暂存在这台设备上，学院那边还没有收到。请稍后在网络正常时再提交一次。'
+                : '这次没能连上服务器，而且连暂存到本机也失败了（可能是浏览器存储已满或处于隐私模式）。内容没有保留，请稍后重新填写提交。'}
           </p>
+          {outcome !== 'server' && (
+            <p className="text-[11px] text-slate-400 leading-relaxed mb-6 max-w-xs">
+              急需联系可直接发邮件到学院公开的合作邮箱，不必等这个表单。
+            </p>
+          )}
+          <div className="mb-6" />
           <button 
             onClick={onBack}
             className="w-full max-w-xs py-4 bg-blue-900 text-white rounded-2xl font-bold shadow-xl shadow-blue-900/20 active:scale-95 transition-all"

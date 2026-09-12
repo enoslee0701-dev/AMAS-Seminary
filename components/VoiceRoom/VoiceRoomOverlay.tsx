@@ -9,6 +9,7 @@ import SharedReadingBar from './SharedReadingBar';
 import { getCurrentUser } from '../../services/authService';
 import { registerRoom, isBackendConfigured } from '../../services/roomService';
 import { appendToChats } from '../../services/chatMessages';
+import { readScoped, writeScoped, getScopedIdentity } from '../../services/scopedLocalStore';
 import { VARIANT, MODAL_WIDTH, type RoomVariant } from './prayerTheme';
 import {
   Heart, MessageCircle, Share2, MoreHorizontal,
@@ -105,14 +106,20 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
     const [isFetchingScripture, setIsFetchingScripture] = useState(false);
     const [fontSize, setFontSize] = useState(16);
     const DEFAULT_SERMON_NOTES = "在此处输入讲道大纲...\n1. 引言\n2. 经文释义\n3. 生活应用\n4. 呼召与祷告";
+    /* 讲道笔记原来按房间分键、**但不按人分**：同一台设备上换个人登录、
+       进同一间房，笔记面板里就是上一个人写的内容。现在经
+       services/scopedLocalStore.ts 再按身份分一层。 */
+    const sermonNotesKey = `amas_sermon_notes_${activeVoiceRoom.id}`;
     const [sermonNotes, setSermonNotes] = useState<string>(() => {
       try {
-        const saved = localStorage.getItem(`amas_sermon_notes_${activeVoiceRoom.id}`);
+        const saved = readScoped(sermonNotesKey);
         return saved !== null ? saved : DEFAULT_SERMON_NOTES;
       } catch {
         return DEFAULT_SERMON_NOTES;
       }
     });
+    /** 笔记落盘失败时给一次提示，不静悄悄丢。 */
+    const [notesSaveFailed, setNotesSaveFailed] = useState(false);
     const [isRecordingSermon, setIsRecordingSermon] = useState(false);
     const [showShareRecordingModal, setShowShareRecordingModal] = useState(false);
     const [lastRecording, setLastRecording] = useState<CapturedRecording | null>(null);
@@ -146,17 +153,24 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
     // Release the sermon recorder when the overlay unmounts.
     useEffect(() => () => { sermonRecorderRef.current?.cancel(); }, []);
 
-    // Debounced persistence: sermon notes (preaching room) keyed by roomId.
+    /* 讲道笔记的防抖落盘（按房间 + 按身份）。
+       500ms 之内足够换一个人登录，所以**发起时就把归属记下来**，
+       定时器触发时带着它写；身份变了就放弃这次保存 ——
+       宁可丢一次自动保存，也不能把甲的讲章写进乙。
+       写不成不静悄悄吞掉，面板上给一句提示。 */
     useEffect(() => {
+      const owner = getScopedIdentity();
       const handle = setTimeout(() => {
+        let ok = false;
         try {
-          localStorage.setItem(`amas_sermon_notes_${activeVoiceRoom.id}`, sermonNotes);
+          ok = writeScoped(sermonNotesKey, sermonNotes, owner);
         } catch (e) {
           console.warn('[VoiceRoom] persist sermonNotes failed', e);
         }
+        setNotesSaveFailed(!ok);
       }, 500);
       return () => clearTimeout(handle);
-    }, [sermonNotes, activeVoiceRoom.id]);
+    }, [sermonNotes, sermonNotesKey]);
 
     // NOTE(realtime): The participant list below is local mock state. There is no real
     // multi-user voice transport yet — only the local user + Gemini AI pastor produce audio.
@@ -1542,6 +1556,13 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
                                     </div>
                                 </div>
                                 <textarea value={sermonNotes} onChange={(e) => setSermonNotes(e.target.value)} className="w-full bg-transparent text-white/90 font-serif h-32 resize-none outline-none custom-scrollbar" style={{ fontSize: `${fontSize}px`, lineHeight: '1.5' }} />
+                                {/* 自动保存没成功就说一声，不静悄悄吞掉 ——
+                                    讲章写到一半以为存上了是最坏的情形。 */}
+                                {notesSaveFailed && (
+                                  <p role="status" className="mt-2 text-[11px] font-semibold text-amber-300 leading-relaxed">
+                                    暂存失败：这台设备的浏览器存储可能已满或处于隐私模式，笔记只在本次使用中有效，请另外拷贝一份。
+                                  </p>
+                                )}
                             </div>
                         )}
                     </div>
