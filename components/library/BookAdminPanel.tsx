@@ -4,6 +4,7 @@ import {
   createBook, updateBook, deleteBook,
   type ClientBook, type CreateBookInput,
 } from '../../services/libraryService';
+import { failed, failureMessage } from '../../services/apiResult';
 
 /**
  * 图书馆书目管理（新增 / 编辑 / 删除）。
@@ -35,6 +36,13 @@ import {
  *
  * 提交失败时表单内容一律保留 —— 让人重填一遍是最气人的失败方式。
  * 删除是不可逆的，先确认。
+ *
+ * ## 失败原因照实说
+ *
+ * 服务层原来把 401 / 403 / 503 / 网络错误全压成 null，这里只能含糊说
+ * 「可能没权限，也可能没连上服务器」。那句话在最常见的那种失败下是**错的**：
+ * 未配 staging 时这些端点回 503 —— 服务器答了，不是没连上。
+ * 现在原因由 `services/apiResult` 按状态码分出来，文案逐种对应。
  */
 
 export interface BookAdminPanelProps {
@@ -85,17 +93,16 @@ const BookAdminPanel: React.FC<BookAdminPanelProps> = ({ books, onChanged }) => 
         year: draft.year ? Number(draft.year) : undefined,
         description: draft.description?.trim() || undefined,
       };
-      const saved = draft.id
+      const res = draft.id
         ? await updateBook(draft.id, payload)
         : await createBook(payload);
-      if (!saved) {
-        /* 服务层对 401/403 与网络错误都回 null，这里分不出来，
-           所以话要说得准：可能没权限，也可能没连上。不替服务端下结论。 */
-        setError(draft.id
-          ? '保存失败。可能是没有管理权限，也可能是没连上服务器。内容已保留，可重试。'
-          : '新增失败。可能是没有管理权限，也可能是没连上服务器。内容已保留，可重试。');
+      if (failed(res)) {
+        /* 服务端说了什么就转述什么：403 才说权限，503 说数据服务不可用，
+           只有真的没连上才说连不上。不替服务端下结论。 */
+        setError(failureMessage(res.reason, draft.id ? '保存' : '新增'));
         return;                      // ★ 不清空表单
       }
+      const saved = res.data;
       onChanged(draft.id
         ? books.map(b => (b.id === saved.id ? saved : b))
         : [saved, ...books]);
@@ -114,9 +121,9 @@ const BookAdminPanel: React.FC<BookAdminPanelProps> = ({ books, onChanged }) => 
     setBusy(true);
     setError(null);
     try {
-      const ok = await deleteBook(book.id);
-      if (!ok) {
-        setError('删除失败。可能是没有管理权限，也可能是没连上服务器。书目未改动。');
+      const res = await deleteBook(book.id);
+      if (failed(res)) {
+        setError(`${failureMessage(res.reason, '删除')}书目未改动。`);
         return;                      // ★ 失败时列表一本都不动
       }
       onChanged(books.filter(b => b.id !== book.id));

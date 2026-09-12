@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
-/* 服务层与角色来源都替掉；契约与真实一致（create 回对象或 null，delete 回 boolean）。
+/* 服务层与角色来源都替掉；契约与真实一致 —— 成功回 { ok: true, data }，
+   失败回 { ok: false, reason, status }（见 services/apiResult）。
    不连后端、不碰真实身份、不触线上公告。 */
 const createMock = vi.fn();
 const deleteMock = vi.fn();
@@ -39,10 +40,22 @@ import AnnouncementsView from '../../components/AnnouncementsView';
  *            公告是发给所有人看的，别人那边一个字都没变
  * 失败诚实   发布失败撤回那条别人看不见的行，表单内容保留可重试；
  *            删除失败把列表还原，不虚假删除
+ * 原因准确   503 / 403 / 401 / 连不上说的是四件不同的事
  * ```
+ *
+ * ## 最后一条是这一轮补的
+ *
+ * 原来无论服务端答什么，失败都只有一句「可能是没有管理权限，也可能是没连上
+ * 服务器」。而未配 staging 时 POST /api/announcements 实际回 **503**
+ * （实测，见 work/app-event-handoff.md §7）—— 服务器答了，说「没连上」是错的，
+ * 顺带还暗示人家没权限。现在按原因分开说。
  *
  * **真实后端未联调**：开发机配的地址非本机且连不通，不指向它。
  */
+
+/* 本地联调实测：未配 staging 时这些端点回 503。拿它当默认失败夹具。 */
+const FAIL_503 = { ok: false, reason: 'unavailable', status: 503 } as const;
+const failWith = (reason: string, status?: number) => ({ ok: false, reason, status }) as any;
 
 const items = [
   { id: 'a1', title: '开学通知', date: '2026-09-01', type: 'Notice', content: '内容一' },
@@ -52,6 +65,9 @@ const items = [
 let host: HTMLDivElement;
 let root: Root;
 let saved: any[][] = [];
+/* 删除失败的提示走的是 showToast（`notify`），不是页面上的 role="alert"。
+   原来宿主把它丢掉了，于是那条提示根本没法验。收下来。 */
+let toasts: string[] = [];
 
 /* 宿主要真的持有列表并把 setNewsItems 回流 —— 第一版只把新列表推进数组、
    没回流给组件，于是乐观插入的那行从没进过组件看见的 props，
@@ -63,7 +79,7 @@ const Harness: React.FC<{ roles: string[] }> = () => {
       onBack={() => {}}
       newsItems={list}
       setNewsItems={(n) => { saved.push(n); setList(n); }}
-      showToast={() => {}}
+      showToast={(m: string) => { toasts.push(m); }}
       userRole="admin"
     />
   );
@@ -108,7 +124,7 @@ const openForm = async () => {
 };
 
 beforeEach(() => {
-  saved = [];
+  saved = []; toasts = [];
   createMock.mockReset(); deleteMock.mockReset(); rolesMock.mockReset();
   host = document.createElement('div');
   document.body.appendChild(host);
@@ -182,7 +198,7 @@ describe('发布：校验 / 失败保留 / 连点', () => {
   });
 
   it('填齐了按契约发出去，成功后用服务端那条替换', async () => {
-    createMock.mockResolvedValue({ id: 'srv-1', title: '新通知', date: '2026-09-10', type: 'Notice', content: '' });
+    createMock.mockResolvedValue({ ok: true, data: { id: 'srv-1', title: '新通知', date: '2026-09-10', type: 'Notice', content: '' } });
     await mount(['registrar']);
     await openForm();
     typeInto(field('标题'), '新通知');
@@ -194,7 +210,7 @@ describe('发布：校验 / 失败保留 / 连点', () => {
   });
 
   it('★ 发布失败撤回那条别人看不见的行，并保留表单内容', async () => {
-    createMock.mockResolvedValue(null);
+    createMock.mockResolvedValue(FAIL_503);
     await mount(['registrar']);
     await openForm();
     typeInto(field('标题'), '发不出去的通知');
@@ -204,21 +220,83 @@ describe('发布：校验 / 失败保留 / 连点', () => {
     // 最后一次写回的列表里不应再有那条乐观行
     const last = saved[saved.length - 1];
     expect(last.some((i: any) => i.title === '发不出去的通知')).toBe(false);
-    expect(alertMsg()).toContain('没有发布成功');
+    expect(alertMsg()).toContain('发布没有完成');
     expect(alertMsg()).toContain('内容已保留');
     expect((field('标题') as HTMLInputElement).value).toBe('发不出去的通知');
   });
 
-  it('★ 失败措辞不替服务端下结论（权限或网络都可能）', async () => {
-    createMock.mockResolvedValue(null);
+  const publishWith = async (fail: unknown, title = 'x') => {
+    createMock.mockResolvedValue(fail);
     await mount(['registrar']);
     await openForm();
-    typeInto(field('标题'), 'x');
+    typeInto(field('标题'), title);
     typeInto(dateField(), '2026-09-10');
     click(submitBtn());
     await settle();
-    expect(alertMsg()).toContain('可能是没有管理权限');
-    expect(alertMsg()).toContain('也可能是没连上服务器');
+    return alertMsg() ?? '';
+  };
+
+  it('★ 503：说数据服务暂时不可用，不说没连上、不暗示没权限', async () => {
+    const msg = await publishWith(FAIL_503);
+    expect(msg).toContain('暂时不可用');
+    expect(msg).not.toContain('没连上');
+    expect(msg).not.toContain('权限');
+    expect(msg).toContain('内容已保留');
+  });
+
+  it('★ 403：才说权限', async () => {
+    const msg = await publishWith(failWith('forbidden', 403));
+    expect(msg).toContain('权限');
+    expect(msg).not.toContain('暂时不可用');
+  });
+
+  it('★ 401：叫人重新登录', async () => {
+    expect(await publishWith(failWith('unauthorized', 401))).toContain('重新登录');
+  });
+
+  it('★ 真的连不上才说连不上', async () => {
+    expect(await publishWith(failWith('network'))).toContain('连不上服务器');
+  });
+
+  it('★ 四种原因四句不同的话', async () => {
+    const seen = [
+      await publishWith(FAIL_503),
+      await publishWith(failWith('forbidden', 403)),
+      await publishWith(failWith('network')),
+      await publishWith(failWith('server-error', 500)),
+    ];
+    expect(new Set(seen).size).toBe(4);
+  });
+
+  it('★ 503 失败后草稿还在，原样重发的内容跟第一次一字不差', async () => {
+    createMock.mockResolvedValueOnce(FAIL_503)
+      .mockResolvedValueOnce({ ok: true, data: { id: 'srv-9', title: '要发的通知', date: '2026-09-10', type: 'Notice', content: '正文' } });
+    await mount(['registrar']);
+    await openForm();
+    typeInto(field('标题'), '要发的通知');
+    typeInto(dateField(), '2026-09-10');
+    click(submitBtn());
+    await settle();
+    expect(alertMsg()).toContain('暂时不可用');
+    /* ★ 表单仍然开着、内容仍然在 —— 不用重打一遍 */
+    expect((field('标题') as HTMLInputElement).value).toBe('要发的通知');
+    click(submitBtn());
+    await settle();
+    expect(createMock).toHaveBeenCalledTimes(2);
+    expect(createMock.mock.calls[0][0]).toEqual(createMock.mock.calls[1][0]);
+    expect(saved[saved.length - 1].map((i: any) => i.id)).toContain('srv-9');
+  });
+
+  it('★ 失败期间那条乐观行从头到尾没被当成已发布', async () => {
+    /* 公告的意义就是别人看得到。发不出去还留在列表里，
+       只会让人以为已经发出去了。 */
+    const msg = await publishWith(FAIL_503, '发不出去的通知');
+    expect(msg).toContain('暂时不可用');
+    for (const snapshot of saved) {
+      const row = snapshot.find((i: any) => i.title === '发不出去的通知');
+      if (row) expect(String(row.id).startsWith('news-')).toBe(true);  // 只可能是本地占位
+    }
+    expect(saved[saved.length - 1].some((i: any) => i.title === '发不出去的通知')).toBe(false);
   });
 
   it('★ 连点两下只发一次请求', async () => {
@@ -231,13 +309,13 @@ describe('发布：校验 / 失败保留 / 连点', () => {
     click(submitBtn());
     click(submitBtn());
     expect(createMock).toHaveBeenCalledTimes(1);
-    await act(async () => { resolve({ id: 'srv-1', title: '新通知', date: '2026-09-10', type: 'Notice' }); });
+    await act(async () => { resolve({ ok: true, data: { id: 'srv-1', title: '新通知', date: '2026-09-10', type: 'Notice' } }); });
   });
 });
 
 describe('删除：失败要还原', () => {
   it('确认后才删，成功就移掉', async () => {
-    deleteMock.mockResolvedValue(true);
+    deleteMock.mockResolvedValue({ ok: true, data: true });
     await mount(['registrar']);
     click(byLabel(/进入公告管理模式/));
     click(byLabel(/^删除公告 开学通知$/));
@@ -251,8 +329,8 @@ describe('删除：失败要还原', () => {
     expect(deleteMock).toHaveBeenCalledWith('a1');
   });
 
-  it('★ 删除失败时把列表还原，不虚假删除', async () => {
-    deleteMock.mockResolvedValue(false);
+  const deleteWith = async (fail: unknown) => {
+    deleteMock.mockResolvedValue(fail);
     await mount(['registrar']);
     click(byLabel(/进入公告管理模式/));
     click(byLabel(/^删除公告 开学通知$/));
@@ -260,6 +338,23 @@ describe('删除：失败要还原', () => {
       .find(b => (b.textContent || '').trim() === '确认删除');
     click(confirm);
     await settle();
+  };
+
+  it('★ 删除失败时把列表还原，不虚假删除', async () => {
+    await deleteWith(FAIL_503);
+    expect(saved[saved.length - 1].map((i: any) => i.id)).toEqual(['a1', 'a2']);
+  });
+
+  it('★ 删除遇 503：提示说的是数据服务不可用，不是笼统的「请稍后重试」', async () => {
+    await deleteWith(FAIL_503);
+    expect(toasts.join(' ')).toContain('暂时不可用');
+    expect(toasts.join(' ')).not.toContain('权限');
+    expect(toasts.join(' ')).not.toContain('连不上');
+  });
+
+  it('★ 删除遇 403：才说权限，列表照样还原', async () => {
+    await deleteWith(failWith('forbidden', 403));
+    expect(toasts.join(' ')).toContain('权限');
     expect(saved[saved.length - 1].map((i: any) => i.id)).toEqual(['a1', 'a2']);
   });
 });

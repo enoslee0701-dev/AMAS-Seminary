@@ -2,6 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { ChevronLeft, Bell, Search, Plus, Edit2, Trash2, X, Settings, ChevronDown, ChevronUp, AlertOctagon, Info, AlertTriangle } from 'lucide-react';
 import { NewsItem } from '../types';
 import { createAnnouncement, deleteAnnouncement } from '../services/announcementsService';
+import { failed, failureMessage } from '../services/apiResult';
 import { canManageAnnouncements } from '../services/permissions';
 import { fetchRoles } from '../services/supabaseAuth';
 
@@ -81,7 +82,12 @@ const AnnouncementsView: React.FC<AnnouncementsViewProps> = ({ onBack, newsItems
    * 公告的意义就是别人看得到；只在自己屏幕上的公告不是公告，留着只会让人
    * 以为已经发出去了。现在失败就撤回那一条，并把表单留着让人重试。
    *
-   * 措辞不替服务端下结论：服务层对 401/403 与网络错误都回 null，这里分不出来。
+   * ## 措辞照着服务端的答复走
+   *
+   * 服务层原来对 401 / 403 / 503 / 网络错误一律回 null，这里只能含糊说
+   * 「可能没权限，也可能没连上」。未配 staging 时 POST /api/announcements
+   * 实际回 503 —— 服务器答了，说成「没连上服务器」是错的。
+   * 现在按 `services/apiResult` 分出来的原因逐种措辞，仍然不替服务端下结论。
    */
   const handleAddEditNews = (e: React.FormEvent) => {
     e.preventDefault();
@@ -103,10 +109,10 @@ const AnnouncementsView: React.FC<AnnouncementsViewProps> = ({ onBack, newsItems
     const owner = rolesOwnerRef.current;
 
     void (async () => {
-      let server: NewsItem | null = null;
+      let result: Awaited<ReturnType<typeof createAnnouncement>> | null = null;
       let threw = false;
       try {
-        server = await createAnnouncement({
+        result = await createAnnouncement({
           title: newItem.title,
           content: newItem.content,
           type: newItem.type,
@@ -118,16 +124,19 @@ const AnnouncementsView: React.FC<AnnouncementsViewProps> = ({ onBack, newsItems
         setSubmitting(false);
       }
       if (rolesOwnerRef.current !== owner) return;   // 换人了，这次结果不算数
-      if (!server) {
+      /* 服务端答复的失败按原因逐种措辞；只有客户端自己抛了异常
+         （请求都没走完）才说"客户端出错"，不冒充成服务端的答复。 */
+      const failMsg = result && failed(result)
+        ? failureMessage(result.reason, '发布')
+        : '发布没有完成：客户端出错了，公告没有发出去。内容已保留，可重试。';
+      if (threw || !result || failed(result)) {
         // 撤回那条别人看不见的「公告」，不留在列表里冒充已发布
         setNewsItems(newsItemsRef.current.filter(it => it.id !== optimisticId));
-        setFormError(threw
-          ? '发布出错，公告没有发出去。内容已保留，可重试。'
-          : '没有发布成功。可能是没有管理权限，也可能是没连上服务器。内容已保留，可重试。');
+        setFormError(failMsg);
         setShowEditModal(true);                      // 表单留着，不让人重填
         return;
       }
-      const saved = server;
+      const saved = result.data;
       setNewsItems(newsItemsRef.current.map(it => it.id === optimisticId ? saved : it));
       setShowEditModal(false);
       setNewsForm({ title: '', date: '', type: 'Notice', content: '' });
@@ -152,15 +161,17 @@ const AnnouncementsView: React.FC<AnnouncementsViewProps> = ({ onBack, newsItems
     if (id.startsWith('news-')) return;
     (async () => {
       try {
-        const ok = await deleteAnnouncement(id);
-        if (!ok) {
+        const res = await deleteAnnouncement(id);
+        if (failed(res)) {
+          /* 失败就把那条放回去 —— 它在别人那里从来没被删掉过，
+             列表里少一条只会让人以为已经删了。原因照实说。 */
           setNewsItems(beforeSnapshot);
-          notify('删除失败，请稍后重试');
+          notify(failureMessage(res.reason, '删除'));
         }
       } catch (err) {
         console.warn('[AnnouncementsView.delete] backend error:', err);
         setNewsItems(beforeSnapshot);
-        notify('删除失败，请稍后重试');
+        notify('删除没有完成：客户端出错了，公告未改动。');
       }
     })();
   };

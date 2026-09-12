@@ -21,6 +21,10 @@
  */
 
 import { fetchAuthed } from './authService';
+import {
+  apiOk, apiFail, failureFromResponse,
+  type ApiResult,
+} from './apiResult';
 import type { Course, TheologyCategory, AcademicLevel } from '../types';
 
 function apiBase(): string {
@@ -108,10 +112,17 @@ export async function listCourses(): Promise<Course[] | null> {
   }
 }
 
-/** POST /api/courses — admin only. Returns the created course or null. */
-export async function createCourse(input: CreateCourseInput): Promise<Course | null> {
+/**
+ * POST /api/courses — admin only。
+ *
+ * 这个部署里目录写入是**故意停用**的：实测带 service token 也回
+ * 501 CATALOG_MUTATION_UNSUPPORTED（在 requireAdmin 之后、数据层之前）。
+ * 501 与 503（数据面没配）与 403（没权限）是三件不同的事，
+ * 所以失败要带原因回去，别让界面替服务端编理由。
+ */
+export async function createCourse(input: CreateCourseInput): Promise<ApiResult<Course>> {
   const base = apiBase();
-  if (!base) return null;
+  if (!base) return apiFail('not-configured');
   try {
     const res = await fetchAuthed(`${base}/api/courses`, {
       method: 'POST',
@@ -120,23 +131,23 @@ export async function createCourse(input: CreateCourseInput): Promise<Course | n
     });
     if (!res.ok) {
       console.warn('[coursesService.createCourse] backend rejected:', res.status);
-      return null;
+      return failureFromResponse(res);
     }
     const raw = (await res.json()) as ServerCourse;
-    return toCourse(raw);
+    return apiOk(toCourse(raw));
   } catch (err) {
     console.warn('[coursesService.createCourse] network error:', err);
-    return null;
+    return apiFail('network');
   }
 }
 
-/** PATCH /api/courses/:id — admin only. Returns the updated course or null. */
+/** PATCH /api/courses/:id — admin only（同样是停用的 501，见 createCourse）。 */
 export async function updateCourse(
   id: string,
   patch: UpdateCoursePatch,
-): Promise<Course | null> {
+): Promise<ApiResult<Course>> {
   const base = apiBase();
-  if (!base) return null;
+  if (!base) return apiFail('not-configured');
   try {
     const res = await fetchAuthed(`${base}/api/courses/${encodeURIComponent(id)}`, {
       method: 'PATCH',
@@ -145,28 +156,32 @@ export async function updateCourse(
     });
     if (!res.ok) {
       console.warn('[coursesService.updateCourse] backend rejected:', res.status);
-      return null;
+      return failureFromResponse(res);
     }
     const raw = (await res.json()) as ServerCourse;
-    return toCourse(raw);
+    return apiOk(toCourse(raw));
   } catch (err) {
     console.warn('[coursesService.updateCourse] network error:', err);
-    return null;
+    return apiFail('network');
   }
 }
 
-/** DELETE /api/courses/:id — admin only. Returns true on success. */
-export async function deleteCourse(id: string): Promise<boolean> {
+/** DELETE /api/courses/:id — admin only. */
+export async function deleteCourse(id: string): Promise<ApiResult<true>> {
   const base = apiBase();
-  if (!base) return false;
+  if (!base) return apiFail('not-configured');
   try {
     const res = await fetchAuthed(`${base}/api/courses/${encodeURIComponent(id)}`, {
       method: 'DELETE',
     });
-    return res.ok;
+    if (!res.ok) {
+      console.warn('[coursesService.deleteCourse] backend rejected:', res.status);
+      return failureFromResponse(res);
+    }
+    return apiOk(true as const);
   } catch (err) {
     console.warn('[coursesService.deleteCourse] network error:', err);
-    return false;
+    return apiFail('network');
   }
 }
 
@@ -248,10 +263,17 @@ export async function listCourseFiles(courseId: string): Promise<CourseFile[]> {
   }
 }
 
-/** POST /api/courses/:id/files — admin upload of a real file. null on failure. */
-export async function uploadCourseFile(courseId: string, file: File): Promise<CourseFile | null> {
+/**
+ * POST /api/courses/:id/files — 管理员上传真实文件。
+ * 失败带原因：503（数据面没配）跟 403（没权限）不是一回事，
+ * 而原来两种都只弹一句「上传失败，请稍后重试」。
+ */
+export async function uploadCourseFile(
+  courseId: string,
+  file: File,
+): Promise<ApiResult<CourseFile>> {
   const base = apiBase();
-  if (!base) return null;
+  if (!base) return apiFail('not-configured');
   try {
     const res = await fetchAuthed(`${base}/api/courses/${encodeURIComponent(courseId)}/files`, {
       method: 'POST',
@@ -263,12 +285,12 @@ export async function uploadCourseFile(courseId: string, file: File): Promise<Co
     });
     if (!res.ok) {
       console.warn('[coursesService.uploadCourseFile] backend rejected:', res.status);
-      return null;
+      return failureFromResponse(res);
     }
-    return (await res.json()) as CourseFile;
+    return apiOk((await res.json()) as CourseFile);
   } catch (err) {
     console.warn('[coursesService.uploadCourseFile] network error:', err);
-    return null;
+    return apiFail('network');
   }
 }
 

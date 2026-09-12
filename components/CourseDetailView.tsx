@@ -13,6 +13,7 @@ import {
   type CourseFile,
 } from '../services/coursesService';
 import { readScoped, writeScoped, appendScopedItem } from '../services/scopedLocalStore';
+import { failed, failureMessage, isRetryable } from '../services/apiResult';
 
 // Helper to compress images
 const compressImage = (file: File): Promise<string> => {
@@ -261,24 +262,51 @@ const CourseDetailView: React.FC<CourseDetailViewProps> = ({ course, onUpdateCou
 
   useEffect(() => { refreshFiles(); }, [refreshFiles]);
 
-  const handlePickUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (e.target) e.target.value = ''; // allow re-picking the same file
-    if (!file) return;
+  /**
+   * 上传失败的现场：留着**刚才那个文件**与失败原因。
+   *
+   * 原来失败是一句 `alert('上传失败，请稍后重试。')` —— 三个毛病：
+   *
+   * ```
+   * 原因说不清   503（数据面没配）跟 403（没权限）跟连不上，全是同一句话
+   * 白劝人重试   403 / 501 重试多少次都一样
+   * 文件丢了     picker 在发请求前就被清空了，重试得从头再选一遍文件
+   * ```
+   *
+   * 现在把 File 对象留在手上（它就在内存里，重试直接重发同一份，
+   * 不用再选一次），并且只在**重试有意义**的原因下给重试按钮。
+   */
+  const [uploadError, setUploadError] = useState<{ msg: string; file: File | null } | null>(null);
+
+  const doUpload = async (file: File) => {
     setFilesBusy(true);
     try {
-      const uploaded = await uploadCourseFile(course.id, file);
-      if (uploaded) {
+      const res = await uploadCourseFile(course.id, file);
+      if (!failed(res)) {
+        setUploadError(null);
         await refreshFiles();
         setDownloadFileName(`${file.name} 已上传`);
         setShowDownloadToast(true);
         setTimeout(() => setShowDownloadToast(false), 2500);
-      } else {
-        alert('上传失败，请稍后重试。');
+        return;
       }
+      /* 照实说是哪一种失败。文件没有上传，本地也没有留副本 ——
+         不能让人以为「已经传上去了，只是没显示」。 */
+      setUploadError({
+        msg: `${failureMessage(res.reason, '上传')}文件没有上传。`,
+        file: isRetryable(res.reason) ? file : null,
+      });
     } finally {
       setFilesBusy(false);
     }
+  };
+
+  const handlePickUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (e.target) e.target.value = ''; // allow re-picking the same file
+    if (!file) return;
+    setUploadError(null);
+    await doUpload(file);
   };
 
   const handleRealDownload = async (f: CourseFile) => {
@@ -990,6 +1018,27 @@ const CourseDetailView: React.FC<CourseDetailViewProps> = ({ course, onUpdateCou
             <div className="space-y-3 animate-fade-in">
                {/* Hidden picker for admin uploads */}
                <input ref={fileInputRef} type="file" className="hidden" onChange={handlePickUpload} />
+
+               {/* 上传失败就把原因留在页面上 —— 不用一个一闪而过的 toast，
+                   也不用 alert（点掉就没了，还没法重试）。 */}
+               {uploadError && (
+                  <div
+                     role="alert"
+                     className="p-3 rounded-xl bg-red-50 border border-red-100 text-xs text-red-700 leading-relaxed"
+                  >
+                     <p>{uploadError.msg}</p>
+                     {uploadError.file && (
+                        <button
+                           type="button"
+                           onClick={() => { const f = uploadError.file; if (f) void doUpload(f); }}
+                           disabled={filesBusy}
+                           className="mt-2 px-3 py-1.5 rounded-full bg-red-600 text-white text-xs font-bold disabled:opacity-50"
+                        >
+                           {filesBusy ? '重试中…' : `重试上传 ${uploadError.file.name}`}
+                        </button>
+                     )}
+                  </div>
+               )}
 
                {/* Upload control — admins/deans/professors only, never students */}
                {canUpload && (

@@ -21,6 +21,10 @@
  */
 
 import { fetchAuthed } from './authService';
+import {
+  apiOk, apiFail, failureFromResponse,
+  type ApiResult,
+} from './apiResult';
 import type { NewsItem } from '../types';
 
 function apiBase(): string {
@@ -108,9 +112,9 @@ export async function createAnnouncement(input: {
   title: string;
   content?: string;
   type: NewsItem['type'];
-}): Promise<NewsItem | null> {
+}): Promise<ApiResult<NewsItem>> {
   const base = apiBase();
-  if (!base) return null;
+  if (!base) return apiFail('not-configured');
   try {
     const res = await fetchAuthed(`${base}/api/announcements`, {
       method: 'POST',
@@ -123,27 +127,31 @@ export async function createAnnouncement(input: {
     });
     if (!res.ok) {
       console.warn('[announcementsService.createAnnouncement] backend rejected:', res.status);
-      return null;
+      return failureFromResponse(res);
     }
     const raw = (await res.json()) as Announcement;
-    return toNewsItem(raw);
+    return apiOk(toNewsItem(raw));
   } catch (err) {
     console.warn('[announcementsService.createAnnouncement] network error:', err);
-    return null;
+    return apiFail('network');
   }
 }
 
-/** DELETE /api/announcements/:id — admin only. Returns true on success. */
-export async function deleteAnnouncement(id: string): Promise<boolean> {
+/** DELETE /api/announcements/:id — admin only. */
+export async function deleteAnnouncement(id: string): Promise<ApiResult<true>> {
   const base = apiBase();
-  if (!base) return false;
+  if (!base) return apiFail('not-configured');
   try {
     const res = await fetchAuthed(`${base}/api/announcements/${encodeURIComponent(id)}`, {
       method: 'DELETE',
     });
-    return res.ok;
+    if (!res.ok) {
+      console.warn('[announcementsService.deleteAnnouncement] backend rejected:', res.status);
+      return failureFromResponse(res);
+    }
+    return apiOk(true as const);
   } catch (err) {
     console.warn('[announcementsService.deleteAnnouncement] network error:', err);
-    return false;
+    return apiFail('network');
   }
 }

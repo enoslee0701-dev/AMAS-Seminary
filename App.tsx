@@ -62,6 +62,7 @@ import {
   updateCourse as apiUpdateCourse,
   setCourseProgress as apiSetCourseProgress,
 } from './services/coursesService';
+import { failed, failureMessage } from './services/apiResult';
 
 /**
  * Fullscreen fallback shown while the VoiceRoomOverlay lazy chunk loads.
@@ -493,21 +494,27 @@ const App: React.FC = () => {
           thumbnailImageId: updatedCourse.thumbnailImageId ?? null,
           totalLessons: updatedCourse.totalLessons,
         });
-        if (!server) {
+        if (failed(server)) {
           /* 这个部署里 PATCH /api/courses/:id **是故意停用的**
              （501 CATALOG_MUTATION_UNSUPPORTED，理由见 backend/src/routes/courses.ts
              文件头：目录已 canonical 在 Postgres，必填列没有客户端对应物）。
              原来这里是 `if (!server) return;` —— 静默把本地改动留着，
              管理员以为目录改好了，而**别人看到的还是原样**。
-             现在撤回本地改动并如实说，不制造改成功的假象。 */
+             现在撤回本地改动并如实说，不制造改成功的假象。
+
+             但「停用」只是失败原因之一：503（数据面没配）、403（没权限）、
+             连不上，都会走到这里。原来一律说成「目录由 canonical 接管」，
+             那在后两种情况下是**编的**。按实际原因分开说。 */
           setAllCourses(before);
-          showToast('课程目录改不了：这个部署里目录由 canonical 目录接管，App 这边的修改不会生效');
+          showToast(server.reason === 'not-supported'
+            ? '课程目录改不了：这个部署里目录由 canonical 目录接管，App 这边的修改不会生效'
+            : `${failureMessage(server.reason, '修改课程')}本地改动已还原。`);
           return;
         }
         // Server response omits per-user progress fields — keep the local
         // progress numbers so we don't wipe them out during a meta edit.
         setAllCourses(prev => prev.map(c => c.id === updatedCourse.id
-          ? { ...server, progress: updatedCourse.progress, completedLessons: updatedCourse.completedLessons }
+          ? { ...server.data, progress: updatedCourse.progress, completedLessons: updatedCourse.completedLessons }
           : c));
       } catch (err) {
         console.warn('[App] updateCourse sync failed:', err);
@@ -530,18 +537,21 @@ const App: React.FC = () => {
           thumbnailImageId: newCourse.thumbnailImageId,
           totalLessons: newCourse.totalLessons,
         });
-        if (!server) {
+        if (failed(server)) {
           /* POST /api/courses 同样是停用的 501。原来静默把本地那条留在列表里，
-             那是一门**只有自己看得见的课**，别人打开 App 根本没有。 */
+             那是一门**只有自己看得见的课**，别人打开 App 根本没有。
+             同样地，503 / 403 / 连不上不是「被 canonical 接管」，分开说。 */
           setAllCourses(prev => prev.filter(c => c.id !== newCourse.id));
-          showToast('课程没能加进目录：这个部署里目录由 canonical 目录接管');
+          showToast(server.reason === 'not-supported'
+            ? '课程没能加进目录：这个部署里目录由 canonical 目录接管'
+            : `${failureMessage(server.reason, '新增课程')}列表已还原。`);
           return;
         }
         // Swap the optimistic record (with our local `new-${ts}` id) for the
         // server's canonical record (real UUID + createdAt). Keep the local
         // progress fields since the server doesn't return them.
         setAllCourses(prev => prev.map(c => c.id === newCourse.id
-          ? { ...server, progress: newCourse.progress, completedLessons: newCourse.completedLessons }
+          ? { ...server.data, progress: newCourse.progress, completedLessons: newCourse.completedLessons }
           : c));
       } catch (err) {
         console.warn('[App] createCourse sync failed:', err);

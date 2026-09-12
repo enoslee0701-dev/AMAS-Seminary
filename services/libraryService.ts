@@ -24,6 +24,10 @@
  */
 import { FileText, Headphones } from 'lucide-react';
 import { fetchAuthed } from './authService';
+import {
+  apiOk, apiFail, failureFromResponse,
+  type ApiResult,
+} from './apiResult';
 
 function apiBase(): string {
   const v = ((import.meta as unknown as { env?: Record<string, string> }).env?.VITE_API_BASE_URL ?? '').toString();
@@ -143,10 +147,16 @@ export async function listBooks(q?: string): Promise<ClientBook[] | null> {
   }
 }
 
-/** POST /api/library/books — admin only. */
-export async function createBook(input: CreateBookInput): Promise<ClientBook | null> {
+/**
+ * POST /api/library/books — admin only.
+ *
+ * 失败时带回**原因**（见 ./apiResult）。原来这里 401 / 403 / 503 / 网络
+ * 一律回 null，界面只好说「可能没权限，也可能没连上」—— 而未配 staging 时
+ * 这个端点实际回的是 503（服务器答了），说成「没连上」是错的。
+ */
+export async function createBook(input: CreateBookInput): Promise<ApiResult<ClientBook>> {
   const base = apiBase();
-  if (!base) return null;
+  if (!base) return apiFail('not-configured');
   try {
     const res = await fetchAuthed(`${base}/api/library/books`, {
       method: 'POST',
@@ -155,13 +165,13 @@ export async function createBook(input: CreateBookInput): Promise<ClientBook | n
     });
     if (!res.ok) {
       console.warn('[libraryService.createBook] backend rejected:', res.status);
-      return null;
+      return failureFromResponse(res);
     }
     const raw = (await res.json()) as ServerBook;
-    return toClientBook(raw);
+    return apiOk(toClientBook(raw));
   } catch (err) {
     console.warn('[libraryService.createBook] network error:', err);
-    return null;
+    return apiFail('network');
   }
 }
 
@@ -169,9 +179,9 @@ export async function createBook(input: CreateBookInput): Promise<ClientBook | n
 export async function updateBook(
   id: string,
   patch: UpdateBookPatch,
-): Promise<ClientBook | null> {
+): Promise<ApiResult<ClientBook>> {
   const base = apiBase();
-  if (!base) return null;
+  if (!base) return apiFail('not-configured');
   try {
     const res = await fetchAuthed(`${base}/api/library/books/${encodeURIComponent(id)}`, {
       method: 'PATCH',
@@ -180,28 +190,32 @@ export async function updateBook(
     });
     if (!res.ok) {
       console.warn('[libraryService.updateBook] backend rejected:', res.status);
-      return null;
+      return failureFromResponse(res);
     }
     const raw = (await res.json()) as ServerBook;
-    return toClientBook(raw);
+    return apiOk(toClientBook(raw));
   } catch (err) {
     console.warn('[libraryService.updateBook] network error:', err);
-    return null;
+    return apiFail('network');
   }
 }
 
 /** DELETE /api/library/books/:id — admin only. */
-export async function deleteBook(id: string): Promise<boolean> {
+export async function deleteBook(id: string): Promise<ApiResult<true>> {
   const base = apiBase();
-  if (!base) return false;
+  if (!base) return apiFail('not-configured');
   try {
     const res = await fetchAuthed(`${base}/api/library/books/${encodeURIComponent(id)}`, {
       method: 'DELETE',
     });
-    return res.ok;
+    if (!res.ok) {
+      console.warn('[libraryService.deleteBook] backend rejected:', res.status);
+      return failureFromResponse(res);
+    }
+    return apiOk(true as const);
   } catch (err) {
     console.warn('[libraryService.deleteBook] network error:', err);
-    return false;
+    return apiFail('network');
   }
 }
 
