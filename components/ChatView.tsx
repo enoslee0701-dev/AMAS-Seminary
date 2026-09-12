@@ -182,7 +182,7 @@ const VoiceRecordingOverlay: React.FC<{ duration: number }> = ({ duration }) => 
   );
 };
 
-export const ChatView: React.FC<ChatViewProps> = ({ onBack, initialChatId, onJoinRoom, onCourseClick }) => {
+export const ChatView: React.FC<ChatViewProps> = ({ onBack, initialChatId, onJoinRoom, onCourseClick, onOpenLibrary }) => {
   const [activeChatId, setActiveChatId] = useState<string | null>(initialChatId || null);
   const [messages, setMessages] = useState<Record<string, Message[]>>(() => {
     try {
@@ -257,6 +257,15 @@ export const ChatView: React.FC<ChatViewProps> = ({ onBack, initialChatId, onJoi
   useEffect(() => {
     if (initialChatId) setActiveChatId(initialChatId);
   }, [initialChatId]);
+
+  /* 附件面板此前只能点右上角的叉或点背景关掉 —— 键盘用户没有出口。
+     补一个 Esc。挂在 window 上而不是面板里，因为面板里不一定有焦点。 */
+  useEffect(() => {
+    if (activePicker === 'none') return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setActivePicker('none'); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [activePicker]);
 
   useEffect(() => {
     localStorage.setItem('amas_chat_messages', JSON.stringify(messages));
@@ -409,10 +418,17 @@ export const ChatView: React.FC<ChatViewProps> = ({ onBack, initialChatId, onJoi
   const plusMenuItems = [
     { label: '相册', icon: ImageIcon, color: 'bg-amber-100 text-amber-500', action: () => fileInputRef.current?.click() },
     { label: '推荐课程', icon: BookOpen, color: 'bg-blue-100 text-blue-500', action: () => setActivePicker('course') },
-    { label: '学术提问', icon: QuestionIcon, color: 'bg-cyan-100 text-cyan-500', action: () => setActivePicker('question') },
-    { label: '递交作业', icon: ClipboardList, color: 'bg-indigo-100 text-indigo-500', action: () => setActivePicker('assignment') },
+    /* 这三项（学术提问 / 递交作业 / 发布代祷）在聊天里**没有自己的实现**。
+       此前点开是一张空白卡片 —— 只剩右上角一个叉。产品决定是：入口保留，
+       但不能再开空白卡；能对上现成流程的就把人带到现成流程，对不上的就把
+       暂不可用的原因说清楚并给返回。**不伪造已提交 / 已发布 / AI 回答。**
+
+       名称里直接带上实际可用范围，读屏在菜单上就知道会发生什么，
+       不用先点进去才发现。 */
+    { label: '学术提问', note: '去图书馆问 AI 牧者', icon: QuestionIcon, color: 'bg-cyan-100 text-cyan-500', action: () => setActivePicker('question') },
+    { label: '递交作业', note: '暂不可用', icon: ClipboardList, color: 'bg-indigo-100 text-indigo-500', action: () => setActivePicker('assignment') },
     { label: '分享经文', icon: Scroll, color: 'bg-orange-100 text-orange-500', action: () => setActivePicker('scripture') },
-    { label: '发布代祷', icon: Heart, color: 'bg-rose-100 text-rose-500', action: () => setActivePicker('prayer') },
+    { label: '发布代祷', note: '去祷告室代祷墙', icon: Heart, color: 'bg-rose-100 text-rose-500', action: () => setActivePicker('prayer') },
     { label: '语音房间', icon: Radio, color: 'bg-emerald-100 text-emerald-500', action: () => setActivePicker('room') },
     { label: '文件', icon: FileBox, color: 'bg-slate-100 text-slate-500', action: () => {
         const input = document.createElement('input');
@@ -531,8 +547,9 @@ export const ChatView: React.FC<ChatViewProps> = ({ onBack, initialChatId, onJoi
         {/* Specialized Pickers */}
         {activePicker !== 'none' && (
           <div className="fixed inset-0 z-[110] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 animate-fade-in" onClick={() => setActivePicker('none')}>
-            <div className="bg-white w-full max-sm rounded-[2rem] p-6 shadow-2xl animate-scale-in relative" onClick={e => e.stopPropagation()}>
-                <button onClick={() => setActivePicker('none')} className="absolute top-5 right-5 text-slate-400 hover:text-slate-600"><X size={22}/></button>
+            <div role="dialog" aria-modal="true" aria-label="发送内容" className="bg-white w-full max-sm rounded-[2rem] p-6 shadow-2xl animate-scale-in relative" onClick={e => e.stopPropagation()}>
+                {/* 关闭键此前没有可访问名称，只有一个叉的图标。 */}
+                <button onClick={() => setActivePicker('none')} aria-label="关闭" className="absolute top-5 right-5 text-slate-400 hover:text-slate-600 before:absolute before:-inset-3 before:content-['']"><X size={22}/></button>
                 
                 {activePicker === 'course' && (
                     <div className="flex flex-col h-[70vh]">
@@ -559,6 +576,98 @@ export const ChatView: React.FC<ChatViewProps> = ({ onBack, initialChatId, onJoi
                   </div>
                 )}
                 
+                {/* ------- 学术提问：接现成流程（图书馆的 AI 牧者） -------
+                    聊天里没有问答实现，但图书馆里那个 AI 牧者是真的
+                    （LibraryView 调 generateTheologicalResponse，带超时与失败处理）。
+                    所以这里不再搭第二套，只把人带过去。没配 GEMINI_API_KEY 时
+                    那边会明确回一句「AI 功能暂不可用」，这里提前说清楚，
+                    本面板不伪造任何回答。 */}
+                {activePicker === 'question' && (
+                    <div>
+                        <h3 className="font-semibold text-lg text-slate-900 mb-3 flex items-center"><QuestionIcon size={20} className="mr-2 text-cyan-500"/> 学术提问</h3>
+                        <p className="text-[13px] text-slate-600 leading-relaxed mb-4">
+                            聊天里还没有提问功能。神学问答目前在「图书馆」的 AI 牧者里，
+                            那是本应用里唯一真正会回答的地方。
+                        </p>
+                        <ul className="text-[12px] text-slate-500 leading-relaxed mb-5 space-y-1.5 list-disc pl-4">
+                            <li>回答由 AI 生成，仅供参考，不代表学院立场</li>
+                            <li>未配置 AI 密钥时它会直接说明暂不可用，不会给出编造的答案</li>
+                            <li>提问内容不会发到当前这个会话里</li>
+                        </ul>
+                        {onOpenLibrary ? (
+                            <button
+                                type="button"
+                                onClick={() => { setActivePicker('none'); onOpenLibrary(); }}
+                                className="w-full bg-cyan-500 text-white py-3.5 rounded-[1.2rem] font-medium active:scale-[0.98] transition-transform"
+                            >
+                                去图书馆问 AI 牧者
+                            </button>
+                        ) : (
+                            <p className="text-[12px] text-rose-600 font-semibold">当前入口无法跳转，请从底栏进入「图书馆」。</p>
+                        )}
+                        <button type="button" onClick={() => setActivePicker('none')} className="w-full mt-2 py-3 rounded-[1.2rem] text-slate-500 text-sm font-medium">返回</button>
+                    </div>
+                )}
+
+                {/* ------- 递交作业：确实没有现成流程，如实说明 -------
+                    查过了：backend/src/routes 里没有任何作业提交端点
+                    （cooperation_submissions 是事工合作表单，不是作业），
+                    前端除了这个菜单标签之外全仓没有作业的任何实现，也没有批改流程。
+                    所以这里既不接，也不假装提交。 */}
+                {activePicker === 'assignment' && (
+                    <div>
+                        <h3 className="font-semibold text-lg text-slate-900 mb-3 flex items-center"><ClipboardList size={20} className="mr-2 text-indigo-500"/> 递交作业</h3>
+                        <p className="text-[13px] text-slate-600 leading-relaxed mb-4">
+                            作业递交还没有开放。这不是暂时的网络问题 ——
+                            本应用目前既没有作业提交的通道，也没有批改与回执流程，
+                            所以在这里点一下不会有任何东西被交出去。
+                        </p>
+                        <p className="text-[12px] text-slate-500 leading-relaxed mb-5">
+                            需要交东西给老师的话，可以先用「文件」把材料发到会话里，
+                            并在消息里说明是哪门课的哪次作业 —— 那条消息是真的会留在会话里的。
+                            正式的作业系统要等教务侧开通。
+                        </p>
+                        <button type="button" onClick={() => setActivePicker('none')} className="w-full bg-slate-100 text-slate-700 py-3.5 rounded-[1.2rem] font-medium active:scale-[0.98] transition-transform">
+                            返回
+                        </button>
+                    </div>
+                )}
+
+                {/* ------- 发布代祷：接现成流程（祷告室的代祷墙） -------
+                    代祷分享是真有后端的：/api/rooms/:roomId/prayer/shares，
+                    前端在 PrayerRoomPanel 里，连「需要连接服务器后才能发布代祷」
+                    这句诚实提示都已经写好了。它是房间范围的，所以必须先进一间祷告室
+                    —— 那间房走的就是下面「语音房间」同一条流程，这里只是把主题预先
+                    定成祷告室，不新建第二套代祷数据。 */}
+                {activePicker === 'prayer' && (
+                    <div>
+                        <h3 className="font-semibold text-lg text-slate-900 mb-3 flex items-center"><Heart size={20} className="mr-2 text-rose-500"/> 发布代祷</h3>
+                        <p className="text-[13px] text-slate-600 leading-relaxed mb-4">
+                            聊天里没有代祷墙。代祷事项发布在「祷告室」的代祷墙上，
+                            <span className="font-semibold">仅该房间成员可见</span>，发布者可随时删除。
+                        </p>
+                        <ul className="text-[12px] text-slate-500 leading-relaxed mb-5 space-y-1.5 list-disc pl-4">
+                            <li>发布需要连接服务器；未连接时那边会明确提示，不会假装已发布</li>
+                            <li>请勿填写他人的病历、住址等敏感信息</li>
+                            <li>在这里打开祷告室不会往当前会话发任何消息</li>
+                        </ul>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const cfg = THEME_CONFIGS.prayer;
+                                setActivePicker('none');
+                                /* 走的就是「语音房间」同一条流程，只是主题预定为祷告室。
+                                   这里不发消息 —— 是去发代祷，不是往会话里播报。 */
+                                onJoinRoom?.({ id: `r-${Date.now()}`, type: 'prayer', label: cfg.label, icon: cfg.icon, color: cfg.color, bg: cfg.bg, desc: cfg.desc, action: 'voice' });
+                            }}
+                            className="w-full bg-rose-500 text-white py-3.5 rounded-[1.2rem] font-medium active:scale-[0.98] transition-transform"
+                        >
+                            打开祷告室代祷墙
+                        </button>
+                        <button type="button" onClick={() => setActivePicker('none')} className="w-full mt-2 py-3 rounded-[1.2rem] text-slate-500 text-sm font-medium">返回</button>
+                    </div>
+                )}
+
                 {activePicker === 'room' && (
                     <div>
                         <h3 className="font-semibold text-lg text-slate-900 mb-4 flex items-center"><Radio size={20} className="mr-2 text-emerald-500"/> 开启语音房间</h3>
@@ -722,8 +831,15 @@ export const ChatView: React.FC<ChatViewProps> = ({ onBack, initialChatId, onJoi
                          按钮自己没有任何可访问名称 —— 读屏走到这里只会念「按钮」，
                          八个一模一样。span 已经显示了文字，所以不重复朗读它
                          （aria-hidden），由按钮的 aria-label 来承担名称。 */}
-                     <button onClick={item.action} aria-label={item.label} className={`w-16 h-16 rounded-[1.5rem] flex items-center justify-center transition-all active:scale-95 shadow-sm ${item.color}`}><item.icon size={28} strokeWidth={2} /></button>
+                     <button
+                       onClick={item.action}
+                       aria-label={item.note ? `${item.label}（${item.note}）` : item.label}
+                       className={`w-16 h-16 rounded-[1.5rem] flex items-center justify-center transition-all active:scale-95 shadow-sm ${item.color}`}
+                     ><item.icon size={28} strokeWidth={2} /></button>
                      <span aria-hidden="true" className="text-[11px] mt-2.5 text-slate-600 font-semibold">{item.label}</span>
+                     {item.note && (
+                       <span aria-hidden="true" className="text-[9px] mt-0.5 text-slate-400 font-medium leading-tight text-center px-0.5">{item.note}</span>
+                     )}
                    </div>
                  ))}
                </div>
@@ -925,6 +1041,12 @@ export interface ChatViewProps {
   initialChatId?: string | null;
   onJoinRoom?: (room: Room) => void;
   onCourseClick?: (courseId: string) => void;
+  /**
+   * 去图书馆。「学术提问」用它把人带到**已有的那个** AI 牧者入口
+   * （LibraryView 里的 generateTheologicalResponse），而不是在聊天里
+   * 再搭一套问答。没传就退化成只说明、不跳转。
+   */
+  onOpenLibrary?: () => void;
 }
 
 export default ChatView;

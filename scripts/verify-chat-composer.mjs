@@ -163,25 +163,150 @@ try {
   check('能从「最近消息」进到一个会话', await openFirstChat());
   check('聊天页已打开', await inChat());
 
+  /* ---------------- 0b. 三个尚无实现的入口：不再是空白卡片 ---------------- */
+  console.log('');
+  console.log('-- 聊天 · 学术提问 / 递交作业 / 发布代祷 --');
+  {
+    /* 这三项此前点开是一张空白卡片，只剩右上角一个叉。产品决定是入口保留，
+       但要么接现成流程，要么把暂不可用的原因说清楚并给返回；
+       并且**一律不许伪造已提交 / 已发布 / AI 回答**，也不许往会话里误发消息。 */
+    /* 数消息条数：每条消息最外层都是 `flex w-full ... animate-fade-in`。
+       一开始用「时间戳有几个」来数，结果把菜单里新加的说明文字也数进去了
+       （同样是 text-[9px]），三项走一圈凭空多出三条。用气泡外层才对得上。 */
+    const msgCount = () => page.evaluate(
+      () => document.querySelectorAll('div.flex.w-full.animate-fade-in').length);
+    const before = await msgCount();
+
+    const panelText = () => page.evaluate(() => {
+      const d = document.querySelector('[role="dialog"][aria-label="发送内容"]');
+      return d ? (d.innerText || '').trim() : null;
+    });
+    /* 「+」是个 toggle：菜单已经开着时再点一下会把它关掉。
+       上一张面板关掉之后菜单是留着的，所以先看入口在不在。 */
+    const openSheet = async (label) => {
+      const present = () => page.evaluate(l => [...document.querySelectorAll('button')]
+        .some(x => (x.getAttribute('aria-label') || '').startsWith(l)), label);
+      if (!await present()) {
+        await page.evaluate(() => {
+          const plus = [...document.querySelectorAll('button')].find(b => {
+            const svg = b.querySelector('svg');
+            return svg && /plus/i.test(svg.getAttribute('class') || '');
+          });
+          plus?.click();
+        });
+        await sleep(800);
+      }
+      const ok = await page.evaluate(l => {
+        const b = [...document.querySelectorAll('button')]
+          .find(x => (x.getAttribute('aria-label') || '').startsWith(l));
+        b?.click(); return !!b;
+      }, label);
+      await sleep(800);
+      return ok;
+    };
+    const escClose = async () => {
+      await page.keyboard.press('Escape');
+      await sleep(700);
+      return page.evaluate(() => !document.querySelector('[role="dialog"][aria-label="发送内容"]'));
+    };
+
+    /* 菜单上就要看得出可用范围，不用点进去才发现。 */
+    if (!await page.evaluate(() => [...document.querySelectorAll('button')]
+      .some(x => (x.getAttribute('aria-label') || '').startsWith('学术提问')))) {
+      await page.evaluate(() => {
+        const plus = [...document.querySelectorAll('button')].find(b => {
+          const svg = b.querySelector('svg');
+          return svg && /plus/i.test(svg.getAttribute('class') || '');
+        });
+        plus?.click();
+      });
+      await sleep(800);
+    }
+    const notes = await page.evaluate(() => {
+      const want = ['学术提问', '递交作业', '发布代祷'];
+      const out = {};
+      for (const b of document.querySelectorAll('button')) {
+        const al = b.getAttribute('aria-label') || '';
+        for (const w of want) if (al.startsWith(w)) out[w] = al;
+      }
+      return out;
+    });
+    check('★ 菜单上就标明了实际可用范围（学术提问 → 去图书馆）',
+      /去图书馆问 AI 牧者/.test(notes['学术提问'] || ''), String(notes['学术提问']));
+    check('★ 菜单上就标明了递交作业暂不可用',
+      /暂不可用/.test(notes['递交作业'] || ''), String(notes['递交作业']));
+    check('★ 菜单上就标明了发布代祷去祷告室代祷墙',
+      /祷告室代祷墙/.test(notes['发布代祷'] || ''), String(notes['发布代祷']));
+
+    // ---- 学术提问 ----
+    check('打开「学术提问」', await openSheet('学术提问'));
+    let txt = await panelText();
+    check('★ 学术提问不再是空白卡片', !!txt && txt.length > 40, String(txt && txt.length));
+    check('★ 说清了真正会回答的地方是图书馆的 AI 牧者',
+      !!txt && txt.includes('图书馆') && txt.includes('AI 牧者'));
+    check('★ 说明未配密钥时不会给编造的答案（不伪造 AI 回答）',
+      !!txt && txt.includes('不会给出编造的答案'));
+    check('★ 说明提问不会发到当前会话', !!txt && txt.includes('不会发到当前这个会话'));
+    check('★ 有去图书馆的按钮，也有返回',
+      !!txt && txt.includes('去图书馆问 AI 牧者') && txt.includes('返回'));
+    check('★ 按 Esc 能关掉（此前只能点叉或点背景）', await escClose());
+
+    // ---- 递交作业 ----
+    check('打开「递交作业」', await openSheet('递交作业'));
+    txt = await panelText();
+    check('★ 递交作业不再是空白卡片', !!txt && txt.length > 40, String(txt && txt.length));
+    check('★ 说清了暂不可用的真实原因（没有通道、没有批改回执）',
+      !!txt && txt.includes('没有作业提交的通道') && txt.includes('批改'));
+    check('★ 明说点一下不会有东西被交出去（不伪造已提交）',
+      !!txt && txt.includes('不会有任何东西被交出去'));
+    check('★ 不谎称是暂时的网络问题', !!txt && txt.includes('不是暂时的网络问题'));
+    check('★ 有返回', !!txt && txt.includes('返回'));
+    check('★ 按 Esc 能关掉', await escClose());
+
+    // ---- 发布代祷 ----
+    check('打开「发布代祷」', await openSheet('发布代祷'));
+    txt = await panelText();
+    check('★ 发布代祷不再是空白卡片', !!txt && txt.length > 40, String(txt && txt.length));
+    check('★ 说清了代祷发布在祷告室的代祷墙上、仅房间成员可见',
+      !!txt && txt.includes('祷告室') && txt.includes('仅该房间成员可见'));
+    check('★ 说明未连接服务器时不会假装已发布（不伪造已发布代祷）',
+      !!txt && txt.includes('不会假装已发布'));
+    check('★ 说明打开祷告室不会往会话发消息',
+      !!txt && txt.includes('不会往当前会话发任何消息'));
+    check('★ 有打开祷告室的按钮，也有返回',
+      !!txt && txt.includes('打开祷告室代祷墙') && txt.includes('返回'));
+    check('★ 按 Esc 能关掉', await escClose());
+
+    /* 最要紧的一条：这三项走一圈，会话里不能多出任何消息。 */
+    const after = await msgCount();
+    check('★ 三项点完，会话里没有多出任何消息（不误发）',
+      after === before, `前 ${before} → 后 ${after}`);
+  }
+
   /* ---------------- 1. 语音房间面板 ---------------- */
   console.log('');
   console.log('-- 聊天 · 开启语音房间 --');
   /* 这八个入口此前**只有图标、没有可访问名称**（名字在旁边的 span 上），
      读屏走过去八个都念「按钮」。下面全都按 aria-label 点，点得到就说明名称在。 */
-  // 先把「+」菜单开出来，后面才量得到名称
-  await page.evaluate(() => {
-    const plus = [...document.querySelectorAll('button')].find(b => {
-      const svg = b.querySelector('svg');
-      return svg && /plus/i.test(svg.getAttribute('class') || '');
+  /* 先把「+」菜单开出来，后面才量得到名称。
+     「+」是 toggle，菜单已经开着时再点会把它关掉，所以先判断。 */
+  if (!await page.evaluate(() => [...document.querySelectorAll('button')]
+    .some(b => (b.getAttribute('aria-label') || '').startsWith('语音房间')))) {
+    await page.evaluate(() => {
+      const plus = [...document.querySelectorAll('button')].find(b => {
+        const svg = b.querySelector('svg');
+        return svg && /plus/i.test(svg.getAttribute('class') || '');
+      });
+      plus?.click();
     });
-    plus?.click();
-  });
-  await sleep(900);
+    await sleep(900);
+  }
   const named = await page.evaluate(() => {
     const labels = ['相册', '推荐课程', '学术提问', '递交作业', '分享经文', '发布代祷', '语音房间', '文件'];
     const got = [...document.querySelectorAll('button')]
       .map(b => b.getAttribute('aria-label')).filter(Boolean);
-    return labels.filter(l => got.includes(l));
+    // 学术提问 / 递交作业 / 发布代祷 的名称后面还带着实际可用范围，所以前缀匹配
+    return labels.filter(l => got.some(g => g.startsWith(l)));
   });
   check('★「+」菜单里八个入口都有可访问名称（此前一个都没有）',
     named.length === 8, JSON.stringify(named));

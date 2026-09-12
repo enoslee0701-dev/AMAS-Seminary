@@ -707,6 +707,13 @@ const App: React.FC = () => {
                       setIsRoomMinimized(false);
                   }}
                   onCourseClick={handleCourseClick}
+                  /* 聊天里的「学术提问」把人带到图书馆那个**已经存在**的 AI 牧者，
+                     不在聊天里再搭一套问答。离开聊天时顺手清掉 selectedChatId，
+                     否则下次进聊天还会弹回上一个会话。 */
+                  onOpenLibrary={() => {
+                      setSelectedChatId(null);
+                      setCurrentView(ViewState.LIBRARY);
+                  }}
                 />
               </Suspense>
             ) : currentView === ViewState.COLLEGE_OVERVIEW ? (
