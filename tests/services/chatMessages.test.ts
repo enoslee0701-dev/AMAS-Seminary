@@ -183,6 +183,108 @@ describe('持久层不得按「形状不认识」过滤', () => {
   });
 });
 
+describe('顶层字段也不得丢（真实 save / append 入口）', () => {
+  /* 前一版只验了「数组里的未知条目」，漏了**顶层**：
+     saveChatMessages 里 `{ ...readBuckets(existing) }` 会把值不是数组的顶层
+     字段整个滤掉，然后 JSON.stringify 写回去 —— 未来加的元信息
+     （schemaVersion / lastReadAt / 别处塞的对象）读一次再存一次就没了。
+     注释当时还写着「会保留」。这一组就是钉住这件事，走的是真实入口。 */
+  const withMeta = {
+    c1: [msg(1)],
+    schemaVersion: 7,                     // 标量
+    lastRead: { c1: 'm1' },               // 对象
+    pinnedOrder: ['c9', 'c1'],            // 数组，但不是消息数组
+    note: 'something a future version writes',
+  };
+
+  it('save 一次就把顶层未知字段原样写进去', () => {
+    const f = useFakeStorage();
+    expect(saveChatMessages('userA', withMeta as any).persisted).toBe(true);
+    expect(JSON.parse(f.getItem(keyFor('userA'))!)).toEqual(withMeta);
+  });
+
+  it('再 save 一次（只带一个会话）也不丢顶层字段', () => {
+    const f = useFakeStorage();
+    saveChatMessages('userA', withMeta as any);
+    saveChatMessages('userA', { c1: [msg(1), msg(2)] });
+    const stored = JSON.parse(f.getItem(keyFor('userA'))!);
+    expect(stored.schemaVersion).toBe(7);
+    expect(stored.lastRead).toEqual({ c1: 'm1' });
+    expect(stored.note).toBe('something a future version writes');
+    expect(stored.c1).toHaveLength(2);
+  });
+
+  it('append 入口同样不丢顶层字段', () => {
+    const f = useFakeStorage();
+    saveChatMessages('userA', withMeta as any);
+    expect(appendToChats('userA', ['c1'], msg(9)).persisted).toBe(true);
+    const stored = JSON.parse(f.getItem(keyFor('userA'))!);
+    expect(stored.schemaVersion).toBe(7);
+    expect(stored.lastRead).toEqual({ c1: 'm1' });
+    expect(stored.pinnedOrder).toEqual(['c9', 'c1']);
+    expect(stored.c1).toHaveLength(2);
+  });
+
+  it('append 到一个全新的会话，旧的顶层字段一个不少', () => {
+    const f = useFakeStorage();
+    saveChatMessages('userA', withMeta as any);
+    appendToChats('userA', ['brand-new'], msg(5));
+    const stored = JSON.parse(f.getItem(keyFor('userA'))!);
+    expect(stored['brand-new']).toHaveLength(1);
+    expect(Object.keys(stored).sort())
+      .toEqual(['brand-new', 'c1', 'lastRead', 'note', 'pinnedOrder', 'schemaVersion']);
+  });
+
+  it('读回来的桶里不含非数组字段（读可以挑，写不能丢）', () => {
+    useFakeStorage();
+    saveChatMessages('userA', withMeta as any);
+    const back = loadChatMessages('userA');
+    expect(back.c1).toHaveLength(1);
+    expect((back as any).schemaVersion).toBeUndefined();   // 读出来的是会话，不是元信息
+  });
+});
+
+describe('同名字段冲突：不覆盖换成功', () => {
+  /* 要写的会话 id 上，盘里已经是个**非数组**的未知东西。
+     直接盖掉就是无声的删除，所以只有两条路：原字节先隔离，或者拒绝。 */
+  it('冲突时先把原字节隔离，再写', () => {
+    const f = useFakeStorage({
+      [keyFor('userA')]: JSON.stringify({ c1: { not: 'an array' }, keep: 1 }),
+    });
+    const r = saveChatMessages('userA', { c1: [msg(1)] });
+    expect(r.persisted).toBe(true);
+    // 原字节留底
+    expect(f.getItem('amas_chat_messages:corrupt:v1:userA'))
+      .toBe(JSON.stringify({ c1: { not: 'an array' }, keep: 1 }));
+    // 其余字段照常保留
+    const stored = JSON.parse(f.getItem(keyFor('userA'))!);
+    expect(stored.keep).toBe(1);
+    expect(stored.c1).toHaveLength(1);
+  });
+
+  it('隔离位已占（留不了底）就拒绝写，不覆盖', () => {
+    const before = JSON.stringify({ c1: { not: 'an array' } });
+    const f = useFakeStorage({
+      [keyFor('userA')]: before,
+      'amas_chat_messages:corrupt:v1:userA': '{"earlier":1}',
+    });
+    const r = saveChatMessages('userA', { c1: [msg(1)] });
+    expect(r.persisted).toBe(false);
+    expect(f.getItem(keyFor('userA'))).toBe(before);                 // 原样不动
+    expect(f.getItem('amas_chat_messages:corrupt:v1:userA')).toBe('{"earlier":1}');
+  });
+
+  it('不冲突的会话照写，不会被别的字段连累', () => {
+    const f = useFakeStorage({
+      [keyFor('userA')]: JSON.stringify({ c1: { not: 'an array' }, c2: [] }),
+    });
+    expect(saveChatMessages('userA', { c2: [msg(1)] }).persisted).toBe(true);
+    const stored = JSON.parse(f.getItem(keyFor('userA'))!);
+    expect(stored.c1).toEqual({ not: 'an array' });   // 没碰它
+    expect(stored.c2).toHaveLength(1);
+  });
+});
+
 describe('结构整个不认识时：保留，不覆盖', () => {
   /* 顶层不是「对象套数组」就没法安全地往里加东西。这时**不能直接盖掉** ——
      原始字节先挪进按身份的隔离位，再重新开始。 */

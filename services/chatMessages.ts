@@ -85,13 +85,22 @@ function writeVerified(key: string, payload: string): boolean {
   return getRaw(key) === payload;
 }
 
-/** 把一段原始字节挪进隔离位：隔离位已占就不动，写不成也不删源。 */
-function quarantineRaw(sourceKey: string, slotKey: string): void {
+/**
+ * 把一段原始字节挪进隔离位：隔离位已占就不动，写不成也不删源。
+ * 返回是否真的留下了底（隔离位里现在有这份字节）。
+ *
+ * `keepSource` 为真时只复制不删源 —— 用在「文档还要接着用，只是先留个底」
+ * 的场合（同名字段冲突）。
+ */
+function quarantineRaw(sourceKey: string, slotKey: string, keepSource = false): boolean {
   const raw = getRaw(sourceKey);
-  if (raw === null) return;
-  if (getRaw(slotKey) !== null) return;            // 已占，不覆盖
-  if (!writeVerified(slotKey, raw)) return;        // 没写成 → 源原地不动
-  try { localStorage.removeItem(sourceKey); } catch { /* 删不掉也无所谓，反正不读它 */ }
+  if (raw === null) return false;
+  if (getRaw(slotKey) !== null) return false;      // 已占，不覆盖
+  if (!writeVerified(slotKey, raw)) return false;  // 没写成 → 源原地不动
+  if (!keepSource) {
+    try { localStorage.removeItem(sourceKey); } catch { /* 删不掉也无所谓，反正不读它 */ }
+  }
+  return true;
 }
 
 /** 顶层结构：必须是普通对象（不是数组、不是标量）才敢往里加东西。 */
@@ -160,10 +169,24 @@ export interface SaveResult {
 /**
  * 整份保存。
  *
- * **无损**：给什么写什么，不截断、不按形状过滤。盘上已有但这次没带上的
- * 会话也会保留下来 —— 免得某个调用方只拿着一部分就把其余的盖掉。
+ * **无损，而且是整个文档的无损，不只是数组里的条目**：
  *
- * 写不下就如实返回 `persisted: false`。**不会退而求其次写一个截断版本** ——
+ * ```
+ * 合并的底是盘上那份**完整的原始对象**，不是 readBuckets 过滤后的结果。
+ *   顶层那些值不是数组的字段（未来加的 schemaVersion、别处塞的 lastRead、
+ *   pinnedOrder …）原样带过去。
+ *   —— 上一版这里写的是 `{ ...readBuckets(existing) }`，那一步就把它们
+ *   全滤掉了，然后 JSON.stringify 写回去，读一次存一次就没了；
+ *   而注释当时还写着「会保留」。这是同一类「解析器不认识就当它不存在」的错。
+ * 盘上已有、这次没带上的字段一律保留 —— 免得某个调用方只拿着一部分
+ *   就把其余的盖掉。
+ * ```
+ *
+ * **同名冲突不许靠覆盖换成功**：要写的会话 id 上，盘里已经是个非数组的未知
+ * 东西时，先把整份原始字节复制进隔离位留底再写；留不了底（隔离位已占、
+ * 或写不进去）就**拒绝这次写入**并如实返回 `persisted: false`。
+ *
+ * 写不下同样如实返回 false。**不会退而求其次写一个截断版本** ——
  * 那等于拿删历史换一个「成功」，没人授权过。
  */
 export function saveChatMessages(
@@ -175,14 +198,33 @@ export function saveChatMessages(
 
   const existingRaw = getRaw(keyFor(id));
   if (existingRaw !== null && asPlainObject(existingRaw) === null) {
-    // 盘上那份结构不认识：保住它再写，绝不直接盖掉
+    // 盘上那份结构整个不认识：保住它再写，绝不直接盖掉
     quarantineRaw(keyFor(id), corruptKeyFor(id));
     if (getRaw(keyFor(id)) !== null) return { persisted: false };   // 挪不走就这次不写
   }
 
-  const merged: Record<string, any[]> = { ...readBuckets(getRaw(keyFor(id))) };
-  for (const [chatId, list] of Object.entries(store)) {
-    if (chatId && Array.isArray(list)) merged[chatId] = list;
+  // 合并的底是**完整的原始对象**，顶层未知字段一并带过去
+  const merged: Record<string, unknown> = { ...(asPlainObject(getRaw(keyFor(id))) ?? {}) };
+
+  /* 同名字段冲突：这次要写的值和盘上那个**类别不同**（数组 ↔ 非数组）。
+     两边都算：盘上是未知对象、这次要写数组是一种；盘上是消息数组、
+     调用方递来一个非数组也是一种。两种都是「把一样东西换成另一样」，
+     不能无声地干。先把整份原始字节复制进隔离位留底；留不了底就拒绝这次写入。 */
+  const clashes = Object.keys(store).filter((k) => {
+    if (!k || merged[k] === undefined) return false;
+    return Array.isArray((store as Record<string, unknown>)[k]) !== Array.isArray(merged[k]);
+  });
+  if (clashes.length) {
+    if (!quarantineRaw(keyFor(id), corruptKeyFor(id), true)) {
+      return { persisted: false };   // 留不了底就不写，原样不动
+    }
+  }
+
+  /* 调用方递来的**所有**顶层字段都写进去，不只是数组。
+     上一版这里只挑 `Array.isArray(list)`，于是调用方自己带的
+     schemaVersion / lastRead 之类第一次保存就没了 —— 同一类错的另一面。 */
+  for (const [k, v] of Object.entries(store as Record<string, unknown>)) {
+    if (k) merged[k] = v;
   }
 
   let payload: string;

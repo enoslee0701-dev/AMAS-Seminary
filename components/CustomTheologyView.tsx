@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { readSlot, writeSlot, removeSlot } from '../services/assessmentStorage';
+import { readSlot, writeSlot, removeSlot, getAssessmentIdentity } from '../services/assessmentStorage';
 import {
   ChevronLeft, ChevronRight, ChevronDown, Sparkles, Target, TrendingUp,
   ShieldCheck, RefreshCw, BookOpen, ArrowDown, AlertTriangle, Trash2, Undo2, X,
@@ -798,7 +798,11 @@ void STORAGE_KEY;
 const loadCT = (): CTState | null => {
   try { const raw = readSlot('doc'); const s = raw ? JSON.parse(raw) : null; return s && s.v === 2 && s.scores ? s : null; } catch { return null; }
 };
-const saveCT = (s: CTState) => { try { writeSlot('doc', JSON.stringify(s)); } catch {} };
+/* `owner` 给**在途**的调用方用：发起异步操作时先把身份记下来，回调里带着它。
+   模块级身份意味着「发起时是甲、回调触发时已是乙」会把甲的档案写进乙，
+   用可控延迟夹具复现过（tests/services/assessmentStorage.test.ts）。
+   同步调用省略即可。 */
+const saveCT = (s: CTState, owner?: string | null) => { try { writeSlot('doc', JSON.stringify(s), owner); } catch {} };
 
 const stageOf = (avg: number, tier: number, years: number): { name: string; level: number; desc: string } => {
   if (avg >= 78 && tier >= 2) return { name: '成熟装备者', level: 4, desc: '根基与经验兼备，接下来重在深化专项与培育他人。' };
@@ -1284,13 +1288,18 @@ const CustomTheologyView: React.FC<Props> = ({ onBack, courses, onCourseClick, u
   // ---- 跨设备同步 ----
   useEffect(() => {
     let cancelled = false;
+    /* 发起那一刻把身份记下来。请求在途期间可能换了人（登出再登录不一定
+       会让这个视图卸载），那时这份档案属于**发起时的那个身份**，
+       不能写进现在登录的这一位。带着 owner 走，身份变了就自动放弃。 */
+    const owner = getAssessmentIdentity();
     void fetchServerGrowth<CTState>().then(server => {
       if (cancelled || !server || server.v !== 2) return;
+      if (getAssessmentIdentity() !== owner) return;   // 换人了，这份不是他的
       setCt(local => {
-        if (!local) { saveCT(server); return server; }
+        if (!local) { saveCT(server, owner); return server; }
         const lt = Date.parse(local.christianProfile?.completedAt ?? local.gifts?.completedAt ?? local.completedAt);
         const stt = Date.parse(server.christianProfile?.completedAt ?? server.gifts?.completedAt ?? server.completedAt);
-        if (stt > lt) { saveCT(server); return server; }
+        if (stt > lt) { saveCT(server, owner); return server; }
         return local;
       });
     });

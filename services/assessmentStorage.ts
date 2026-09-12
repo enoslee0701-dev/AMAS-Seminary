@@ -120,15 +120,39 @@ export function readSlot(slot: Slot): string | null {
  * 写这个身份的原始字节，写后读回核对。没有身份就不写，返回 false。
  *
  * 这一层**只搬字节**：不解析、不截断、不按形状过滤。调用方给什么写什么。
+ *
+ * ## `owner`：在途写入的归属绑定
+ *
+ * 这一层的身份是**模块级**的，所以「发起时是甲、回调触发时已经是乙」这种
+ * 时序真的会把甲的结果写进乙的桶。实际存在这样的在途路径：
+ *
+ * ```
+ * CustomTheologyView 的跨设备同步
+ *   fetchServerGrowth().then(server => ... saveCT(server) ...)
+ * growthSyncService 的 1500ms 防抖上报
+ * ```
+ *
+ * 用本地可控延迟夹具复现过（`tests/services/assessmentStorage.test.ts`）。
+ *
+ * 所以异步路径**必须**在发起时 `getAssessmentIdentity()` 把归属记下来，
+ * 回调里带着它调这个函数。身份已经变了就放弃这次写入、返回 false ——
+ * 宁可丢一次同步结果，也不能把甲的档案写进乙。
+ *
+ * 同步调用可以省略 `owner`（那一刻的身份就是归属）。
  */
-export function writeSlot(slot: Slot, payload: string): boolean {
+export function writeSlot(slot: Slot, payload: string, owner?: string | null): boolean {
   if (!currentIdentity) return false;
+  if (owner !== undefined && normalize(owner) !== currentIdentity) return false;
   return writeVerified(keyFor(slot, currentIdentity), payload);
 }
 
-/** 删这个身份的这一格（不碰别人的，也不碰隔离位）。 */
-export function removeSlot(slot: Slot): void {
+/**
+ * 删这个身份的这一格（不碰别人的，也不碰隔离位）。
+ * `owner` 的含义与 `writeSlot` 相同 —— 延迟触发的删除同样不能删错人。
+ */
+export function removeSlot(slot: Slot, owner?: string | null): void {
   if (!currentIdentity) return;
+  if (owner !== undefined && normalize(owner) !== currentIdentity) return;
   try { localStorage.removeItem(keyFor(slot, currentIdentity)); } catch { /* ignore */ }
 }
 
