@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
+import { readScoped, writeScoped } from '../services/scopedLocalStore';
 import { MOCK_USER, MOCK_COURSES } from '../constants';
 import { ViewState } from '../types';
 import type { Course } from '../types';
@@ -148,14 +149,22 @@ const ProfileView: React.FC<ProfileViewProps> = ({ favoriteCourseIds = [], onLog
   const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' });
   const [pwError, setPwError] = useState<string | null>(null);
   const [pwSaved, setPwSaved] = useState(false);
+  /* 隐私开关是**私人设置**，不是设备偏好：换个人登录不该继承上一个人的
+     隐私选择（那可能把他本想关掉的东西默认打开）。按身份分桶。 */
   const [privacy, setPrivacy] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('amas_privacy') || '{}'); }
+    try { return JSON.parse(readScoped('amas_privacy') || '{}'); }
     catch { return {}; }
   });
+  /** 设置没存下来要让人知道 —— 以为关了其实没关是最坏的情形。 */
+  const [privacySaveFailed, setPrivacySaveFailed] = useState(false);
+  /* 这个提示必须渲染出来 —— 设了却没存上、用户还以为关掉了，
+     是这一类设置最坏的失败方式。渲染点见下面的隐私区块。 */
   const togglePrivacy = (key: string) => {
     const next = { ...privacy, [key]: !privacy[key] };
     setPrivacy(next);
-    try { localStorage.setItem('amas_privacy', JSON.stringify(next)); } catch {}
+    let ok = false;
+    try { ok = writeScoped('amas_privacy', JSON.stringify(next)); } catch { ok = false; }
+    setPrivacySaveFailed(!ok);
   };
   const [pwBusy, setPwBusy] = useState(false);
   const handleChangePassword = async () => {
@@ -541,6 +550,16 @@ const ProfileView: React.FC<ProfileViewProps> = ({ favoriteCourseIds = [], onLog
                  </button>
                </div>
              ))}
+             {/* 设了却没存上、用户还以为关掉了，是这一类设置最坏的失败方式。 */}
+             {privacySaveFailed && (
+               <p role="status" className="mt-3 text-[11px] font-semibold text-rose-600 leading-relaxed px-1">
+                 这项设置没能保存到这台设备（浏览器存储可能已满或处于隐私模式），下次打开会回到原来的状态。
+               </p>
+             )}
+             {/* 这几个开关只影响这台设备上的界面，本版还没有服务端的隐私策略。 */}
+             <p className="mt-3 text-[10px] text-slate-400 leading-relaxed px-1">
+               这些选项保存在本机，按登录身份分开存放；本版尚未接通服务端的隐私策略。
+             </p>
            </div>
          )}
 

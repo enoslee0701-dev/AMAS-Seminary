@@ -21,6 +21,7 @@ import { registerRoom, validateRoomPassword, isBackendConfigured } from '../serv
 import { initialAvatar } from '../services/imageFallback';
 import { addCustomGroup } from '../services/customGroups';
 import { appendToChats } from '../services/chatMessages';
+import { readScoped, writeScoped } from '../services/scopedLocalStore';
 import { STOCK_PHOTOS } from '../services/stockPhotos';
 import {
   listPosts as apiListPosts,
@@ -519,20 +520,26 @@ const CommunityView: React.FC<CommunityViewProps> = ({
   const [showCreateRoom, setShowCreateRoom] = useState(false);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [joinGroupModal, setJoinGroupModal] = useState<{show: boolean, groupId: string, groupName: string}>({show: false, groupId: '', groupName: ''});
+  /* 「我加入了哪些群组」是**私人记录**，不是设备偏好 —— 原来存在不带身份的
+     全局键上，同一台设备换个人登录就继承了上一个人的加入状态。
+     现在经 services/scopedLocalStore.ts 按身份分桶。 */
   const [joinedGroupIds, setJoinedGroupIds] = useState<Set<string>>(() => {
-      try { const saved = localStorage.getItem('amas_joined_groups'); return saved ? new Set(JSON.parse(saved)) : new Set(); }
+      try { const saved = readScoped('amas_joined_groups'); return saved ? new Set(JSON.parse(saved)) : new Set(); }
       catch { return new Set(); }
   });
   const handleJoinGroup = (groupId: string, groupName: string) => {
       const next = new Set(joinedGroupIds); next.add(groupId); setJoinedGroupIds(next);
-      try { localStorage.setItem('amas_joined_groups', JSON.stringify(Array.from(next))); } catch {}
+      const savedJoin = writeScoped('amas_joined_groups', JSON.stringify(Array.from(next)));
       const exists = conversations.some(c => c.id === groupId);
       if (!exists) {
           const newConv: Conversation = { id: groupId, userId: groupId, userName: groupName, userAvatar: initialAvatar(groupId, groupName), isOnline: false, lastMessage: '欢迎加入群组，开始交流吧', time: '刚刚', unread: 0, role: 'GROUP', isGroup: true };
           setConversations([newConv, ...conversations]);
       }
       setJoinGroupModal({show: false, groupId: '', groupName: ''});
-      showToast(`已加入 "${groupName}"`);
+      /* 写不成就照实说 —— 刷新之后会回到未加入，没提示的话显得像应用坏了。 */
+      showToast(savedJoin
+        ? `已加入 "${groupName}"`
+        : `已加入 "${groupName}"（这台设备没能记住，下次打开可能要重新加入）`);
       setDirectoryTab('messages');
   };
   const [showPasswordPrompt, setShowPasswordPrompt] = useState(false);
@@ -554,9 +561,10 @@ const CommunityView: React.FC<CommunityViewProps> = ({
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [viewingUserProfile, setViewingUserProfile] = useState<{name: string, avatar: string, role: string, id: string} | null>(null);
 
-  const [feedCoverImage, setFeedCoverImage] = useState<string>(() => { try { return localStorage.getItem('amas_feed_cover') || STOCK_PHOTOS.campusCommunity; } catch { return STOCK_PHOTOS.campusCommunity; } });
+  /* 封面图是自己挑的，属于私人记录，按身份分桶。 */
+  const [feedCoverImage, setFeedCoverImage] = useState<string>(() => { try { return readScoped('amas_feed_cover') || STOCK_PHOTOS.campusCommunity; } catch { return STOCK_PHOTOS.campusCommunity; } });
   const feedCoverInputRef = useRef<HTMLInputElement>(null);
-  const handleFeedCoverChange = (e: React.ChangeEvent<HTMLInputElement>) => { if (e.target.files && e.target.files[0]) { const reader = new FileReader(); reader.onload = (event) => { const result = event.target?.result as string; setFeedCoverImage(result); try { localStorage.setItem('amas_feed_cover', result); } catch (e) { console.error("Storage full"); } }; reader.readAsDataURL(e.target.files[0]); } };
+  const handleFeedCoverChange = (e: React.ChangeEvent<HTMLInputElement>) => { if (e.target.files && e.target.files[0]) { const reader = new FileReader(); reader.onload = (event) => { const result = event.target?.result as string; setFeedCoverImage(result); /* 封面按身份分桶；图片是 dataURL，很容易把存储撑爆，所以写不成要说一声。 */ if (!writeScoped('amas_feed_cover', result)) { showToast('封面已换上，但这台设备没能保存（存储可能已满），下次打开会回到原来的封面'); } }; reader.readAsDataURL(e.target.files[0]); } };
   
   const [prayerRequests, setPrayerRequests] = useState([ { id: '1', title: '为世界和平祷告', content: '求主止息各地的战争与纷争，赐下平安在地上。', count: 128, timestamp: '刚刚更新', isPraying: false }, { id: '2', title: '为神学院的发展', content: '愿神预备更多的师资与资源，造就合用的工人。', count: 85, timestamp: '刚刚更新', isPraying: false }, { id: '3', title: '为未得之民', content: '求庄稼的主打发工人出去，收他的庄稼。', count: 256, timestamp: '刚刚更新', isPraying: false }, ]);
 

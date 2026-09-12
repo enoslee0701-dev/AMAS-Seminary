@@ -11,6 +11,7 @@ import {
   isBackendConfigured as isCoursesBackendConfigured,
   type CourseFile,
 } from '../services/coursesService';
+import { readScoped, writeScoped, appendScopedItem } from '../services/scopedLocalStore';
 
 // Helper to compress images
 const compressImage = (file: File): Promise<string> => {
@@ -81,13 +82,18 @@ const CourseDetailView: React.FC<CourseDetailViewProps> = ({ course, onUpdateCou
   const [showShareToast, setShowShareToast] = useState(false);
   const [showDownloadToast, setShowDownloadToast] = useState(false);
   const [downloadFileName, setDownloadFileName] = useState("");
+  /* 「我下载过哪些课件」是**私人记录**（透露学习轨迹），不是设备状态 ——
+     真正的文件下到了系统下载目录，这里只是界面上的「已下载」标记。
+     原来存在全局键上，换个人登录就看见上一个人下过什么。按身份分桶。 */
   const [downloaded, setDownloaded] = useState<Set<string>>(() => {
-    try { return new Set(JSON.parse(localStorage.getItem('amas_downloaded_files') || '[]')); }
+    try { return new Set(JSON.parse(readScoped('amas_downloaded_files') || '[]')); }
     catch { return new Set(); }
   });
   const [reportModal, setReportModal] = useState(false);
   const [reportReason, setReportReason] = useState<string>('');
   const [reportSubmitted, setReportSubmitted] = useState(false);
+  /** 这条举报有没有在本机记下来（它本来就送不出去，见 submitReport）。 */
+  const [reportSaved, setReportSaved] = useState(false);
   
   // Edit State
   const [showEditModal, setShowEditModal] = useState(false);
@@ -223,7 +229,7 @@ const CourseDetailView: React.FC<CourseDetailViewProps> = ({ course, onUpdateCou
     }
     const next = new Set(downloaded); next.add(filename);
     setDownloaded(next);
-    try { localStorage.setItem('amas_downloaded_files', JSON.stringify(Array.from(next))); } catch {}
+    writeScoped('amas_downloaded_files', JSON.stringify(Array.from(next)));
     setDownloadFileName(filename);
     setShowDownloadToast(true);
     setTimeout(() => setShowDownloadToast(false), 3000);
@@ -269,7 +275,7 @@ const CourseDetailView: React.FC<CourseDetailViewProps> = ({ course, onUpdateCou
       if (ok) {
         const next = new Set(downloaded); next.add(f.filename);
         setDownloaded(next);
-        try { localStorage.setItem('amas_downloaded_files', JSON.stringify(Array.from(next))); } catch {}
+        writeScoped('amas_downloaded_files', JSON.stringify(Array.from(next)));
       } else {
         alert('下载失败，请稍后重试。');
       }
@@ -320,13 +326,27 @@ const CourseDetailView: React.FC<CourseDetailViewProps> = ({ course, onUpdateCou
     setReportModal(true);
   };
 
+  /**
+   * 提交举报。
+   *
+   * **这条举报送不到任何人手里。** 查过了：`backend/src/routes` 里只有
+   * 房间范围的代祷分享举报（/api/rooms/:roomId/prayer/shares/:shareId/report），
+   * **没有课程举报的通道**；这里写的 `amas_course_reports` 全仓只有写、
+   * 没有读，教务处那边收不到任何东西。
+   *
+   * 所以措辞必须改：原来写的是「已收到您的反馈 …… 我们将在 1–3 个工作日内
+   * 核实并回复结果」。在一条安全相关的路径上这么说尤其不该 ——
+   * 举报有害内容的人会以为已经在处理了。
+   *
+   * 记录本身仍按身份留在本机（是**这个人**举报过什么，属于私人记录）。
+   */
   const submitReport = () => {
     if (!reportReason) return;
-    try {
-      const existing = JSON.parse(localStorage.getItem('amas_course_reports') || '[]');
-      existing.push({ courseId: course.id, courseTitle: course.title, reason: reportReason, submittedAt: new Date().toISOString() });
-      localStorage.setItem('amas_course_reports', JSON.stringify(existing));
-    } catch {}
+    const ok = appendScopedItem('amas_course_reports', {
+      courseId: course.id, courseTitle: course.title,
+      reason: reportReason, submittedAt: new Date().toISOString(),
+    }).persisted;
+    setReportSaved(ok);
     setReportSubmitted(true);
   };
 
@@ -634,7 +654,7 @@ const CourseDetailView: React.FC<CourseDetailViewProps> = ({ course, onUpdateCou
                   <h3 className="text-base font-bold text-slate-900">举报该课程</h3>
                   <button onClick={() => setReportModal(false)} className="p-1 text-slate-400"><X size={18} /></button>
                 </div>
-                <p className="text-[12px] text-slate-500 mb-4">请选择举报原因，教务处将在 1–3 个工作日内核实处理。</p>
+                <p className="text-[12px] text-slate-500 mb-4">请选择举报原因。**这个版本还没有接通受理通道**，选择只会记在本机，教务处不会收到。</p>
                 <div className="space-y-2 mb-4">
                   {['内容不准确或错误', '不当或冒犯性内容', '版权或盗用问题', '视频/资料无法打开', '其他问题'].map(r => (
                     <button
@@ -657,8 +677,18 @@ const CourseDetailView: React.FC<CourseDetailViewProps> = ({ course, onUpdateCou
             ) : (
               <div className="text-center py-4">
                 <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-3"><CheckCircle size={28} /></div>
-                <h3 className="text-base font-bold text-slate-900 mb-1">已收到您的反馈</h3>
-                <p className="text-[12px] text-slate-500 mb-5">我们将在 1–3 个工作日内核实并回复结果。</p>
+                {/* 原来写的是「已收到您的反馈 …… 1–3 个工作日内核实并回复结果」。
+                    本应用**没有课程举报的通道**（后端只有房间内代祷分享的举报），
+                    这条记录只落在本机、没有任何人会看到。安全相关的路径上尤其
+                    不能这么说 —— 举报有害内容的人会以为已经在处理了。 */}
+                <h3 className="text-base font-bold text-slate-900 mb-1">举报还没有送出</h3>
+                <p className="text-[12px] text-slate-500 mb-2">
+                  这个版本还没有接通课程举报的受理通道，你选的原因{reportSaved ? '只记在了这台设备上' : '没能记下来'}，
+                  教务处**不会**收到。
+                </p>
+                <p className="text-[11px] text-slate-400 mb-5">
+                  如果是需要尽快处理的内容，请直接联系教务处，不要等这里。
+                </p>
                 <button onClick={() => setReportModal(false)} className="w-full bg-blue-900 text-white py-3 rounded-xl text-sm font-bold">关闭</button>
               </div>
             )}
