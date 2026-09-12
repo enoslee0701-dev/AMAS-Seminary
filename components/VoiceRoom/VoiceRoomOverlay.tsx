@@ -9,7 +9,7 @@ import SharedReadingBar from './SharedReadingBar';
 import { getCurrentUser } from '../../services/authService';
 import { registerRoom, isBackendConfigured } from '../../services/roomService';
 import { appendToChats } from '../../services/chatMessages';
-import { readScoped, writeScoped, getScopedIdentity } from '../../services/scopedLocalStore';
+import SermonNotesPanel from './SermonNotesPanel';
 import { VARIANT, MODAL_WIDTH, type RoomVariant } from './prayerTheme';
 import {
   Heart, MessageCircle, Share2, MoreHorizontal,
@@ -105,21 +105,8 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
     const [bibleTab, setBibleTab] = useState<'OT' | 'NT'>('OT');
     const [isFetchingScripture, setIsFetchingScripture] = useState(false);
     const [fontSize, setFontSize] = useState(16);
-    const DEFAULT_SERMON_NOTES = "在此处输入讲道大纲...\n1. 引言\n2. 经文释义\n3. 生活应用\n4. 呼召与祷告";
-    /* 讲道笔记原来按房间分键、**但不按人分**：同一台设备上换个人登录、
-       进同一间房，笔记面板里就是上一个人写的内容。现在经
-       services/scopedLocalStore.ts 再按身份分一层。 */
-    const sermonNotesKey = `amas_sermon_notes_${activeVoiceRoom.id}`;
-    const [sermonNotes, setSermonNotes] = useState<string>(() => {
-      try {
-        const saved = readScoped(sermonNotesKey);
-        return saved !== null ? saved : DEFAULT_SERMON_NOTES;
-      } catch {
-        return DEFAULT_SERMON_NOTES;
-      }
-    });
-    /** 笔记落盘失败时给一次提示，不静悄悄丢。 */
-    const [notesSaveFailed, setNotesSaveFailed] = useState(false);
+    /* 讲道大纲的状态与落盘都搬进了 SermonNotesPanel —— 它不碰麦克风与
+       传输通道，所以能在组件级单独验证。这里不再留副本。 */
     const [isRecordingSermon, setIsRecordingSermon] = useState(false);
     const [showShareRecordingModal, setShowShareRecordingModal] = useState(false);
     const [lastRecording, setLastRecording] = useState<CapturedRecording | null>(null);
@@ -153,24 +140,7 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
     // Release the sermon recorder when the overlay unmounts.
     useEffect(() => () => { sermonRecorderRef.current?.cancel(); }, []);
 
-    /* 讲道笔记的防抖落盘（按房间 + 按身份）。
-       500ms 之内足够换一个人登录，所以**发起时就把归属记下来**，
-       定时器触发时带着它写；身份变了就放弃这次保存 ——
-       宁可丢一次自动保存，也不能把甲的讲章写进乙。
-       写不成不静悄悄吞掉，面板上给一句提示。 */
-    useEffect(() => {
-      const owner = getScopedIdentity();
-      const handle = setTimeout(() => {
-        let ok = false;
-        try {
-          ok = writeScoped(sermonNotesKey, sermonNotes, owner);
-        } catch (e) {
-          console.warn('[VoiceRoom] persist sermonNotes failed', e);
-        }
-        setNotesSaveFailed(!ok);
-      }, 500);
-      return () => clearTimeout(handle);
-    }, [sermonNotes, sermonNotesKey]);
+
 
     // NOTE(realtime): The participant list below is local mock state. There is no real
     // multi-user voice transport yet — only the local user + Gemini AI pastor produce audio.
@@ -1539,32 +1509,16 @@ export const VoiceRoomOverlay: React.FC<VoiceRoomOverlayProps> = ({
 
                     {isPreachingRoom && (
                     <div className="mb-6 animate-fade-in flex flex-col gap-3">
-                        {isHost && (
-                            <div className="bg-black/30 backdrop-blur-md rounded-2xl border border-white/10 p-4 relative group">
-                                <div className="flex justify-between items-center mb-2">
-                                    <h3 className="text-xs text-slate-300 font-bold flex items-center">
-                                        <FileText size={12} className="mr-1"/> 讲章提纲 (仅自己可见)
-                                    </h3>
-                                    <div className="flex items-center bg-white/10 rounded-xl px-2 py-0.5 border border-white/10">
-                                        <button onClick={() => setFontSize(Math.max(12, fontSize - 1))} className="p-1 hover:text-purple-300 transition-colors">
-                                            <Minus size={10} />
-                                        </button>
-                                        <span className="text-[10px] font-bold text-slate-300 w-5 text-center">{fontSize}</span>
-                                        <button onClick={() => setFontSize(Math.min(32, fontSize + 1))} className="p-1 hover:text-purple-300 transition-colors">
-                                            <PlusIcon size={10} />
-                                        </button>
-                                    </div>
-                                </div>
-                                <textarea value={sermonNotes} onChange={(e) => setSermonNotes(e.target.value)} className="w-full bg-transparent text-white/90 font-serif h-32 resize-none outline-none custom-scrollbar" style={{ fontSize: `${fontSize}px`, lineHeight: '1.5' }} />
-                                {/* 自动保存没成功就说一声，不静悄悄吞掉 ——
-                                    讲章写到一半以为存上了是最坏的情形。 */}
-                                {notesSaveFailed && (
-                                  <p role="status" className="mt-2 text-[11px] font-semibold text-amber-300 leading-relaxed">
-                                    暂存失败：这台设备的浏览器存储可能已满或处于隐私模式，笔记只在本次使用中有效，请另外拷贝一份。
-                                  </p>
-                                )}
-                            </div>
-                        )}
+                        {/* 讲道大纲面板抽成了独立组件：它只跟本机存储打交道，
+                            不碰麦克风也不碰传输通道，所以能在组件级单独验证
+                            （tests/components/VoiceRoom/sermonNotesPanel.test.tsx）。
+                            抽的是同一段 JSX 与同一段逻辑，行为没有改动。 */}
+                        <SermonNotesPanel
+                            roomId={activeVoiceRoom.id}
+                            isHost={isHost}
+                            fontSize={fontSize}
+                            onFontSizeChange={setFontSize}
+                        />
                     </div>
                     )}
 
