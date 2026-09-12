@@ -8,7 +8,22 @@ import { createServer } from 'node:http';
 import { readFileSync, existsSync } from 'node:fs';
 import { join, extname } from 'node:path';
 
-const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
+/* Chrome 定位：原来写死 Windows 路径且**没有环境变量兜底**，
+   在 Mac 上必然启动失败 —— 这个探针在 Mac 上等于不存在。
+   改成跨平台候选 + CHROME_PATH 兜底，与 tests/e2e/smoke.mjs 同一套写法。 */
+const CHROME_CANDIDATES =
+  process.platform === 'win32'
+    ? ['C:/Program Files/Google/Chrome/Application/chrome.exe',
+       'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
+       `${process.env.LOCALAPPDATA || ''}\\Google\\Chrome\\Application\\chrome.exe`]
+    : process.platform === 'darwin'
+      ? ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome']
+      : ['/usr/bin/google-chrome', '/usr/bin/chromium-browser', '/usr/bin/chromium'];
+const CHROME = process.env.CHROME_PATH || CHROME_CANDIDATES.find(p => existsSync(p));
+if (!CHROME) {
+  console.error('找不到 Chrome —— 设 CHROME_PATH 指向 Chromium 可执行文件');
+  process.exit(1);
+}
 const MIME = { '.html':'text/html', '.js':'text/javascript', '.css':'text/css',
   '.json':'application/json', '.svg':'image/svg+xml', '.png':'image/png' };
 

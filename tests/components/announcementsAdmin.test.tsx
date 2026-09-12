@@ -437,6 +437,49 @@ describe('★ 公告不是刚从服务器取到的时候，要说出来', () => 
     await mount(['student']);
     expect(text()).toContain('开学通知');
   });
+
+  /* ── 来源三分：与首页共用 services/newsFeed.ts 的同一份措辞 ──────────
+     原来只有一句含糊的「可能是旧的或示例内容」。而「这是示例」「这是上次
+     从服务器取到的」「来源不可考」是三件后果完全不同的事。 */
+
+  it('★ 示例：点名不是学院发布的公告', async () => {
+    feedStatus = { source: 'local', reason: 'unavailable', origin: 'sample' };
+    await mount(['student']);
+    const msg = banner()?.textContent ?? '';
+    expect(msg).toContain('内置的示例内容');
+    expect(msg).toContain('不是学院发布的公告');
+  });
+
+  it('★ 上次从服务器取到的：不许说成示例', async () => {
+    feedStatus = { source: 'local', reason: 'unavailable', origin: 'cache' };
+    await mount(['student']);
+    const msg = banner()?.textContent ?? '';
+    expect(msg).toContain('上次从服务器取到的那份');
+    expect(msg).not.toContain('示例');
+  });
+
+  it('★ 来源不可考：不冒充服务端缓存', async () => {
+    feedStatus = { source: 'local', reason: 'unavailable', origin: 'unknown' };
+    await mount(['student']);
+    const msg = banner()?.textContent ?? '';
+    expect(msg).toContain('来源无法确认');
+    expect(msg).not.toContain('从服务器取到的那份');
+  });
+
+  it('★ 加载中但屏幕上摆的是示例：这时候就得说', async () => {
+    feedStatus = { source: 'loading', origin: 'sample' };
+    await mount(['student']);
+    expect(banner()?.textContent ?? '').toContain('内置的示例内容');
+  });
+
+  it('★ 空列表：没问到就不许说「学院当前没有发布公告」', async () => {
+    /* 这条断言的是措辞，不是列表内容 —— 宿主的 items 非空，
+       所以这里只验来源横幅那句话没有越位。空列表本身由
+       tests/components/dashboardNewsSource.test.tsx 与真浏览器探针覆盖。 */
+    feedStatus = { source: 'local', reason: 'unavailable', origin: 'unknown' };
+    await mount(['student']);
+    expect(text()).not.toContain('学院当前没有发布公告');
+  });
 });
 
 describe('★ 源码级：App.tsx 真的把来源传下来了', () => {
@@ -445,7 +488,15 @@ describe('★ 源码级：App.tsx 真的把来源传下来了', () => {
   it('App 拉公告失败会记下原因，而不是静默保留本地那份', async () => {
     const fs = await import('node:fs');
     const src = fs.readFileSync('App.tsx', 'utf8');
-    expect(src).toContain("setNewsStatus({ source: 'local', reason: res.reason })");
+    /* 形状变了，守的性质没变。
+       原来这里比的是 `setNewsStatus({ source: 'local', reason: res.reason })`。
+       首页那三条预览接来源状态时，「拉取走到哪一步」与「屏幕上这份是谁给的」
+       拆成了两份状态再合成 —— 因为「还在加载，下面摆的是示例」和
+       「没拉到，下面是上次取到的」是两句不同的话，一个字段说不清。
+       于是失败分支改叫 setNewsFetch，合成在 newsStatus。断言跟着改，
+       要守的东西一模一样：**失败必须记下原因，不许静默保留本地那份**。 */
+    expect(src).toContain("setNewsFetch({ phase: 'failed', reason: res.reason })");
+    expect(src).toContain("source: 'local', reason: newsFetch.reason");
     expect(src).toContain('feedStatus={newsStatus}');
     expect(src).toContain('onReload={() => { void loadAnnouncements(); }}');
   });

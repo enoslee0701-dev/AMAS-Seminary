@@ -2,23 +2,17 @@ import React, { useRef, useState, useEffect } from 'react';
 import { ChevronLeft, Bell, Search, Plus, Edit2, Trash2, X, Settings, ChevronDown, ChevronUp, AlertOctagon, Info, AlertTriangle } from 'lucide-react';
 import { NewsItem } from '../types';
 import { createAnnouncement, deleteAnnouncement } from '../services/announcementsService';
-import { failed, failureMessage, isRetryable, type FailureReason } from '../services/apiResult';
+import { failed, failureMessage } from '../services/apiResult';
+import { describeFeed, emptyFeedText, type FeedStatus } from '../services/newsFeed';
 import { canManageAnnouncements } from '../services/permissions';
 import { fetchRoles } from '../services/supabaseAuth';
 
 /**
- * 这份公告是哪来的。
- *
- * ```
- * loading   还在问服务端
- * server    服务端给的，是当前真公告
- * local     没问到，显示的是本地那份（上次缓存，或者干脆是源码里的示例公告）
- * ```
+ * 公告来源状态的定义搬到了 `services/newsFeed.ts` —— 首页那三条预览
+ * 和这一页读的是同一份列表，来源措辞必须同一个出处，不能各写一份
+ * （ARCHITECTURE_RULES §10）。这里按原名再导出，老调用方不用改。
  */
-export type FeedStatus =
-  | { source: 'loading' }
-  | { source: 'server' }
-  | { source: 'local'; reason: FailureReason };
+export type { FeedStatus, FeedOrigin } from '../services/newsFeed';
 
 interface AnnouncementsViewProps {
   onBack: () => void;
@@ -43,6 +37,8 @@ const AnnouncementsView: React.FC<AnnouncementsViewProps> = ({ onBack, newsItems
   const newsItemsRef = useRef<NewsItem[]>(newsItems);
   useEffect(() => { newsItemsRef.current = newsItems; }, [newsItems]);
   const notify = (msg: string) => { if (showToast) showToast(msg); };
+  /* 来源提示的措辞与首页共用一份实现，见 services/newsFeed.ts */
+  const feedNotice = describeFeed(feedStatus);
   const [searchQuery, setSearchQuery] = useState('');
   const [showEditModal, setShowEditModal] = useState(false);
   const [isManageMode, setIsManageMode] = useState(false);
@@ -304,20 +300,22 @@ const AnnouncementsView: React.FC<AnnouncementsViewProps> = ({ onBack, newsItems
             公告的意义就是「学院发的、大家都看得到的」；把本地那份
             （上次的缓存，甚至是源码里写死的示例公告）不声不响地摆在这里，
             等于让人把示例当成学院的通知。 */}
-        {feedStatus && feedStatus.source === 'local' && (
+        {feedNotice && (
           <div
             data-testid="feed-status"
             role="status"
-            className="p-3 rounded-2xl bg-amber-50 border border-amber-100 text-[11px] text-amber-800 leading-relaxed"
+            className={feedNotice.tone === 'warn'
+              ? 'p-3 rounded-2xl bg-amber-50 border border-amber-100 text-[11px] text-amber-800 leading-relaxed'
+              : 'p-3 rounded-2xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 leading-relaxed'}
           >
-            <p>
-              {`以下公告不是刚从服务器取到的，可能是旧的或示例内容。${failureMessage(feedStatus.reason, '加载公告')}`}
-            </p>
-            {onReload && isRetryable(feedStatus.reason) && (
+            <p>{feedNotice.text}</p>
+            {onReload && feedNotice.canRetry && (
               <button
                 type="button"
                 onClick={onReload}
-                className="mt-2 px-3 py-1.5 rounded-full bg-amber-600 text-white text-[11px] font-bold"
+                /* 与首页那颗同一触控标准：44 高，视觉不变（见 Dashboard 里的说明） */
+                className="mt-1 inline-flex items-center px-3.5 rounded-full bg-amber-600 text-white text-[11px] font-bold"
+                style={{ minHeight: 44, minWidth: 44, paddingTop: 12, paddingBottom: 12, marginBottom: -6 }}
               >
                 重新加载公告
               </button>
@@ -337,7 +335,11 @@ const AnnouncementsView: React.FC<AnnouncementsViewProps> = ({ onBack, newsItems
         {filteredNews.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-slate-300">
             <Bell size={48} strokeWidth={1} className="mb-4 opacity-20" />
-            <p className="text-sm font-bold tracking-wide">目前没有任何公开通告</p>
+            {/* 「学院当前没有发布公告」是个具体断言，只有服务端真答复了空数组
+                才说得出口；没问到的时候说这句，等于替服务端编了个答复。 */}
+            <p className="text-sm font-bold tracking-wide">
+              {searchQuery.trim() ? '没有匹配的公告' : emptyFeedText(feedStatus)}
+            </p>
           </div>
         ) : (
           filteredNews.map(item => {

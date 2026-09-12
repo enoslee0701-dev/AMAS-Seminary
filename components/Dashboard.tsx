@@ -9,6 +9,7 @@ import { STOCK_PHOTOS } from '../services/stockPhotos';
 import { courseThumbnail } from '../services/imageFallback';
 import { readGrowthRole, archImg, ARCHETYPES_BASE } from '../services/growthArchetypes';
 import { CATALOG_TOTAL } from '../services/catalog';
+import { describeFeed, emptyFeedText, type FeedStatus } from '../services/newsFeed';
 import type { ProgramTier } from './College/programData';
 
 const AIServiceChat = React.lazy(() => import('./AIServiceChat'));
@@ -68,6 +69,14 @@ interface DashboardProps {
   onOpenCoursePath?: (tier?: ProgramTier) => void;
   newsItems: NewsItem[];
   setNewsItems: (items: NewsItem[]) => void;
+  /**
+   * 上面那份 newsItems 是哪来的。不传就什么都不声张 —— 老调用方
+   * 不会凭空多出一条来源提示。与公告页共用同一份措辞实现，
+   * 见 services/newsFeed.ts。
+   */
+  newsStatus?: FeedStatus;
+  /** 重新拉取公告；没有就不显示重试入口。 */
+  onReloadNews?: () => void;
   /** Full course catalog + click handler for the global search overlay. */
   courses?: Course[];
   onCourseClick?: (courseId: string) => void;
@@ -119,9 +128,11 @@ const heroSlides: HeroSlide[] = [
   },
 ];
 
-const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, onOpenCoursePath, newsItems, tierCounts, courses = [], onCourseClick }) => {
+const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, onOpenCoursePath, newsItems, newsStatus, onReloadNews, tierCounts, courses = [], onCourseClick }) => {
   // AI customer-service overlay (opened from the floating 咨询 button).
   const [showAIChat, setShowAIChat] = useState(false);
+  /* 首页那三条公告的来源提示 —— 与公告页同一份实现 */
+  const newsNotice = describeFeed(newsStatus);
   // 定制化神学板块右侧的角色卡自动轮播（每次前进一张，三张成扇形）
   const [archIdx, setArchIdx] = useState(0);
   useEffect(() => {
@@ -697,6 +708,48 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
             paddingTop: 6, paddingBottom: 6, paddingLeft: 18, paddingRight: 18,
           }}
         >
+          {/* 这三条不是刚从服务器取到的时候，必须当场说出来。
+              首页是大多数人唯一会看的一屏；把源码里写死的示例公告
+              摆在这里当学院通知，读的人没有任何办法分辨。
+              措辞与公告页共用 services/newsFeed.ts，两边不许各写一份。 */}
+          {newsNotice && (
+            <div
+              data-testid="dashboard-news-source"
+              role="status"
+              style={{
+                marginTop: 8, marginBottom: 2, padding: '8px 10px', borderRadius: 12,
+                backgroundColor: newsNotice.tone === 'warn' ? '#FFFBEB' : '#F8FAFC',
+                border: `1px solid ${newsNotice.tone === 'warn' ? '#FDE68A' : '#E2E8F0'}`,
+                color: newsNotice.tone === 'warn' ? '#92400E' : '#475569',
+                fontFamily: '"PingFang SC", -apple-system, sans-serif',
+                fontSize: 11, lineHeight: '17px',
+              }}
+            >
+              <p style={{ margin: 0 }}>{newsNotice.text}</p>
+              {onReloadNews && newsNotice.canRetry && (
+                <button
+                  type="button"
+                  onClick={onReloadNews}
+                  /* 44×44 是本仓既有的触控下限（verify-touch-targets 在管）。
+                     视觉上仍是一颗小药丸：撑高靠上下 padding，多出来的高度
+                     用等量负 margin 收回，行距一点不变 —— 与 SectionHeader
+                     里那六个文字入口同一手法。 */
+                  style={{
+                    marginTop: -4, minHeight: 44, minWidth: 44,
+                    paddingTop: 12, paddingBottom: 12, paddingLeft: 14, paddingRight: 14,
+                    marginBottom: -6,
+                    display: 'inline-flex', alignItems: 'center',
+                    borderRadius: 999,
+                    backgroundColor: '#B45309', color: '#FFFFFF',
+                    fontSize: 11, fontWeight: 700,
+                  }}
+                >
+                  重新加载公告
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Rows */}
           <div>
             {newsItems.slice(0, 3).map((news) => (
@@ -746,7 +799,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onOpenCollegeItem, 
                   textAlign: 'center', padding: '12px 0', fontStyle: 'italic',
                 }}
               >
-                暂无最新公告
+                {emptyFeedText(newsStatus)}
               </p>
             )}
           </div>

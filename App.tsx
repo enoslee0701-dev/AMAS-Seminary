@@ -55,7 +55,10 @@ import { setAssessmentIdentity } from './services/assessmentStorage';
 import { setScopedIdentity } from './services/scopedLocalStore';
 import { hasPendingDiscoverHandoff } from './services/christianProfile/discoverHandoff';
 import { listAnnouncements } from './services/announcementsService';
-import type { FeedStatus } from './components/AnnouncementsView';
+import {
+  readNewsCache, writeNewsCache,
+  type FeedStatus, type FeedOrigin,
+} from './services/newsFeed';
 import {
   listCourses,
   listMyProgress,
@@ -63,7 +66,7 @@ import {
   updateCourse as apiUpdateCourse,
   setCourseProgress as apiSetCourseProgress,
 } from './services/coursesService';
-import { failed, failureMessage } from './services/apiResult';
+import { failed, failureMessage, type FailureReason } from './services/apiResult';
 
 /**
  * Fullscreen fallback shown while the VoiceRoomOverlay lazy chunk loads.
@@ -230,68 +233,73 @@ const App: React.FC = () => {
 
 
   // --- Persistent News State ---
-  const [newsItems, setNewsItems] = useState<NewsItem[]>(() => {
-    try {
-      const saved = localStorage.getItem('amas_news');
-      return saved ? JSON.parse(saved) : MOCK_NEWS;
-    } catch (e) {
-      return MOCK_NEWS;
-    }
-  });
-
-  useEffect(() => {
-    localStorage.setItem('amas_news', JSON.stringify(newsItems));
-  }, [newsItems]);
+  /**
+   * 公告列表**连同它是哪来的**一起存。
+   *
+   * 原来只存列表：`localStorage['amas_news'] ?? MOCK_NEWS`，读出来之后
+   * 谁也说不清手上这份是上次真取到的，还是源码里写死的示例公告。
+   * 首页和公告页都照着它显示，于是示例公告就成了「学院公告」。
+   */
+  const [newsFeed, setNewsFeed] = useState<{ items: NewsItem[]; origin: FeedOrigin }>(
+    () => readNewsCache(MOCK_NEWS),
+  );
+  const newsItems = newsFeed.items;
+  const setNewsItems = React.useCallback((items: NewsItem[]) => {
+    setNewsFeed(prev => ({ ...prev, items }));
+  }, []);
 
   /**
-   * 公告的来源状态。
-   *
-   * 原来拉取失败就悄悄保留本地那份 —— 而本地那份在第一次启动时是
-   * `MOCK_NEWS`，即源码里写死的示例公告。公告是「学院发的、大家都看得到」
-   * 的东西，把示例公告不声不响地摆在公告栏里，读的人没有任何办法分辨。
-   * 现在把来源记下来，交给公告页如实显示。
+   * 这次拉取走到哪一步了。**只记拉取本身**，不记屏幕上那份是谁给的 ——
+   * 后者是 newsFeed.origin 的事。两件事分开记，合成的时候才说得准：
+   * 「还在加载，下面摆的是示例」和「没拉到，下面是上次取到的」
+   * 是两句不同的话。
    *
    * 服务端返回空数组是**真答复**（「现在一条公告都没有」），照收；
    * 原来那条 `length > 0` 会把空答复当成失败，于是继续展示示例公告。
    */
-  const [newsStatus, setNewsStatus] = useState<FeedStatus>({ source: 'loading' });
+  const [newsFetch, setNewsFetch] = useState<
+    { phase: 'loading' } | { phase: 'server' } | { phase: 'failed'; reason: FailureReason }
+  >({ phase: 'loading' });
+
+  /** 交给首页与公告页的来源状态 —— 两边读同一个值，说同一句话。 */
+  const newsStatus: FeedStatus = React.useMemo(() => {
+    if (newsFetch.phase === 'server') return { source: 'server' };
+    if (newsFetch.phase === 'loading') return { source: 'loading', origin: newsFeed.origin };
+    return { source: 'local', reason: newsFetch.reason, origin: newsFeed.origin };
+  }, [newsFetch, newsFeed.origin]);
 
   const loadAnnouncements = React.useCallback(async () => {
+    setNewsFetch({ phase: 'loading' });
     try {
       const res = await listAnnouncements();
       if (failed(res)) {
-        setNewsStatus({ source: 'local', reason: res.reason });
+        setNewsFetch({ phase: 'failed', reason: res.reason });
         return;
       }
-      setNewsItems(res.data);
-      setNewsStatus({ source: 'server' });
+      /* 服务端那份到手，它就是当前真公告。万一下次拉取失败，屏幕上留着的
+         正是这一份 —— 那时它的身份是「上次取到的」，所以 origin 记 cache。 */
+      setNewsFeed({ items: res.data, origin: 'cache' });
+      setNewsFetch({ phase: 'server' });
     } catch (err) {
       console.warn('[App] listAnnouncements failed:', err);
-      setNewsStatus({ source: 'local', reason: 'network' });
+      setNewsFetch({ phase: 'failed', reason: 'network' });
     }
   }, []);
 
+  /* 首屏拉一次。原来这里抄了一份和 loadAnnouncements 一模一样的实现，
+     两份迟早漂移（ARCHITECTURE_RULES §10）—— 改成调同一个。 */
+  useEffect(() => { void loadAnnouncements(); }, [loadAnnouncements]);
+
+  /**
+   * 只有服务端那份才写进本机缓存。
+   *
+   * 原来是无条件写回，于是**示例公告被写进了缓存** —— 下次启动它看起来
+   * 就像「上次取到的」，来源从此不可考。这是首页那条谎话最隐蔽的一段。
+   */
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await listAnnouncements();
-        if (cancelled) return;
-        if (failed(res)) {
-          setNewsStatus({ source: 'local', reason: res.reason });
-          return;
-        }
-        setNewsItems(res.data);
-        setNewsStatus({ source: 'server' });
-      } catch (err) {
-        if (cancelled) return;
-        console.warn('[App] listAnnouncements failed:', err);
-        setNewsStatus({ source: 'local', reason: 'network' });
-      }
-    })();
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (newsFetch.phase !== 'server') return;
+    writeNewsCache(newsItems);
+  }, [newsItems, newsFetch.phase]);
 
   // --- Persistent Voice Room State ---
   const [activeVoiceRoom, setActiveVoiceRoom] = useState<Room | null>(null);
@@ -849,6 +857,8 @@ const App: React.FC = () => {
                         onOpenCoursePath={openCoursePath}
                         newsItems={newsItems}
                         setNewsItems={setNewsItems}
+                        newsStatus={newsStatus}
+                        onReloadNews={() => { void loadAnnouncements(); }}
                         courses={allCourses}
                         onCourseClick={handleCourseClick}
                         tierCounts={{
