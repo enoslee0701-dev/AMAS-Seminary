@@ -42,10 +42,14 @@ import {
      但**全应用没有任何地方调用** —— 结果是好友关系「只能加，不能退」：
      发出去的申请看不到也撤不回，加上了也解除不了。 */
   listOutgoing as apiListOutgoingFriendRequests,
-  cancelFriendRequest as apiCancelFriendRequest,
-  unfriend as apiUnfriend,
   type OutgoingRequest as FriendOutgoingRequest,
 } from '../services/friendsService';
+/* 撤回与解除这两件**不可逆**的事挪进了 useFriendRelations：
+   失败不先删关系、连点只算一次、请求迟到不串到新身份上。
+   那三条全在异步与状态里，放 hook 里才验得动。 */
+import { useFriendRelations } from './community/useFriendRelations';
+import UnfriendConfirmDialog from './community/UnfriendConfirmDialog';
+import FriendRequestsModal from './community/FriendRequestsModal';
 import {
   uploadImage as uploadImageToBackend,
   isBackendConfigured as isImageUploadBackendConfigured,
@@ -688,32 +692,22 @@ const CommunityView: React.FC<CommunityViewProps> = ({
     setIncomingRequests(rs => rs.filter(r => r.id !== req.id));
   };
   
-  /**
-   * 撤回自己发出去的好友申请。
-   *
-   * `cancelFriendRequest` 与 `DELETE /api/friends/requests/:id` 一直都在，
-   * 只是没有任何界面调用过 —— 申请一旦发出就再也收不回来。
-   */
-  const handleCancelFriendRequest = async (req: FriendOutgoingRequest) => {
-    const ok = await apiCancelFriendRequest(req.id);
-    if (!ok) { showToast('撤回失败，请稍后重试'); return; }
-    setOutgoingRequests(rs => rs.filter(r => r.id !== req.id));
-    showToast('已撤回申请');
-  };
+  /* 撤回申请 / 解除好友。两个都是不可逆操作，逻辑在 useFriendRelations 里：
+     失败不先删关系、连点只算一次、请求迟到不串到新身份上。 */
+  const friendRelations = useFriendRelations({
+    currentUserId,
+    showToast,
+    onRequestCancelled: (id) => setOutgoingRequests(rs => rs.filter(r => r.id !== id)),
+    onUnfriended: (userId) => setContacts(prev => prev.map(c =>
+      c.id === userId ? { ...c, status: 'none' } : c)),
+  });
 
-  /**
-   * 解除好友。
-   *
-   * `unfriend` 与 `DELETE /api/friends/:userId` 同样一直都在、同样没人调用 ——
-   * 加上之后就没有退路了。这是个不可逆操作，所以先确认再执行。
-   */
+  const handleCancelFriendRequest = (req: FriendOutgoingRequest) =>
+    friendRelations.cancelRequest(req);
+
   const handleUnfriend = async (contact: Contact) => {
-    const ok = await apiUnfriend(contact.id);
-    if (!ok) { showToast('解除失败，请稍后重试'); return; }
-    setContacts(prev => prev.map(c =>
-      c.id === contact.id ? { ...c, status: 'none' } : c));
+    await friendRelations.unfriendUser(contact.id, contact.name);
     setUnfriendTarget(null);
-    showToast(`已解除与 ${contact.name} 的好友关系`);
   };
 
   const toggleExpand = (id: string) => setExpandedId(expandedId === id ? null : id);
@@ -1027,115 +1021,29 @@ const CommunityView: React.FC<CommunityViewProps> = ({
 
         {joinGroupModal.show && <JoinGroupModal onClose={() => setJoinGroupModal({show: false, groupId: '', groupName: ''})} onConfirm={() => handleJoinGroup(joinGroupModal.groupId, joinGroupModal.groupName)} groupName={joinGroupModal.groupName} />}
 
-        {showFriendRequests && (
-            <div className="fixed inset-0 z-[120] bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-6 animate-fade-in" onClick={() => setShowFriendRequests(false)}>
-                <div className="bg-white w-full max-sm rounded-t-3xl sm:rounded-3xl p-6 animate-slide-up sm:animate-scale-in relative shadow-2xl text-slate-900 max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-                    <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-4 sm:hidden"></div>
-                    <button onClick={() => setShowFriendRequests(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 hidden sm:block"><X size={20}/></button>
-                    <h3 className="text-lg font-bold text-slate-900 mb-5 text-center">好友申请</h3>
-                    {/* 「我发出的」这一栏此前根本不存在 —— `listOutgoing` /
-                        `cancelFriendRequest` 与对应端点一直都在，却没有任何界面用过，
-                        于是申请发出去就再也看不到、也撤不回。 */}
-                    <div role="tablist" aria-label="好友申请分栏" className="flex bg-slate-100 rounded-xl p-1 mb-4">
-                        {([
-                          ['incoming', `收到的${incomingRequests.length ? ` (${incomingRequests.length})` : ''}`],
-                          ['outgoing', `我发出的${outgoingRequests.length ? ` (${outgoingRequests.length})` : ''}`],
-                        ] as const).map(([key, label]) => (
-                          <button
-                            key={key}
-                            type="button"
-                            role="tab"
-                            aria-selected={requestsTab === key}
-                            onClick={() => setRequestsTab(key)}
-                            className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${requestsTab === key ? 'bg-white text-blue-900 shadow-sm' : 'text-slate-500'}`}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                    </div>
-                    <div className="flex-1 overflow-y-auto -mx-2 px-2 custom-scrollbar">
-                        {requestsTab === 'incoming' && (incomingRequests.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center py-12 text-slate-400">
-                                <UserPlus size={32} className="mb-3 opacity-40" />
-                                <p className="text-xs font-bold">暂无待处理的好友申请</p>
-                            </div>
-                        ) : (
-                            <div className="space-y-2">
-                                {incomingRequests.map(req => (
-                                    <div key={req.id} className="flex items-center p-3 rounded-2xl border border-slate-100 bg-slate-50">
-                                        <img src={req.fromUserAvatar || initialAvatar(req.fromUserId, req.fromUserName)} className="w-11 h-11 rounded-squircle mr-3 object-cover shadow-sm" />
-                                        <div className="flex-1 min-w-0">
-                                            <h4 className="font-bold text-slate-900 text-sm truncate">{req.fromUserName}</h4>
-                                            <p className="text-[10px] text-slate-500 font-bold uppercase">{req.fromUserRole}</p>
-                                        </div>
-                                        <div className="flex items-center space-x-2 ml-3">
-                                            <button
-                                                onClick={() => handleRejectFriendRequest(req)}
-                                                className="px-3 py-1.5 rounded-full bg-white border border-slate-200 text-slate-600 text-[11px] font-bold active:scale-95 transition-transform"
-                                            >
-                                                拒绝
-                                            </button>
-                                            <button
-                                                onClick={() => handleAcceptFriendRequest(req)}
-                                                className="px-3 py-1.5 rounded-full bg-blue-600 text-white text-[11px] font-bold active:scale-95 transition-transform shadow-sm"
-                                            >
-                                                接受
-                                            </button>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        ))}
-                        {requestsTab === 'outgoing' && (outgoingRequests.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center py-12 text-slate-400">
-                                <UserPlus size={32} className="mb-3 opacity-40" />
-                                <p className="text-xs font-bold">你还没有发出过好友申请</p>
-                            </div>
-                        ) : (
-                            <div className="space-y-2">
-                                {outgoingRequests.map(req => (
-                                    <div key={req.id} className="flex items-center p-3 rounded-2xl border border-slate-100">
-                                        <img src={req.toUserAvatar || initialAvatar(req.toUserId, req.toUserName)} alt="" className="w-10 h-10 rounded-squircle mr-3 object-cover" />
-                                        <div className="flex-1 min-w-0">
-                                            <h4 className="font-bold text-slate-900 text-sm truncate">{req.toUserName}</h4>
-                                            <p className="text-[10px] text-slate-500 font-bold">等待对方回应</p>
-                                        </div>
-                                        <button
-                                            type="button"
-                                            onClick={() => handleCancelFriendRequest(req)}
-                                            aria-label={`撤回发给 ${req.toUserName} 的好友申请`}
-                                            className="ml-3 px-3 py-1.5 rounded-full bg-white border border-slate-200 text-slate-600 text-xs font-bold"
-                                        >
-                                            撤回
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            </div>
-        )}
+        {/* 好友申请弹窗抽成了独立组件，好把两栏切换、空态、撤回、处理中禁用
+            真的挂起来验。逻辑在 useFriendRelations 里。 */}
+        <FriendRequestsModal
+          open={showFriendRequests}
+          incoming={incomingRequests}
+          outgoing={outgoingRequests}
+          tab={requestsTab}
+          onTabChange={setRequestsTab}
+          busyIds={friendRelations.busyIds}
+          onClose={() => setShowFriendRequests(false)}
+          onAccept={handleAcceptFriendRequest}
+          onReject={handleRejectFriendRequest}
+          onCancel={handleCancelFriendRequest}
+        />
 
-        {/* 解除好友是不可逆的，先确认跟谁解除。
-            `unfriend` 与 DELETE /api/friends/:userId 一直都在，此前没有任何入口。 */}
-        {unfriendTarget && (
-            <div className="fixed inset-0 z-[120] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 animate-fade-in" onClick={() => setUnfriendTarget(null)}>
-                <div role="dialog" aria-modal="true" aria-label="解除好友" className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
-                    <h3 className="text-base font-bold text-slate-900 mb-2">解除好友关系</h3>
-                    <p className="text-[13px] text-slate-600 leading-relaxed mb-1">
-                        确定要解除与「{unfriendTarget.name}」的好友关系吗？
-                    </p>
-                    <p className="text-[11px] text-slate-400 leading-relaxed mb-5">
-                        解除之后需要重新发送申请并等对方同意才能加回来。已有的会话记录不会被删除。
-                    </p>
-                    <div className="flex space-x-3">
-                        <button type="button" onClick={() => setUnfriendTarget(null)} className="flex-1 py-3 rounded-xl bg-slate-100 text-slate-700 font-bold text-sm">取消</button>
-                        <button type="button" onClick={() => handleUnfriend(unfriendTarget)} className="flex-1 py-3 rounded-xl bg-rose-600 text-white font-bold text-sm">解除好友</button>
-                    </div>
-                </div>
-            </div>
-        )}
+        {/* 解除好友的确认弹窗抽成了独立组件，好把「取消」「确认」两条路真的挂起来验。
+            真正调服务、判成败、挡连点、防止请求迟到串身份都在 useFriendRelations 里。 */}
+        <UnfriendConfirmDialog
+          target={unfriendTarget}
+          busy={!!unfriendTarget && friendRelations.busyIds.has(unfriendTarget.id)}
+          onCancel={() => setUnfriendTarget(null)}
+          onConfirm={() => { if (unfriendTarget) void handleUnfriend(unfriendTarget); }}
+        />
 
         {joiningRoomId && (
            <div className="fixed inset-0 z-[110] bg-slate-900/85 backdrop-blur-sm flex flex-col items-center justify-center animate-fade-in">
@@ -1723,7 +1631,9 @@ const CommunityView: React.FC<CommunityViewProps> = ({
                             )
                         )}
 
-                        {directoryTab === 'contacts' && incomingRequests.length > 0 && (
+                        {/* 入口原来只在「收到的 > 0」时出现 —— 那样「我发出的」那一栏永远
+                            看不到：你发了申请、对方没回，界面上没有任何地方能进去撤回。 */}
+                        {directoryTab === 'contacts' && (incomingRequests.length > 0 || outgoingRequests.length > 0) && (
                             <button
                                 onClick={() => setShowFriendRequests(true)}
                                 className="w-full flex items-center justify-between bg-blue-50 border border-blue-100 rounded-2xl px-4 py-3 mb-2 active:bg-blue-100 transition-colors"
