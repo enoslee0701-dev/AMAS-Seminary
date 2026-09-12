@@ -214,6 +214,9 @@ const LibraryView: React.FC = () => {
    * failure and surfaces a small toast so the user knows the action
    * didn't persist. Numeric (fallback-mock) ids are flipped locally
    * only — the backend has no record of them.
+   *
+   * 失败的话照实说是哪一种：原来一律「收藏失败，请稍后再试」，
+   * 而 401（没登录）不是「稍后再试」能解决的，503 也不是。
    */
   const handleToggleFavorite = async (bookId: string | number) => {
     const key = String(bookId);
@@ -224,16 +227,16 @@ const LibraryView: React.FC = () => {
     // ids belong to FALLBACK_BOOKS and don't exist server-side.
     if (typeof bookId !== 'string') return;
     const result = await apiToggleFavorite(bookId);
-    if (result === null) {
+    if (failed(result)) {
       // Revert.
       toggleFavoriteStore(key);
-      setToast('收藏失败，请稍后再试');
-      window.setTimeout(() => setToast(null), 2200);
+      setToast(failureMessage(result.reason, wasFav ? '取消收藏' : '收藏'));
+      window.setTimeout(() => setToast(null), 3500);
       return;
     }
     // Reconcile with server truth in case it differed (rare).
     const next = new Set(getFavoritesSnapshot());
-    if (result.favorited) next.add(key); else next.delete(key);
+    if (result.data.favorited) next.add(key); else next.delete(key);
     setFavoritesStore(next);
   };
 

@@ -307,3 +307,51 @@ describe('★ 搜索：结果是这次搜出来的，还是上一次剩下的', 
     expect(text()).toContain('系统神学 (Grudem)');
   });
 });
+
+describe('★ 收藏失败：也要说清是哪一种', () => {
+  /* 原来一律「收藏失败，请稍后再试」。401（没登录）不是「稍后再试」
+     能解决的，503 也不是。另外失败必须把乐观翻转撤回去 ——
+     留着一个其实没存下的收藏，比不收藏更糟。 */
+  const favButton = () =>
+    [...host.querySelectorAll('button')]
+      .find(b => /收藏/.test(b.getAttribute('aria-label') || '')) || null;
+
+  const toggleWith = async (result: unknown) => {
+    listBooksMock.mockResolvedValue({ ok: true, data: serverBooks });
+    toggleFavoriteMock.mockResolvedValue(result);
+    await mount();
+    click(favButton());
+    await settle();
+    return text();
+  };
+
+  it('★ 503：说数据服务暂时不可用', async () => {
+    const t = await toggleWith(FAIL_503);
+    expect(t).toContain('暂时不可用');
+    expect(t).not.toContain('连不上');
+  });
+
+  it('★ 401：叫人重新登录，不是「稍后再试」', async () => {
+    const t = await toggleWith(failWith('unauthorized', 401));
+    expect(t).toContain('重新登录');
+  });
+
+  it('★ 连不上才说连不上', async () => {
+    expect(await toggleWith(failWith('network'))).toContain('连不上服务器');
+  });
+
+  it('★ 失败会把乐观翻转撤回去 —— 不留一个其实没存下的收藏', async () => {
+    listBooksMock.mockResolvedValue({ ok: true, data: serverBooks });
+    toggleFavoriteMock.mockResolvedValue(FAIL_503);
+    await mount();
+    const before = favButton()?.getAttribute('aria-label');
+    click(favButton());
+    await settle();
+    expect(favButton()?.getAttribute('aria-label')).toBe(before);
+  });
+
+  it('成功就不出提示', async () => {
+    const t = await toggleWith({ ok: true, data: { favorited: true } });
+    expect(t).not.toContain('没有完成');
+  });
+});

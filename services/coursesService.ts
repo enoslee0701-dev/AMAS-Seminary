@@ -299,12 +299,19 @@ export async function uploadCourseFile(
  * access token and trigger a browser save (a plain <a href> can't send auth).
  * Returns false if there's no backend or the request fails.
  */
-export async function downloadCourseFile(courseId: string, fileId: string, filename: string): Promise<boolean> {
+export async function downloadCourseFile(
+  courseId: string,
+  fileId: string,
+  filename: string,
+): Promise<ApiResult<true>> {
   const base = apiBase();
-  if (!base) return false;
+  if (!base) return apiFail('not-configured');
   try {
     const res = await fetchAuthed(`${base}/api/courses/${encodeURIComponent(courseId)}/files/${encodeURIComponent(fileId)}`);
-    if (!res.ok) return false;
+    if (!res.ok) {
+      console.warn('[coursesService.downloadCourseFile] backend rejected:', res.status);
+      return failureFromResponse(res);
+    }
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -314,9 +321,9 @@ export async function downloadCourseFile(courseId: string, fileId: string, filen
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    return true;
+    return apiOk(true as const);
   } catch (err) {
     console.warn('[coursesService.downloadCourseFile] network error:', err);
-    return false;
+    return apiFail('network');
   }
 }

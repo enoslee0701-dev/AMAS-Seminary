@@ -309,20 +309,38 @@ const CourseDetailView: React.FC<CourseDetailViewProps> = ({ course, onUpdateCou
     await doUpload(file);
   };
 
-  const handleRealDownload = async (f: CourseFile) => {
+  /**
+   * 下载失败的现场：跟上传那边同一套。
+   *
+   * 原来是 `alert('下载失败，请稍后重试。')` —— 503 与 403 与连不上全是这一句，
+   * 而 403 / 501 重试多少次都一样。另外**失败绝不能记「已下载」**：
+   * 那个标记是给人看「我拿到过这份资料」的。
+   */
+  const [downloadError, setDownloadError] = useState<{ msg: string; file: CourseFile | null } | null>(null);
+
+  const doDownload = async (f: CourseFile) => {
     setFilesBusy(true);
     try {
-      const ok = await downloadCourseFile(course.id, f.id, f.filename);
-      if (ok) {
+      const res = await downloadCourseFile(course.id, f.id, f.filename);
+      if (!failed(res)) {
+        setDownloadError(null);
         const next = new Set(downloaded); next.add(f.filename);
         setDownloaded(next);
         writeScoped('amas_downloaded_files', JSON.stringify(Array.from(next)));
-      } else {
-        alert('下载失败，请稍后重试。');
+        return;
       }
+      setDownloadError({
+        msg: `${failureMessage(res.reason, `下载 ${f.filename}`)}文件没有下载下来。`,
+        file: isRetryable(res.reason) ? f : null,
+      });
     } finally {
       setFilesBusy(false);
     }
+  };
+
+  const handleRealDownload = async (f: CourseFile) => {
+    setDownloadError(null);
+    await doDownload(f);
   };
 
   const formatSize = (bytes: number) => {
@@ -1018,6 +1036,26 @@ const CourseDetailView: React.FC<CourseDetailViewProps> = ({ course, onUpdateCou
             <div className="space-y-3 animate-fade-in">
                {/* Hidden picker for admin uploads */}
                <input ref={fileInputRef} type="file" className="hidden" onChange={handlePickUpload} />
+
+               {/* 下载失败同样留在页面上。 */}
+               {downloadError && (
+                  <div
+                     role="alert"
+                     className="p-3 rounded-xl bg-red-50 border border-red-100 text-xs text-red-700 leading-relaxed"
+                  >
+                     <p>{downloadError.msg}</p>
+                     {downloadError.file && (
+                        <button
+                           type="button"
+                           onClick={() => { const f = downloadError.file; if (f) void doDownload(f); }}
+                           disabled={filesBusy}
+                           className="mt-2 px-3 py-1.5 rounded-full bg-red-600 text-white text-xs font-bold disabled:opacity-50"
+                        >
+                           {filesBusy ? '重试中…' : '重试下载'}
+                        </button>
+                     )}
+                  </div>
+               )}
 
                {/* 上传失败就把原因留在页面上 —— 不用一个一闪而过的 toast，
                    也不用 alert（点掉就没了，还没法重试）。 */}

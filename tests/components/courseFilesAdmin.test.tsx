@@ -309,6 +309,86 @@ describe('★ 重试：文件还在手上，不用重新选一遍', () => {
   });
 });
 
+describe('★ 课件下载失败：跟上传同一套口径', () => {
+  /* 下载原来也是一句 `alert('下载失败，请稍后重试。')`。
+     另外「已下载」这个标记是给人看「我拿到过这份资料」的，
+     失败时绝不能记上。 */
+  const FILE = { id: 'f1', filename: '讲义.pdf', size: 10, uploadedAt: 0 };
+
+  const mountWithFile = async () => {
+    listFilesMock.mockResolvedValue([FILE]);
+    await mount(['registrar']);
+    openMaterials();
+  };
+
+  const clickDownload = async () => {
+    const btn = [...host.querySelectorAll('button')]
+      .find(b => /下载 讲义\.pdf/.test(b.getAttribute('aria-label') || ''));
+    if (!btn) throw new Error('找不到下载按钮');
+    click(btn);
+    await settle();
+  };
+
+  it('★ 503：说数据服务暂时不可用，不说没连上', async () => {
+    downloadMock.mockResolvedValue(FAIL_503);
+    await mountWithFile();
+    await clickDownload();
+    const msg = alertBox()?.textContent ?? '';
+    expect(msg).toContain('暂时不可用');
+    expect(msg).not.toContain('连不上');
+  });
+
+  it('★ 403：才说权限', async () => {
+    downloadMock.mockResolvedValue(failWith('forbidden', 403));
+    await mountWithFile();
+    await clickDownload();
+    expect(alertBox()?.textContent).toContain('权限');
+  });
+
+  it('★ 明说文件没有下载下来', async () => {
+    downloadMock.mockResolvedValue(FAIL_503);
+    await mountWithFile();
+    await clickDownload();
+    expect(alertBox()?.textContent).toContain('文件没有下载下来');
+  });
+
+  it('★ 失败不记「已下载」—— 那个标记是说「我拿到过这份资料」', async () => {
+    downloadMock.mockResolvedValue(FAIL_503);
+    await mountWithFile();
+    await clickDownload();
+    expect(text()).not.toContain('已下载');
+  });
+
+  it('★ 503 给重试，点了真会重发', async () => {
+    downloadMock.mockResolvedValue(FAIL_503);
+    await mountWithFile();
+    await clickDownload();
+    const retry = [...host.querySelectorAll('button')]
+      .find(b => /重试下载/.test((b.textContent || '').trim()));
+    expect(retry).not.toBeUndefined();
+    click(retry!);
+    await settle();
+    expect(downloadMock).toHaveBeenCalledTimes(2);
+    expect(downloadMock.mock.calls[0]).toEqual(downloadMock.mock.calls[1]);
+  });
+
+  it('★ 403 不给重试', async () => {
+    downloadMock.mockResolvedValue(failWith('forbidden', 403));
+    await mountWithFile();
+    await clickDownload();
+    expect([...host.querySelectorAll('button')]
+      .find(b => /重试下载/.test((b.textContent || '').trim()))).toBeUndefined();
+  });
+
+  it('下载成功：错误收掉，记上已下载', async () => {
+    downloadMock.mockResolvedValue({ ok: true, data: true });
+    await mountWithFile();
+    await clickDownload();
+    expect(alertBox()).toBeNull();
+    expect(text()).toContain('已下载');
+  });
+});
+
 describe('成功路径没有被改坏', () => {
   it('上传成功刷新列表并提示', async () => {
     uploadMock.mockResolvedValue({ ok: true, data: { id: 'f1', filename: '讲义.pdf', size: 10 } });

@@ -229,27 +229,30 @@ export async function deleteBook(id: string): Promise<ApiResult<true>> {
 }
 
 /**
- * POST /api/library/favorites/:bookId — auth required.
- * Returns the new `{ favorited }` state, or `null` if the backend
- * is unreachable / rejected the call (so the caller can revert an
- * optimistic UI flip).
+ * POST /api/library/favorites/:bookId — auth required。
+ *
+ * 成功带回新的 `{ favorited }` 状态；失败带原因，调用方据此撤回乐观翻转
+ * 并**照实**说是哪种失败 —— 原来一律回 null，界面只好说一句
+ * 「收藏失败，请稍后再试」，而 401（没登录）根本不是「稍后再试」能解决的。
  */
-export async function toggleFavorite(bookId: string): Promise<{ favorited: boolean } | null> {
+export async function toggleFavorite(
+  bookId: string,
+): Promise<ApiResult<{ favorited: boolean }>> {
   const base = apiBase();
-  if (!base) return null;
+  if (!base) return apiFail('not-configured');
   try {
     const res = await fetchAuthed(`${base}/api/library/favorites/${encodeURIComponent(bookId)}`, {
       method: 'POST',
     });
     if (!res.ok) {
       console.warn('[libraryService.toggleFavorite] backend rejected:', res.status);
-      return null;
+      return failureFromResponse(res);
     }
     const body = (await res.json()) as { favorited: boolean; count: number };
-    return { favorited: !!body.favorited };
+    return apiOk({ favorited: !!body.favorited });
   } catch (err) {
     console.warn('[libraryService.toggleFavorite] network error:', err);
-    return null;
+    return apiFail('network');
   }
 }
 
