@@ -99,7 +99,11 @@ try {
         .some(b => (b.innerText || '').trim().endsWith('校友圈')))) return true;
       await sleep(1000);
     }
+    /* 加载不出来就记成一条明明白白的 FAIL。
+       原来这里只是把 anyFatal 置位、悄悄让退出码变 1 —— 结果屏幕上印着
+       「23/23 PASS」而脚本却是失败的，两者对不上。这种静默信号本身就是坑。 */
     anyFatal = true;
+    check(`前提：以「${name ?? '无身份'}」加载应用`, false, '等了 90 秒仍没起来');
     return false;
   };
   const wipe = () => page.evaluate(() => {
@@ -185,16 +189,41 @@ try {
   check('★ 甲再登录回来，自己的记录还在', await bodyHas(SECRET_A));
   check('★ 而且看不到乙的', !(await bodyHas(SECRET_B)));
 
-  /* ---------------- 2. 登出之后 ---------------- */
+  /* ---------------- 2. 没有身份时 ---------------- */
   console.log('');
-  console.log('-- 2 · 登出不残留 --');
-  await loadAs(null, null);
-  await openFirstChat();
-  check('★ 没有身份时看不到任何人的记录', !(await bodyHas(SECRET_A)) && !(await bodyHas(SECRET_B)));
-  const afterAnon = await page.evaluate(() => Object.keys(localStorage)
-    .filter(k => k.startsWith('amas_chat_messages')).sort());
-  check('★ 没有身份时也不写任何桶',
-    !afterAnon.includes('amas_chat_messages:v2:'), JSON.stringify(afterAnon));
+  console.log('-- 2 · 没有身份时进不去，也不写任何桶 --');
+  {
+    /* 这一节第一版写成「登出后看不到任何人的记录」，两条都 PASS ——
+       **但那是空跑**：没有身份时应用停在登录门上，页面里本来就什么都没有，
+       「看不到甲的消息」这句话对着一张登录页当然成立。
+       第一版还把加载失败悄悄记进 anyFatal、屏幕上却印着 23/23 PASS，
+       两边对不上，是这个坑把它暴露出来的。
+
+       所以改成验真正成立的那件事：没有身份就进不到应用里（登录门本身
+       就是一层保护），并且**不会凭空造出一个身份桶**。 */
+    await page.goto(base, { waitUntil: 'domcontentloaded' });
+    await page.evaluate(() => {
+      localStorage.removeItem('amas_current_user');
+      localStorage.setItem('amas_offline_notice_dismissed', '1');
+    });
+    await page.goto(base, { waitUntil: 'networkidle2' });
+    await sleep(3000);
+
+    const gated = await page.evaluate(() => ({
+      tabs: [...document.querySelectorAll('button')].some(b => (b.innerText || '').trim().endsWith('校友圈')),
+      chatInput: [...document.querySelectorAll('input')].some(e => /发送消息/.test(e.placeholder || '')),
+    }));
+    check('★ 没有身份时进不到应用（停在登录门上，聊天页根本到不了）',
+      !gated.tabs && !gated.chatInput, JSON.stringify(gated));
+
+    const bucketKeys = await page.evaluate(() => Object.keys(localStorage)
+      .filter(k => k.startsWith('amas_chat_messages:v2:')).sort());
+    check('★ 没有身份时不会凭空造出身份桶（只剩甲乙自己那两个）',
+      bucketKeys.length === 2 && bucketKeys.every(k => /userA|userB/.test(k)),
+      JSON.stringify(bucketKeys));
+    check('★ 也没有回头去写那个泄露过的全局键',
+      await page.evaluate(() => localStorage.getItem('amas_chat_messages') === null));
+  }
 
   /* ---------------- 3. 旧的全局数据：不归属、不展示、不删 ---------------- */
   console.log('');

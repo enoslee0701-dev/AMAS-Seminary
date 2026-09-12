@@ -322,7 +322,19 @@ export const ChatView: React.FC<ChatViewProps> = ({ onBack, initialChatId, curre
   }, [messages, activeChatId, isRecording]);
 
   const activeConv = INITIAL_CONVERSATIONS.find(c => c.id === (activeChatId || 'c1')) || INITIAL_CONVERSATIONS[0];
-  const currentMessages = activeChatId ? (messages[activeChatId] || []) : [];
+  /* 只画最近这些条，并跳过画不出来的条目。
+     **这是渲染上限，不是存储上限** —— 盘上一条都不会少。
+     services/chatMessages.ts 里写死了持久层无损：不截断、不按形状过滤、
+     不因为写不下就删历史。截断落盘那是没人授权的删除，这里不干那个。
+
+     跳过的是「连 id 都没有」的条目：React 需要 key，而且下面的渲染分支
+     全靠 msg.type 分流，没有 id 的条目画出来就是个空壳。它们照样存在盘上，
+     将来解析器认识了自然就画得出来。 */
+  const RENDER_LIMIT = 300;
+  const isRenderable = (m: any) => !!m && typeof m === 'object' && typeof m.id === 'string';
+  const currentMessages = activeChatId
+    ? (messages[activeChatId] || []).filter(isRenderable).slice(-RENDER_LIMIT)
+    : [];
 
   const sendMessage = (msgData: Partial<Message>) => {
     if (!activeChatId) return;
