@@ -475,11 +475,12 @@ const App: React.FC = () => {
   // Optimistic + backend-sync + revert. We update local state synchronously
   // so the UI feels instant, then mirror the change to the backend. On a
   // backend success we replace the temp record with the canonical server
-  // response (so we get the real UUID, createdAt, etc.). On failure the
-  // local change stays — same as posts/announcements — because reverting
-  // mid-edit would feel worse than the desync, and the next boot fetch
-  // will reconcile.
+  /* 原来的注释说「失败就把本地改动留着，下次启动拉取会自动对齐」。
+     在这个部署里那个理由不成立：目录写路径是**永久停用**的 501，
+     不是偶发失败 —— 留着只会让管理员以为改好了，然后在某次重启后
+     悄无声息地消失。现在失败即刻还原并说明。 */
   const handleUpdateCourse = (updatedCourse: Course) => {
+    const before = allCourses;
     setAllCourses(prev => prev.map(c => c.id === updatedCourse.id ? updatedCourse : c));
     (async () => {
       try {
@@ -492,7 +493,17 @@ const App: React.FC = () => {
           thumbnailImageId: updatedCourse.thumbnailImageId ?? null,
           totalLessons: updatedCourse.totalLessons,
         });
-        if (!server) return;
+        if (!server) {
+          /* 这个部署里 PATCH /api/courses/:id **是故意停用的**
+             （501 CATALOG_MUTATION_UNSUPPORTED，理由见 backend/src/routes/courses.ts
+             文件头：目录已 canonical 在 Postgres，必填列没有客户端对应物）。
+             原来这里是 `if (!server) return;` —— 静默把本地改动留着，
+             管理员以为目录改好了，而**别人看到的还是原样**。
+             现在撤回本地改动并如实说，不制造改成功的假象。 */
+          setAllCourses(before);
+          showToast('课程目录改不了：这个部署里目录由 canonical 目录接管，App 这边的修改不会生效');
+          return;
+        }
         // Server response omits per-user progress fields — keep the local
         // progress numbers so we don't wipe them out during a meta edit.
         setAllCourses(prev => prev.map(c => c.id === updatedCourse.id
@@ -500,6 +511,8 @@ const App: React.FC = () => {
           : c));
       } catch (err) {
         console.warn('[App] updateCourse sync failed:', err);
+        setAllCourses(before);
+        showToast('课程目录没能保存，已还原');
       }
     })();
   };
@@ -517,7 +530,13 @@ const App: React.FC = () => {
           thumbnailImageId: newCourse.thumbnailImageId,
           totalLessons: newCourse.totalLessons,
         });
-        if (!server) return;
+        if (!server) {
+          /* POST /api/courses 同样是停用的 501。原来静默把本地那条留在列表里，
+             那是一门**只有自己看得见的课**，别人打开 App 根本没有。 */
+          setAllCourses(prev => prev.filter(c => c.id !== newCourse.id));
+          showToast('课程没能加进目录：这个部署里目录由 canonical 目录接管');
+          return;
+        }
         // Swap the optimistic record (with our local `new-${ts}` id) for the
         // server's canonical record (real UUID + createdAt). Keep the local
         // progress fields since the server doesn't return them.
@@ -526,6 +545,8 @@ const App: React.FC = () => {
           : c));
       } catch (err) {
         console.warn('[App] createCourse sync failed:', err);
+        setAllCourses(prev => prev.filter(c => c.id !== newCourse.id));
+        showToast('课程没能加进目录，已还原');
       }
     })();
   };

@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ChevronLeft, ChevronDown, ChevronUp, Play, Lock, CheckCircle, FileText, Download, Clock, Share2, MoreHorizontal, BookOpen, AlertCircle, PlayCircle, PauseCircle, Heart, Flag, Link as LinkIcon, ZoomIn, ZoomOut, X, Edit2, Save, Image as ImageIcon, Upload, RefreshCw } from 'lucide-react';
 import { Course, TheologyCategory } from '../types';
 import { MOCK_COURSE_DETAILS } from '../constants';
-import { canEditCourses, canUploadCourses } from '../services/permissions';
+import { canEditCourses, canManageCourseFiles } from '../services/permissions';
+import { fetchRoles } from '../services/supabaseAuth';
 import { initialAvatar } from '../services/imageFallback';
 import {
   listCourseFiles,
@@ -124,7 +125,19 @@ const CourseDetailView: React.FC<CourseDetailViewProps> = ({ course, onUpdateCou
 
   const isAdmin = canEditCourses(userRole);
   // Material upload: professors (teacher) can contribute, students cannot.
-  const canUpload = canUploadCourses(userRole);
+  /* 课件的上传与删除走 `POST / DELETE /api/courses/:id/files`，两条都挂
+     **requireAdmin**（见 backend/src/server.ts）。原来用的 `canUploadCourses`
+     放行 teacher 与 dean —— 老师看得见上传入口，传上去吃 403。
+     现在按服务端那份角色列表判（fetchRoles 走同一个 my_roles RPC）。
+
+     **这只决定要不要显示入口，不是授权。** 服务端每次现查角色。 */
+  const [serverRoles, setServerRoles] = useState<string[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void fetchRoles().then(r => { if (!cancelled) setServerRoles(r); });
+    return () => { cancelled = true; };
+  }, []);
+  const canUpload = canManageCourseFiles(serverRoles);
 
   // PDF Preview State
   const [previewFile, setPreviewFile] = useState<{title: string, size: string} | null>(null);

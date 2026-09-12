@@ -84,3 +84,35 @@ export const canManageAnnouncements = (
 
 export const canManageLibraryBooks = (serverRoles: readonly string[] | null | undefined): boolean =>
   Array.isArray(serverRoles) && serverRoles.some(r => LIBRARY_ADMIN_ROLES.has(r));
+
+/**
+ * 课件的上传与删除（课程详情页里的「课程资料」）。
+ *
+ * ## 判据来自这两条路由，**不是照搬公告那套**
+ *
+ * ```
+ * backend/src/server.ts
+ *   app.post  ('/api/courses/:id/files',          requireAdmin)
+ *   app.get   ('/api/courses/:id/files',          requireAuth)
+ *   app.delete('/api/courses/:id/files/:fileId',  requireAdmin)
+ * ```
+ *
+ * 也就是说**上传和删除课件要管理角色**，登录就能看。
+ * 而前端原来用的 `canUploadCourses` 放行 `teacher` 与 `dean` ——
+ * 老师看得见上传入口，传上去吃 403。
+ *
+ * ## 和课程目录不是一回事
+ *
+ * `POST / PATCH / DELETE /api/courses`（课程目录本身）在这个部署里
+ * **是故意停用的**，返回 501 `CATALOG_MUTATION_UNSUPPORTED`，
+ * 理由写在 `backend/src/routes/courses.ts` 文件头：目录已 canonical 在
+ * Postgres，必填列（availability / sort_order）没有客户端对应物。
+ * 那是数据层的决定，**不是这里能放行的事** —— 所以目录的增改另外处理，
+ * 不要拿这个判据去开那扇门。
+ *
+ * 同样地：返回 true 只代表值得显示入口，**前端隐藏不等于服务端授权**。
+ */
+export const canManageCourseFiles = (
+  serverRoles: readonly string[] | null | undefined,
+): boolean =>
+  Array.isArray(serverRoles) && serverRoles.some(r => LIBRARY_ADMIN_ROLES.has(r));
