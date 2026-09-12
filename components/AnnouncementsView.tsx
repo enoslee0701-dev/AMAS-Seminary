@@ -3,6 +3,7 @@ import { ChevronLeft, Bell, Search, Plus, Edit2, Trash2, X, Settings, ChevronDow
 import { NewsItem } from '../types';
 import { createAnnouncement, deleteAnnouncement } from '../services/announcementsService';
 import { canManageAnnouncements } from '../services/permissions';
+import { fetchRoles } from '../services/supabaseAuth';
 
 interface AnnouncementsViewProps {
   onBack: () => void;
@@ -37,51 +38,100 @@ const AnnouncementsView: React.FC<AnnouncementsViewProps> = ({ onBack, newsItems
     content: '' 
   });
   
-  const isAdmin = canManageAnnouncements(userRole);
+  /* 角色取的是**服务端那份**（fetchRoles 走同一个 my_roles RPC），
+     不是 userRole 那个展示字符串 —— 服务端认的是
+     registrar / academic_admin / super_admin，两套词汇不同：
+     用展示字符串会把真正的 registrar 挡在外面，也会让展示角色是 'admin'
+     的人点进去才吃 403。
+
+     **这只决定要不要显示入口，不是授权。** 服务端每次现查角色，
+     非管理员即便渲染出来，POST / DELETE 照样 403。 */
+  const [serverRoles, setServerRoles] = useState<string[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void fetchRoles().then(r => { if (!cancelled) setServerRoles(r); });
+    return () => { cancelled = true; };
+  }, []);
+  const isAdmin = canManageAnnouncements(serverRoles);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  /* 判断「请求回来时还是不是同一个人」要读**此刻**的值：
+     正在跑的那次调用捏着的是发起时的闭包，直接读 state 等于没判。 */
+  const rolesOwnerRef = useRef<string>('');
+  rolesOwnerRef.current = (serverRoles ?? []).join(',');
+  void userRole;   // 展示字符串保留给别处用，这里刻意不拿它判权限
 
   const filteredNews = newsItems.filter(item => 
     item.title.toLowerCase().includes(searchQuery.toLowerCase())
   ).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
+  /**
+   * 发布公告。
+   *
+   * ## 服务端只有「发」和「删」，没有「改」
+   *
+   * `backend/src/routes/announcements.ts` 里只有 POST 与 DELETE
+   * （都挂 requireAdmin），**没有 PATCH / PUT**。原来这里的编辑分支只改本地
+   * state，界面看起来改成功了 —— 而公告是发给所有人看的，别人那边一个字都没变。
+   * 那是凭空假装成功，所以编辑入口已经撤掉（见 startEdit 附近的说明）。
+   *
+   * ## 发布失败不留一条别人看不见的公告
+   *
+   * 原来失败时会把乐观插入的那条留在列表里，还说「未连接服务器，仅保存在本地」。
+   * 公告的意义就是别人看得到；只在自己屏幕上的公告不是公告，留着只会让人
+   * 以为已经发出去了。现在失败就撤回那一条，并把表单留着让人重试。
+   *
+   * 措辞不替服务端下结论：服务层对 401/403 与网络错误都回 null，这里分不出来。
+   */
   const handleAddEditNews = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newsForm.title || !newsForm.date) return;
+    if (editingItem) return;              // 没有编辑端点，不走这条路
+    if (submitting) return;               // 连点：第二下忽略
 
-    if (editingItem) {
-      // Edit is a local-only operation today — backend has no PATCH route.
-      setNewsItems(newsItems.map(item => item.id === editingItem.id ? { ...editingItem, ...newsForm } : item));
-    } else {
-      const optimisticId = `news-${Date.now()}`;
-      const newItem: NewsItem = {
-        id: optimisticId,
-        ...newsForm
-      };
-      // 1. Optimistic local insert so admins see their post immediately.
-      setNewsItems([newItem, ...newsItems]);
-      // 2. Sync to backend; on success replace the optimistic row with
-      //    the server-canonical one (real id, normalized date). On
-      //    failure keep the optimistic row and warn the admin.
-      (async () => {
-        try {
-          const server = await createAnnouncement({
-            title: newItem.title,
-            content: newItem.content,
-            type: newItem.type,
-          });
-          if (!server) {
-            notify('未连接服务器，仅保存在本地');
-            return;
-          }
-          setNewsItems(newsItemsRef.current.map(it => it.id === optimisticId ? server : it));
-        } catch (err) {
-          console.warn('[AnnouncementsView.create] backend error:', err);
-          notify('未连接服务器，仅保存在本地');
-        }
-      })();
-    }
-    setShowEditModal(false);
-    setEditingItem(null);
-    setNewsForm({ title: '', date: '', type: 'Notice', content: '' });
+    const title = newsForm.title.trim();
+    const date = newsForm.date.trim();
+    if (!title) { setFormError('请填写标题'); return; }
+    if (!date) { setFormError('请填写日期'); return; }
+    setFormError(null);
+
+    const optimisticId = `news-${Date.now()}`;
+    const newItem: NewsItem = { ...newsForm, id: optimisticId, title, date };
+    setNewsItems([newItem, ...newsItems]);
+    setSubmitting(true);
+    /* 发起时把身份记下来：请求回来时可能已经换了人，
+       那条结果不该套在新登录者的界面上。 */
+    const owner = rolesOwnerRef.current;
+
+    void (async () => {
+      let server: NewsItem | null = null;
+      let threw = false;
+      try {
+        server = await createAnnouncement({
+          title: newItem.title,
+          content: newItem.content,
+          type: newItem.type,
+        });
+      } catch (err) {
+        console.warn('[AnnouncementsView.create] backend error:', err);
+        threw = true;
+      } finally {
+        setSubmitting(false);
+      }
+      if (rolesOwnerRef.current !== owner) return;   // 换人了，这次结果不算数
+      if (!server) {
+        // 撤回那条别人看不见的「公告」，不留在列表里冒充已发布
+        setNewsItems(newsItemsRef.current.filter(it => it.id !== optimisticId));
+        setFormError(threw
+          ? '发布出错，公告没有发出去。内容已保留，可重试。'
+          : '没有发布成功。可能是没有管理权限，也可能是没连上服务器。内容已保留，可重试。');
+        setShowEditModal(true);                      // 表单留着，不让人重填
+        return;
+      }
+      const saved = server;
+      setNewsItems(newsItemsRef.current.map(it => it.id === optimisticId ? saved : it));
+      setShowEditModal(false);
+      setNewsForm({ title: '', date: '', type: 'Notice', content: '' });
+    })();
   };
 
   const initiateDelete = (id: string) => {
@@ -181,6 +231,8 @@ const AnnouncementsView: React.FC<AnnouncementsViewProps> = ({ onBack, newsItems
           {isAdmin && (
             <button 
               onClick={() => setIsManageMode(!isManageMode)}
+              aria-label={isManageMode ? '退出公告管理模式' : '进入公告管理模式'}
+              aria-pressed={isManageMode}
               className={`p-2 rounded-full transition-all ${isManageMode ? 'bg-blue-900 text-white shadow-md' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}
               title="管理模式"
             >
@@ -205,6 +257,7 @@ const AnnouncementsView: React.FC<AnnouncementsViewProps> = ({ onBack, newsItems
         {isAdmin && isManageMode && (
           <button 
             onClick={startAdd}
+            aria-label="发布新公告"
             className="bg-blue-900 text-white px-4 py-2.5 rounded-xl shadow-md hover:bg-blue-800 transition active:scale-95 flex items-center space-x-2 shrink-0"
           >
             <Plus size={18} strokeWidth={3} />
@@ -263,8 +316,12 @@ const AnnouncementsView: React.FC<AnnouncementsViewProps> = ({ onBack, newsItems
                   <div className="shrink-0 pt-1">
                     {isAdmin && isManageMode ? (
                       <div className="flex space-x-1" onClick={e => e.stopPropagation()}>
-                        <button onClick={() => startEdit(item)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"><Edit2 size={16}/></button>
-                        <button onClick={() => initiateDelete(item.id)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"><Trash2 size={16}/></button>
+                        {/* 编辑入口撤掉了：服务端只有 POST 与 DELETE，
+                            **没有 PATCH / PUT**。原来点「修改」只改本地 state，
+                            界面看着改成功了，而公告是发给所有人看的 ——
+                            别人那边一个字都没变。那是凭空假装成功。
+                            要改就删掉重发；等服务端有了编辑端点再放回来。 */}
+                        <button onClick={() => initiateDelete(item.id)} aria-label={`删除公告 ${item.title}`} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"><Trash2 size={16}/></button>
                       </div>
                     ) : (
                       <div className={`p-1 rounded-full transition-all duration-300 ${isExpanded ? 'bg-blue-900 text-white rotate-180' : 'bg-slate-50 text-slate-400'}`}>
@@ -394,11 +451,18 @@ const AnnouncementsView: React.FC<AnnouncementsViewProps> = ({ onBack, newsItems
               </div>
 
               <div className="pt-2">
+                {/* 校验与失败原因必须看得见 —— 写了没人读的状态跟没写一样。 */}
+                {formError && (
+                  <p role="alert" className="mb-3 text-[12px] font-semibold text-rose-600 leading-relaxed">
+                    {formError}
+                  </p>
+                )}
                 <button 
                   type="submit"
+                  disabled={submitting}
                   className="w-full py-4 bg-blue-900 text-white rounded-2xl font-bold text-base shadow-xl shadow-blue-900/20 hover:bg-blue-800 transition active:scale-[0.98] flex items-center justify-center mb-3"
                 >
-                  {editingItem ? <><Edit2 size={20} className="mr-2"/> 保存更新</> : <><Plus size={20} className="mr-2" strokeWidth={3}/> 立即发布</>}
+                  <><Plus size={20} className="mr-2" strokeWidth={3} /> {submitting ? '发布中…' : '发布通知'}</>
                 </button>
                 
                 <button 

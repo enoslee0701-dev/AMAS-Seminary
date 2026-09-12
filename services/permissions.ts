@@ -7,6 +7,10 @@
 
 export type Role = string | null | undefined;
 
+/** 服务端认定的管理角色（见 backend/src/auth/supabase.ts 的 ADMIN_ROLES）。
+    书目与公告共用这一套 —— 两处路由守卫都是 requireAdmin。 */
+const LIBRARY_ADMIN_ROLES = new Set(['registrar', 'academic_admin', 'super_admin']);
+
 /** Edit a course's metadata / chapters. (course detail admin actions) */
 export const canEditCourses = (role: Role): boolean =>
   role === 'admin' || role === 'dean';
@@ -15,9 +19,40 @@ export const canEditCourses = (role: Role): boolean =>
 export const canUploadCourses = (role: Role): boolean =>
   role === 'admin' || role === 'dean' || role === 'teacher';
 
-/** Post / edit / delete campus announcements. Admins only. */
-export const canManageAnnouncements = (role: Role): boolean =>
-  role === 'admin';
+/**
+ * 发布 / 删除校园公告。
+ *
+ * ## 判据同样来自服务端路由守卫
+ *
+ * ```
+ * backend/src/routes/announcements.ts
+ *   GET    /api/announcements        公开
+ *   POST   /api/announcements        requireAdmin
+ *   DELETE /api/announcements/:id    requireAdmin
+ *   （**没有 PATCH / PUT** —— 服务端没有编辑公告这条路）
+ * ```
+ *
+ * `requireAdmin` 认的是 Supabase 现查角色
+ * （registrar / academic_admin / super_admin），跟书目那边同一套。
+ *
+ * **原来这个函数吃的是 `currentUser.role` 那个展示字符串**（判 `=== 'admin'`），
+ * 跟服务端根本不是一套词汇，两头都会错：
+ *
+ * ```
+ * 真正的 registrar  服务端放行，界面却把入口藏起来 —— 管理员用不了
+ * 展示角色是 admin  界面放行，服务端 403 —— 点了才发现白填一场
+ * ```
+ *
+ * 所以改成接收**服务端那份角色列表**（`services/supabaseAuth.ts` 的
+ * `fetchRoles()`，走同一个 `my_roles` RPC）。
+ *
+ * 和书目那条一样：返回 true 只代表值得把入口显示出来，
+ * **前端隐藏不等于服务端授权**，真正的放行永远在服务端。
+ */
+export const canManageAnnouncements = (
+  serverRoles: readonly string[] | null | undefined,
+): boolean =>
+  Array.isArray(serverRoles) && serverRoles.some(r => LIBRARY_ADMIN_ROLES.has(r));
 
 /**
  * 图书馆书目的新增 / 编辑 / 删除。
@@ -46,7 +81,6 @@ export const canManageAnnouncements = (role: Role): boolean =>
  * `fetchRoles()`，走同一个 `my_roles` RPC），不是 `currentUser.role`
  * 那个展示用字符串 —— 两者词汇不同，用错了会把真正的 registrar 挡在外面。
  */
-const LIBRARY_ADMIN_ROLES = new Set(['registrar', 'academic_admin', 'super_admin']);
 
 export const canManageLibraryBooks = (serverRoles: readonly string[] | null | undefined): boolean =>
   Array.isArray(serverRoles) && serverRoles.some(r => LIBRARY_ADMIN_ROLES.has(r));
